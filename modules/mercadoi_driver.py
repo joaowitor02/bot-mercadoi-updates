@@ -99,7 +99,7 @@ class MercadoiDriver:
 
             # TIPO DE IMOVEL
             tipo_imovel = self._normalizar_tipo_imovel(dados.get("tipo_imovel", ""))
-            await self._selecionar_por_texto(page, '#prop_type', tipo_imovel)
+            await self._selecionar_tipo_imovel(page, tipo_imovel)
 
             # OPERACAO
             operacao = dados.get("operacao", "").strip() or "A Venda"
@@ -176,11 +176,19 @@ class MercadoiDriver:
             if arquivo_midia:
                 validos = [f for f in arquivo_midia if os.path.exists(f)]
                 if validos:
-                    await self._anexar_midia(page, validos)
+                    upload_ok = await self._anexar_midia(page, validos)
+                    if not upload_ok:
+                        resultado["status_erro"] = "erro_upload"
+                        resultado["mensagem"] = "Falha ao anexar midia no Mercadoi"
+                        resultado["screenshot_path"] = await self._tirar_screenshot("erro_upload")
+                        return resultado
                     if tipo_midia == "video":
                         logger.info(f"Video: {len(validos)} frame(s) extraido(s) anexados")
                 else:
                     logger.warning("Nenhum arquivo de midia valido encontrado")
+                    resultado["status_erro"] = "erro_upload"
+                    resultado["mensagem"] = "Nenhum arquivo de midia valido encontrado"
+                    return resultado
 
             # NAO EXIBIR CONTATO
             await self._marcar_nao_exibir_contato(page)
@@ -283,6 +291,50 @@ class MercadoiDriver:
         except Exception as e:
             logger.warning(f"Erro ao selecionar '{valor}' em {seletor}: {e}")
             return False
+
+    async def _selecionar_tipo_imovel(self, page, tipo_imovel):
+        """
+        Seleciona o tipo principal por value fixo quando conhecido.
+        O Mercadoi usa categorias numericas e, em alguns carregamentos, o select2
+        nao atualiza bem quando escolhemos apenas por texto.
+        """
+        mapa_values = {
+            "Apartamento": "16",
+            "Casa": "53",
+            "Terreno": "103",
+            "Sala Comercial": "98",
+        }
+        value = mapa_values.get(tipo_imovel)
+        if value:
+            try:
+                resultado = await page.evaluate("""
+                    ({value}) => {
+                        const sel = document.querySelector('#prop_type');
+                        if (!sel) return {ok: false, motivo: 'elemento nao encontrado'};
+                        const option = Array.from(sel.options).find(op => op.value === value);
+                        if (!option) return {ok: false, motivo: 'value nao encontrado'};
+                        sel.value = value;
+                        sel.dispatchEvent(new Event('input', {bubbles: true}));
+                        sel.dispatchEvent(new Event('change', {bubbles: true}));
+                        if (window.jQuery) {
+                            window.jQuery(sel).val(value).trigger('change');
+                            window.jQuery(sel).trigger({
+                                type: 'select2:select',
+                                params: {data: {id: value, text: option.text}}
+                            });
+                        }
+                        return {ok: true, texto: option.text};
+                    }
+                """, {"value": value})
+                if resultado and resultado.get("ok"):
+                    logger.info(f"Selecionado tipo de imovel '{resultado['texto']}' em #prop_type")
+                    return True
+                motivo = resultado.get("motivo", "desconhecido") if resultado else "erro JS"
+                logger.warning(f"Nao selecionou tipo '{tipo_imovel}' por value: {motivo}")
+            except Exception as e:
+                logger.warning(f"Erro ao selecionar tipo '{tipo_imovel}' por value: {e}")
+
+        return await self._selecionar_por_texto(page, '#prop_type', tipo_imovel)
 
     async def _marcar_nao_exibir_contato(self, page):
         """
@@ -438,8 +490,10 @@ class MercadoiDriver:
         if isinstance(caminhos, str):
             caminhos = [caminhos]
         if not caminhos:
-            return
+            return False
         try:
+            esperados = len(caminhos)
+            enviado = False
             upload_btn = None
             for sel in ['#select_gallery_images', '#plupload-browse-button', 'a.plupload_add', '.plupload_add',
                         'a[id*="browse"]', 'button[id*="browse"]', 'div[id*="browse"]',
@@ -450,36 +504,58 @@ class MercadoiDriver:
                     break
 
             if upload_btn:
-                async with page.expect_file_chooser(timeout=5000) as fc_info:
-                    await upload_btn.click()
-                fc = await fc_info.value
-                await fc.set_files(caminhos)
-                logger.info(f"{len(caminhos)} arquivo(s) enviado(s) via file_chooser")
+                try:
+                    async with page.expect_file_chooser(timeout=5000) as fc_info:
+                        await upload_btn.click()
+                    fc = await fc_info.value
+                    await fc.set_files(caminhos)
+                    enviado = True
+                    logger.info(f"{esperados} arquivo(s) enviado(s) via file_chooser")
+                except Exception as e:
+                    logger.warning(f"File chooser nao abriu, tentando input file direto: {e}")
 
-                # Aguardar todos os uploads AJAX completarem (verifica IDs na galeria)
-                esperados = len(caminhos)
-                for tentativa in range(esperados * 5):
-                    await page.wait_for_timeout(2000)
-                    ids = await page.evaluate("""
-                        () => Array.from(document.querySelectorAll('input[name="propperty_image_ids[]"]'))
-                            .map(el => el.value).filter(v => v && v !== '0')
-                    """)
-                    logger.info(f"Uploads concluidos: {len(ids)}/{esperados}")
-                    if len(ids) >= esperados:
-                        break
-
-                preview = await page.query_selector('.fotorama__img, .moxie-shim img, .thumbnail img, [class*="preview"] img, [class*="gallery"] img, .attachment-thumbnail')
-                logger.info("Preview de imagem detectado" if preview else "Preview de imagem nao detectado")
-            else:
-                input_file = await page.query_selector('input[type="file"]')
+            if not enviado:
+                input_file = await self._localizar_input_upload(page)
                 if input_file:
                     await input_file.set_input_files(caminhos)
-                    logger.info(f"Midia anexada via set_input_files (fallback)")
-                    await page.wait_for_timeout(3000)
+                    enviado = True
+                    logger.info(f"{esperados} arquivo(s) enviado(s) via input file")
                 else:
                     logger.warning("Campo de upload nao encontrado")
+                    return False
+
+            ids = []
+            limite = max(esperados * 8, 20)
+            for _ in range(limite):
+                await page.wait_for_timeout(1500)
+                ids = await page.evaluate("""
+                    () => Array.from(document.querySelectorAll('input[name="propperty_image_ids[]"]'))
+                        .map(el => el.value).filter(v => v && v !== '0')
+                """)
+                logger.info(f"Uploads concluidos: {len(ids)}/{esperados}")
+                if len(ids) >= esperados:
+                    preview = await page.query_selector('.fotorama__img, .moxie-shim img, .thumbnail img, [class*="preview"] img, [class*="gallery"] img, .attachment-thumbnail')
+                    logger.info("Preview de imagem detectado" if preview else "Preview de imagem nao detectado")
+                    return True
+
+            logger.error(f"Upload incompleto no Mercadoi: {len(ids)}/{esperados} arquivo(s)")
+            return False
         except Exception as e:
             logger.error(f"Erro ao anexar midia: {e}")
+            return False
+
+    async def _localizar_input_upload(self, page):
+        try:
+            handles = await page.query_selector_all('input[type="file"]')
+            for handle in handles:
+                try:
+                    if await handle.is_visible():
+                        return handle
+                except Exception:
+                    continue
+            return handles[0] if handles else None
+        except Exception:
+            return None
 
     async def _salvar_rascunho(self, page):
         try:

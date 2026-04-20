@@ -3,6 +3,52 @@
 Este arquivo serve como registro para humanos e outras IAs que mexerem no codigo.
 Sempre que houver alteracao, adicione uma nova entrada no topo ou logo abaixo desta nota.
 
+## 2026-04-20 - Validacao de upload e tipo Apartamento no Mercadoi
+
+### Mudancas feitas
+
+Arquivo alterado:
+
+- `modules/mercadoi_driver.py`
+
+Resumo:
+
+- O tipo do imovel no Mercadoi agora e selecionado por `value` conhecido quando possivel:
+  - `Apartamento` -> `16`
+  - `Casa` -> `53`
+  - `Terreno` -> `103`
+  - `Sala Comercial` -> `98`
+- O upload de midia agora retorna sucesso/falha real para o fluxo principal.
+- Se o bot nao conseguir anexar a midia, o item vira `erro_upload` e nao e mais salvo como rascunho sem imagem.
+- O upload ganhou fallback: se o botao do Mercadoi nao abrir o seletor de arquivos, o driver tenta enviar direto pelo `input[type="file"]`.
+- Antes de salvar o rascunho, o driver passa a esperar a contagem de IDs de imagens do Mercadoi chegar ao total esperado.
+
+### Por que foi feito
+
+- No teste com 5 links, um video chegou a extrair 12 frames, mas o Mercadoi nao abriu o seletor de arquivos naquele momento.
+- Mesmo com erro de upload, o fluxo antigo continuava e salvava o rascunho como sucesso, podendo gerar publicacao sem imagem.
+- O campo `APARTAMENTO` tambem aparecia como nao selecionado em alguns logs, apesar de existir no formulario.
+
+### Validacoes
+
+- `python -B -m py_compile .\modules\mercadoi_driver.py`
+- Foram recolocados 5 links reais na fila: IDs `3`, `53`, `54`, `60` e `61`.
+- Resultado do teste:
+  - ID `3`: `erro_extracao`, link/reel informado como inacessivel pela IA/browser.
+  - ID `53`: `rascunho_salvo`, video processado, `12/12` imagens anexadas, rascunho `https://mercadoi.com.br/?p=14498`.
+  - ID `54`: `erro_extracao`, nao foi possivel extrair dados do imovel.
+  - ID `60`: `rascunho_salvo`, video processado, `12/12` imagens anexadas, rascunho `https://mercadoi.com.br/?p=14511`.
+  - ID `61`: `erro_extracao`, link/post informado como inacessivel pela IA/browser.
+- Ao final do teste:
+  - `pendente`: `0`
+  - `processando`: `0`
+
+### Problemas/riscos encontrados no codigo
+
+- O select `role` ainda mostra aviso `Nao selecionou 'Corretor'`; aparentemente a opcao nao existe com esse texto no formulario atual.
+- Em um teste, `Altiplano` nao foi encontrado no select de bairro, embora a cidade tenha sido selecionada. Pode precisar de mapa de bairros/apelidos ou melhora na espera do AJAX.
+- Links privados/removidos do Instagram dependem do retorno do navegador/DeepSeek e continuarao entrando como `erro_extracao`, o que e o comportamento correto para nao criar rascunho falso.
+
 ## 2026-04-20 - Ajustes apos teste operacional em massa
 
 ### Problemas levantados no teste
