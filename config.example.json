@@ -1,0 +1,11 @@
+{
+  "mercadoi_url": "https://www.mercadoi.com.br",
+  "downloads_path": "C:\\Users\\SEU_USUARIO\\Downloads",
+  "deepseek_profile_path": "C:\\chrome_bot_deepseek",
+  "mercadoi_profile_path": "C:\\chrome_bot_mercadoi",
+  "deepseek_api_key": "SUA_CHAVE_API_DEEPSEEK_AQUI",
+  "watch_intervalo_minutos": 5,
+  "panel_senha": "",
+  "telegram_bot_token": "",
+  "telegram_chat_id": ""
+}

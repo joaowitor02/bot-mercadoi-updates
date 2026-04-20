@@ -1,0 +1,34 @@
+# Dados locais e segredos
+config.json
+credentials.json
+botmercadoi.db
+botmercadoi.db-*
+*.sqlite
+*.sqlite3
+
+# Logs e evidencias de execucao
+logs/
+*.log
+
+# Cache Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ambientes locais
+.venv/
+venv/
+env/
+
+# Configuracoes locais de ferramentas/IA
+.claude/
+
+# Arquivos temporarios do sistema/editor
+.DS_Store
+Thumbs.db
+*.tmp
+*.bak
+
+# Artefatos acidentais de instalacao
+=0.27.0
+=1.30.0

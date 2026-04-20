@@ -1,0 +1,1218 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bot Mercadoi — Painel</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50:  '#fff7ed',
+              100: '#ffedd5',
+              200: '#fed7aa',
+              300: '#fdba74',
+              400: '#fb923c',
+              500: '#f97316',
+              600: '#ea580c',
+              700: '#c2410c',
+              800: '#9a3412',
+              900: '#7c2d12',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
+    .spin { animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .pulse-dot { animation: pulseDot 1.5s ease-in-out infinite; }
+    @keyframes pulseDot { 0%,100%{ opacity:1; transform:scale(1); } 50%{ opacity:.5; transform:scale(.85); } }
+    .fade-in { animation: fadeIn .25s ease; }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
+    ::-webkit-scrollbar { width:5px; height:5px; }
+    ::-webkit-scrollbar-track { background:transparent; }
+    ::-webkit-scrollbar-thumb { background:#d1d5db; border-radius:99px; }
+    .log-line { font-family:'Consolas','Courier New',monospace; font-size:11.5px; line-height:1.65; white-space:pre-wrap; word-break:break-all; }
+    tr.row-hover:hover { background:#fafafa; }
+    .stat-card { transition: box-shadow .15s, transform .15s; }
+    .stat-card:hover { box-shadow:0 4px 20px rgba(0,0,0,.08); transform:translateY(-1px); }
+    textarea::placeholder { color:#9ca3af; }
+    .result-tag { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:500; padding:2px 8px; border-radius:99px; }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-50">
+
+<!-- ===================== HEADER ===================== -->
+<header class="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
+  <div class="max-w-7xl mx-auto px-6 py-0 flex items-center justify-between h-16">
+    <!-- Logo / Brand -->
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-brand-500 flex items-center justify-center shadow-sm">
+        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+        </svg>
+      </div>
+      <div>
+        <p class="text-sm font-bold text-slate-800 leading-tight">Mercadoi</p>
+        <p class="text-[10px] text-slate-400 leading-tight uppercase tracking-wider">Painel de Operações</p>
+      </div>
+    </div>
+
+    <!-- Status + Action -->
+    <div class="flex items-center gap-4">
+      <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 text-xs text-slate-500" id="status-pill">
+        <span class="w-2 h-2 rounded-full bg-slate-300 shrink-0" id="dot"></span>
+        <span id="status-txt">Verificando...</span>
+        <span class="text-slate-300">•</span>
+        <span id="status-hoje" class="text-slate-400"></span>
+      </div>
+      <!-- Chrome status -->
+      <div id="chrome-pill" class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-400 cursor-default" title="Status do Chrome do Mercadoi">
+        <span id="chrome-dot" class="w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0"></span>
+        <span id="chrome-txt">Chrome</span>
+      </div>
+
+      <!-- Watch mode toggle -->
+      <button id="btn-watch" onclick="toggleWatch()"
+        class="hidden items-center gap-2 h-9 px-4 border border-slate-200 hover:border-slate-300 text-slate-600 hover:text-slate-800 text-sm font-medium rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <span id="watch-txt">Watch Mode</span>
+      </button>
+
+      <!-- Processar agora -->
+      <button id="btn-processar" onclick="processarAgora()"
+        class="flex items-center gap-2 h-9 px-4 bg-brand-500 hover:bg-brand-600 active:bg-brand-700 text-white text-sm font-medium rounded-xl transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+        <svg id="btn-icon" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <span id="btn-txt">Processar Agora</span>
+      </button>
+      <button id="btn-logout" onclick="logout()" title="Sair"
+        class="hidden h-9 w-9 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-6 py-6 space-y-5">
+
+  <!-- ===================== STATS ===================== -->
+  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+
+    <div class="stat-card bg-white rounded-2xl border border-slate-100 p-5 flex flex-col gap-3">
+      <div class="flex items-center justify-between">
+        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wide">Total</p>
+        <div class="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
+          <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+          </svg>
+        </div>
+      </div>
+      <div>
+        <p class="text-3xl font-bold text-slate-800" id="stat-total">—</p>
+        <p class="text-xs text-slate-400 mt-0.5">últimos 7 dias</p>
+      </div>
+    </div>
+
+    <div class="stat-card bg-white rounded-2xl border border-slate-100 p-5 flex flex-col gap-3">
+      <div class="flex items-center justify-between">
+        <p class="text-xs font-semibold text-emerald-500 uppercase tracking-wide">Sucessos</p>
+        <div class="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
+          <svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+        </div>
+      </div>
+      <div>
+        <p class="text-3xl font-bold text-emerald-600" id="stat-sucesso">—</p>
+        <p class="text-xs text-slate-400 mt-0.5">publicados</p>
+      </div>
+    </div>
+
+    <div class="stat-card bg-white rounded-2xl border border-slate-100 p-5 flex flex-col gap-3">
+      <div class="flex items-center justify-between">
+        <p class="text-xs font-semibold text-red-400 uppercase tracking-wide">Falhas</p>
+        <div class="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center">
+          <svg class="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+        </div>
+      </div>
+      <div>
+        <p class="text-3xl font-bold text-red-500" id="stat-falha">—</p>
+        <p class="text-xs text-slate-400 mt-0.5">com erro</p>
+      </div>
+    </div>
+
+    <div class="stat-card bg-white rounded-2xl border border-slate-100 p-5 flex flex-col gap-3">
+      <div class="flex items-center justify-between">
+        <p class="text-xs font-semibold text-amber-500 uppercase tracking-wide">Andamento</p>
+        <div class="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
+          <svg class="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+        </div>
+      </div>
+      <div>
+        <p class="text-3xl font-bold text-amber-500" id="stat-andamento">—</p>
+        <p class="text-xs text-slate-400 mt-0.5">processando</p>
+      </div>
+    </div>
+
+    <div class="stat-card bg-white rounded-2xl border border-brand-100 p-5 flex flex-col gap-3 cursor-pointer"
+         onclick="document.getElementById('textarea-urls').focus()">
+      <div class="flex items-center justify-between">
+        <p class="text-xs font-semibold text-brand-500 uppercase tracking-wide">Na Fila</p>
+        <div class="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center">
+          <svg class="w-4 h-4 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h8"/>
+          </svg>
+        </div>
+      </div>
+      <div>
+        <p class="text-3xl font-bold text-brand-600" id="stat-pendentes">—</p>
+        <p class="text-xs text-slate-400 mt-0.5">pendentes</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== RESUMO DIÁRIO ===================== -->
+  <div class="bg-white rounded-2xl border border-slate-100 px-6 py-5">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-sm font-semibold text-slate-800">Cadastros por Dia</h2>
+      <span class="text-xs text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full">Últimos 7 dias</span>
+    </div>
+    <div id="resumo-diario" class="grid grid-cols-7 gap-2">
+      <!-- preenchido via JS -->
+    </div>
+  </div>
+
+  <!-- ===================== LOG AO VIVO ===================== -->
+  <div id="log-card" class="hidden bg-slate-900 rounded-2xl border border-slate-700/60 fade-in overflow-hidden">
+    <div class="px-5 py-3 border-b border-slate-700/60 flex items-center gap-2.5">
+      <span class="w-2 h-2 rounded-full bg-emerald-400 pulse-dot shrink-0"></span>
+      <span class="text-sm font-semibold text-slate-200">Log em tempo real</span>
+      <span class="ml-auto text-xs text-slate-500">atualiza a cada 2s</span>
+      <button onclick="document.getElementById('log-card').classList.add('hidden')"
+        class="text-slate-600 hover:text-slate-400 ml-2 transition-colors text-sm leading-none">&times;</button>
+    </div>
+    <div id="log-content" class="p-4 h-52 overflow-y-auto">
+      <p class="log-line text-slate-500">Aguardando saída do bot...</p>
+    </div>
+  </div>
+
+  <!-- ===================== ADICIONAR LINKS ===================== -->
+  <div class="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+    <div class="px-6 py-4 border-b border-slate-100 flex items-center gap-3">
+      <div class="w-7 h-7 rounded-lg bg-brand-50 flex items-center justify-center">
+        <svg class="w-3.5 h-3.5 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+        </svg>
+      </div>
+      <div>
+        <h2 class="text-sm font-semibold text-slate-800">Adicionar Links à Fila</h2>
+        <p class="text-xs text-slate-400">Cole um ou vários links do Instagram, um por linha</p>
+      </div>
+    </div>
+
+    <div class="p-5 space-y-3">
+
+      <!-- Textarea com numeração de linhas -->
+      <div class="flex rounded-xl border border-slate-200 focus-within:ring-2 focus-within:ring-brand-400 focus-within:border-transparent overflow-hidden transition-shadow">
+        <!-- Numeração -->
+        <div id="line-numbers" class="select-none bg-slate-50 border-r border-slate-200 px-3 py-3 text-right min-w-[2.5rem]">
+          <div class="text-xs text-slate-300 leading-[1.625rem] font-mono">1</div>
+        </div>
+        <!-- Input -->
+        <textarea id="textarea-urls" rows="5"
+          placeholder="https://www.instagram.com/p/ABC123/&#10;https://www.instagram.com/reel/XYZ789/&#10;https://www.instagram.com/p/DEF456/"
+          class="flex-1 px-4 py-3 text-sm text-slate-700 resize-none focus:outline-none placeholder-slate-300 font-mono leading-[1.625rem]"
+          oninput="atualizarContador()"
+          onkeydown="if(event.ctrlKey&&event.key==='Enter') adicionarUrls()"></textarea>
+      </div>
+
+      <!-- Rodapé: contador + botão -->
+      <div class="flex items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <span id="link-counter" class="hidden items-center gap-1.5 px-3 py-1 bg-brand-50 text-brand-600 rounded-full text-xs font-semibold">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+            </svg>
+            <span id="counter-txt">0 links</span>
+          </span>
+          <p class="text-xs text-slate-400">Atalho: <kbd class="px-1.5 py-0.5 bg-slate-100 rounded text-slate-500 font-mono">Ctrl+Enter</kbd></p>
+        </div>
+        <button onclick="adicionarUrls()" id="btn-adicionar"
+          class="flex items-center gap-2 h-9 px-5 bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+          </svg>
+          Adicionar à Fila
+        </button>
+      </div>
+
+      <!-- Resultado do envio -->
+      <div id="add-result" class="hidden fade-in rounded-xl border p-4 space-y-3">
+        <div class="flex items-center gap-4 flex-wrap" id="add-summary"></div>
+        <div id="add-details" class="space-y-1 max-h-40 overflow-y-auto"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== TABELA COM ABAS ===================== -->
+  <div class="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+
+    <!-- Abas + controles -->
+    <div class="px-6 py-3 border-b border-slate-100 flex flex-wrap items-center gap-3">
+      <!-- Tabs -->
+      <div class="flex rounded-xl border border-slate-200 p-0.5 gap-0.5">
+        <button id="tab-historico" onclick="setTab('historico')"
+          class="px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-brand-500 text-white">
+          Histórico
+        </button>
+        <button id="tab-fila" onclick="setTab('fila')"
+          class="px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors text-slate-500 hover:text-slate-700">
+          Fila <span id="fila-count" class="ml-1 bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full text-[10px]">—</span>
+        </button>
+      </div>
+
+      <!-- Filtros de status (só no histórico) -->
+      <div id="filtros-status" class="flex gap-1.5">
+        <button onclick="setFiltro('todos')"    id="f-todos"    class="filtro-btn active px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-800 text-white">Todos</button>
+        <button onclick="setFiltro('sucesso')"  id="f-sucesso"  class="filtro-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200">Sucesso</button>
+        <button onclick="setFiltro('falha')"    id="f-falha"    class="filtro-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200">Falha</button>
+        <button onclick="setFiltro('processando')" id="f-processando" class="filtro-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200">Andamento</button>
+      </div>
+
+      <!-- Período (só no histórico) -->
+      <div id="filtros-periodo" class="flex gap-1.5">
+        <button onclick="setPeriodo(7)"  id="p-7"  class="periodo-btn active px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-800 text-white">7d</button>
+        <button onclick="setPeriodo(30)" id="p-30" class="periodo-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200">30d</button>
+        <button onclick="setPeriodo(90)" id="p-90" class="periodo-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200">90d</button>
+      </div>
+
+      <!-- Export CSV -->
+      <button onclick="exportarCSV()" id="btn-export"
+        class="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 hover:text-slate-700 border border-slate-200 hover:border-slate-300 transition-colors">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+        </svg>
+        Exportar CSV
+      </button>
+    </div>
+
+    <!-- ABA: HISTÓRICO -->
+    <div id="pane-historico">
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="bg-slate-50/70 border-b border-slate-100">
+              <th class="text-left px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">ID</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Data / Hora</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Imóvel</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Localização</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Status</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="tabela-body">
+            <tr><td colspan="6" class="text-center py-16 text-slate-400 text-sm">Carregando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ABA: FILA -->
+    <div id="pane-fila" class="hidden">
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="bg-slate-50/70 border-b border-slate-100">
+              <th class="text-left px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">#</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">URL</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Status</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Mensagem</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Adicionado</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="fila-body">
+            <tr><td colspan="6" class="text-center py-16 text-slate-400 text-sm">Carregando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ===================== CONFIGURAÇÕES ===================== -->
+  <div class="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+    <div class="px-6 py-4 border-b border-slate-100 flex items-center gap-3">
+      <div class="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center">
+        <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+      </div>
+      <h2 class="text-sm font-semibold text-slate-800">Configurações</h2>
+    </div>
+
+    <div class="p-5 grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+
+      <!-- Intervalo Watch -->
+      <div class="space-y-2">
+        <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide">Intervalo do Watch Mode</label>
+        <div class="flex items-center gap-2">
+          <input type="number" id="cfg-intervalo" min="1" max="1440" value="5"
+            class="w-24 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent" />
+          <span class="text-sm text-slate-400">minutos</span>
+          <button onclick="salvarIntervalo()"
+            class="ml-auto h-8 px-3 bg-brand-500 hover:bg-brand-600 text-white text-xs font-semibold rounded-lg transition-colors">
+            Salvar
+          </button>
+        </div>
+        <p class="text-xs text-slate-400">Intervalo entre ciclos automáticos (<code class="bg-slate-100 px-1 rounded">--watch</code>)</p>
+      </div>
+
+      <!-- Telegram -->
+      <div class="space-y-2">
+        <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide">Notificações Telegram</label>
+        <div class="flex items-center gap-2">
+          <span id="telegram-badge" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 text-slate-500">
+            <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Verificando...
+          </span>
+        </div>
+        <p class="text-xs text-slate-400">Configure <code class="bg-slate-100 px-1 rounded">telegram_bot_token</code> e <code class="bg-slate-100 px-1 rounded">telegram_chat_id</code> no config.json</p>
+      </div>
+
+      <!-- Segurança -->
+      <div class="space-y-2">
+        <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide">Segurança do Painel</label>
+        <div class="flex items-center gap-2">
+          <span id="senha-badge" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 text-slate-500">
+            <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Verificando...
+          </span>
+        </div>
+        <p class="text-xs text-slate-400">Configure <code class="bg-slate-100 px-1 rounded">panel_senha</code> no config.json para proteger o painel</p>
+      </div>
+
+    </div>
+  </div>
+
+</main>
+
+<!-- ===================== MODAL SCREENSHOT ===================== -->
+<div id="modal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+     onclick="fecharModal(event)">
+  <div class="bg-white rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden fade-in" onclick="event.stopPropagation()">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+      <h3 class="font-semibold text-slate-800 flex items-center gap-2">
+        <svg class="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+        </svg>
+        Screenshot de Erro
+      </h3>
+      <button onclick="fecharModal()" class="w-7 h-7 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors text-lg leading-none">&times;</button>
+    </div>
+    <div class="p-4 bg-slate-50">
+      <img id="modal-img" src="" alt="Screenshot" class="rounded-xl w-full object-contain max-h-[65vh]" />
+    </div>
+    <div class="px-6 py-3 bg-white border-t border-slate-100">
+      <p id="modal-caption" class="text-xs text-slate-500 font-mono"></p>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== MODAL DETALHES ===================== -->
+<div id="modal-det" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+     onclick="fecharModalDet(event)">
+  <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full fade-in" onclick="event.stopPropagation()">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+      <h3 class="font-semibold text-slate-800" id="det-titulo">Detalhes</h3>
+      <button onclick="fecharModalDet()" class="w-7 h-7 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors text-lg leading-none">&times;</button>
+    </div>
+    <div class="p-6 space-y-3" id="det-body"></div>
+    <div class="px-6 pb-5">
+      <button onclick="fecharModalDet()" class="w-full h-9 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-sm font-medium transition-colors">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== TOAST ===================== -->
+<div id="toast" class="hidden fixed bottom-6 right-6 z-50 fade-in">
+  <div class="bg-slate-900 text-white text-sm font-medium px-4 py-3 rounded-xl shadow-xl flex items-center gap-2 max-w-sm" id="toast-inner">
+    <span id="toast-msg"></span>
+  </div>
+</div>
+
+<script>
+let _execucoes = [];
+let _botRodando = false;
+let _watchAtivo = false;
+let _toastTimer = null;
+
+// ---------------------------------------------------------------------------
+// Utilitários
+// ---------------------------------------------------------------------------
+function badge(status) {
+  const cfg = {
+    sucesso:     { cls: 'bg-emerald-100 text-emerald-700 ring-emerald-200', label: '✓ Sucesso' },
+    falha:       { cls: 'bg-red-100 text-red-600 ring-red-200',            label: '✗ Falha' },
+    processando: { cls: 'bg-amber-100 text-amber-700 ring-amber-200',      label: '⟳ Andamento' },
+  };
+  const d = cfg[status] || { cls: 'bg-slate-100 text-slate-500 ring-slate-200', label: status };
+  return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ring-1 ${d.cls}">${d.label}</span>`;
+}
+
+function urlCurta(url) {
+  try {
+    const m = url.match(/instagram\.com\/(?:p|reel|tv)\/([^/?]+)/);
+    return m ? `…/${m[1]}` : url.slice(0, 35) + '…';
+  } catch { return url; }
+}
+
+function logColor(txt) {
+  if (/ERROR|Falha definitiva|erro_/i.test(txt)) return 'text-red-400';
+  if (/WARNING|Aviso|falhou/i.test(txt))           return 'text-amber-400';
+  if (/Sucesso|salvo/i.test(txt))                  return 'text-emerald-400';
+  if (/Iniciando|Extraindo|Publicando/i.test(txt)) return 'text-sky-400';
+  return 'text-slate-400';
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function toast(msg, tipo = 'ok') {
+  const el = document.getElementById('toast');
+  const inner = document.getElementById('toast-inner');
+  const icon = tipo === 'ok'
+    ? '<svg class="w-4 h-4 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>'
+    : '<svg class="w-4 h-4 text-red-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>';
+  document.getElementById('toast-msg').textContent = msg;
+  inner.innerHTML = icon + `<span>${esc(msg)}</span>`;
+  el.classList.remove('hidden');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.add('hidden'), 4000);
+}
+
+// ---------------------------------------------------------------------------
+// Renderização
+// ---------------------------------------------------------------------------
+function renderResumoDiario(execs) {
+  const hoje = new Date();
+  const dias = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(hoje);
+    d.setDate(hoje.getDate() - (6 - i));
+    return d.toISOString().slice(0, 10);
+  });
+
+  // Conta sucessos e falhas por dia
+  const porDia = {};
+  dias.forEach(d => { porDia[d] = { suc: 0, fal: 0, total: 0 }; });
+  execs.forEach(ex => {
+    if (ex.data && porDia[ex.data] !== undefined) {
+      porDia[ex.data].total++;
+      if (ex.status === 'sucesso') porDia[ex.data].suc++;
+      else if (ex.status === 'falha') porDia[ex.data].fal++;
+    }
+  });
+
+  const maxSuc = Math.max(1, ...dias.map(d => porDia[d].suc));
+
+  const nomeDia = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const container = document.getElementById('resumo-diario');
+
+  container.innerHTML = dias.map(d => {
+    const { suc, fal, total } = porDia[d];
+    const pct = Math.round((suc / maxSuc) * 100);
+    const isHoje = d === hoje.toISOString().slice(0, 10);
+    const partes = d.split('-');
+    const label = `${partes[2]}/${partes[1]}`;
+    const diaSemana = nomeDia[new Date(d + 'T12:00:00').getDay()];
+
+    return `
+      <div class="flex flex-col items-center gap-1.5 group">
+        <!-- Barra -->
+        <div class="w-full flex flex-col items-center justify-end h-20 gap-0.5">
+          <span class="text-xs font-bold ${suc > 0 ? 'text-brand-600' : 'text-slate-300'} leading-none">${suc > 0 ? suc : ''}</span>
+          <div class="w-full rounded-t-lg transition-all duration-500 ${isHoje ? 'bg-brand-500' : 'bg-brand-200'} ${suc === 0 ? 'opacity-30' : ''}"
+               style="height:${suc === 0 ? 4 : Math.max(8, pct * 0.6)}px"></div>
+          ${fal > 0 ? `<div class="w-full rounded-none bg-red-200" style="height:${Math.max(4, fal * 4)}px" title="${fal} falha(s)"></div>` : ''}
+        </div>
+        <!-- Label -->
+        <div class="text-center">
+          <p class="text-[10px] font-semibold ${isHoje ? 'text-brand-600' : 'text-slate-400'} leading-tight">${diaSemana}</p>
+          <p class="text-[10px] text-slate-300 leading-tight">${label}</p>
+        </div>
+        ${isHoje ? '<span class="text-[9px] font-bold text-brand-500 uppercase tracking-wider">hoje</span>' : '<span class="text-[9px] text-transparent">·</span>'}
+      </div>`;
+  }).join('');
+}
+
+function renderStats(execs) {
+  document.getElementById('stat-total').textContent     = execs.length;
+  document.getElementById('stat-sucesso').textContent   = execs.filter(e => e.status === 'sucesso').length;
+  document.getElementById('stat-falha').textContent     = execs.filter(e => e.status === 'falha').length;
+  document.getElementById('stat-andamento').textContent = execs.filter(e => e.status === 'processando').length;
+}
+
+function renderTabela(execs) {
+  const tbody = document.getElementById('tabela-body');
+  if (!execs.length) {
+    tbody.innerHTML = `<tr><td colspan="6" class="text-center py-16 text-slate-400 text-sm">
+      <svg class="w-8 h-8 text-slate-200 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+      </svg>
+      Nenhuma execução nos últimos 7 dias
+    </td></tr>`;
+    return;
+  }
+  tbody.innerHTML = execs.map((ex, i) => `
+    <tr class="border-b border-slate-50 row-hover cursor-pointer transition-colors" onclick="verDetalhes(${i})">
+      <td class="px-6 py-4">
+        <span class="font-mono text-xs bg-slate-100 text-slate-500 px-2 py-1 rounded-lg">${ex.execution_id}</span>
+      </td>
+      <td class="px-4 py-4 text-xs text-slate-500 whitespace-nowrap">
+        ${ex.data ? `<span class="text-slate-400 block">${ex.data}</span>` : ''}
+        <span>${ex.inicio || ''}${ex.fim && ex.fim !== ex.inicio ? ' – ' + ex.fim : ''}</span>
+      </td>
+      <td class="px-4 py-4 max-w-xs">
+        <p class="font-medium text-slate-700 truncate text-sm">${esc(ex.titulo || '—')}</p>
+        ${ex.url ? `<a href="${esc(ex.url)}" target="_blank" onclick="event.stopPropagation()"
+          class="text-xs text-slate-400 hover:text-brand-500 truncate block mt-0.5 transition-colors">${urlCurta(ex.url)}</a>` : ''}
+      </td>
+      <td class="px-4 py-4 text-sm text-slate-500">
+        ${ex.cidade || ex.bairro
+          ? `<span>${ex.bairro ? esc(ex.bairro) + ', ' : ''}${esc(ex.cidade)}</span>`
+          : '<span class="text-slate-300">—</span>'}
+      </td>
+      <td class="px-4 py-4">${badge(ex.status)}</td>
+      <td class="px-4 py-4">
+        <div class="flex items-center gap-2">
+          ${ex.screenshot ? `
+            <button onclick="event.stopPropagation(); verScreenshot('${esc(ex.screenshot)}','${esc(ex.execution_id)}')"
+              class="inline-flex items-center gap-1 text-xs text-red-500 hover:text-red-700 font-medium transition-colors">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+              </svg>
+              Erro
+            </button>` : ''}
+          ${(ex.status === 'falha' || ex.status === 'processando') && ex.url ? `
+            <button onclick="event.stopPropagation(); reprocessar('${esc(ex.url)}')"
+              class="inline-flex items-center gap-1 text-xs text-amber-600 hover:text-amber-800 font-medium transition-colors">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+              </svg>
+              Tentar novamente
+            </button>` : ''}
+          ${ex.url ? `
+            <a href="${esc(ex.url)}" target="_blank" onclick="event.stopPropagation()"
+              class="inline-flex items-center gap-1 text-xs text-brand-500 hover:text-brand-700 font-medium transition-colors">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+              </svg>
+              Post
+            </a>` : ''}
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+// ---------------------------------------------------------------------------
+// Modais
+// ---------------------------------------------------------------------------
+function verScreenshot(filename, execId) {
+  document.getElementById('modal-img').src = `/screenshots/${filename}`;
+  document.getElementById('modal-caption').textContent = `Execução ${execId} — ${filename}`;
+  document.getElementById('modal').classList.remove('hidden');
+}
+function fecharModal(e) {
+  if (!e || e.target === document.getElementById('modal'))
+    document.getElementById('modal').classList.add('hidden');
+}
+
+function verDetalhes(i) {
+  const ex = _execucoes[i];
+  document.getElementById('det-titulo').textContent = ex.titulo || `Execução ${ex.execution_id}`;
+  const rows = [
+    ['ID',       `<span class="font-mono bg-slate-100 px-2 py-0.5 rounded text-xs">${ex.execution_id}</span>`],
+    ['Status',   badge(ex.status)],
+    ['Data',     `${ex.data || '—'} ${ex.inicio || ''}`],
+    ['Tipo',     esc(ex.tipo) || '—'],
+    ['Cidade',   esc(ex.cidade) || '—'],
+    ['Bairro',   esc(ex.bairro) || '—'],
+    ['URL',      ex.url ? `<a href="${esc(ex.url)}" target="_blank" class="text-brand-500 hover:underline text-xs break-all">${esc(ex.url)}</a>` : '—'],
+  ];
+  if (ex.erros && ex.erros.length) {
+    rows.push(['Erros', `<ul class="text-xs text-red-600 space-y-1 list-disc list-inside">${ex.erros.map(e=>`<li>${esc(e)}</li>`).join('')}</ul>`]);
+  }
+  document.getElementById('det-body').innerHTML = rows.map(([k,v]) => `
+    <div class="flex gap-3 items-start">
+      <span class="text-xs text-slate-400 w-16 shrink-0 pt-0.5 font-medium">${k}</span>
+      <span class="text-sm text-slate-700 flex-1">${v}</span>
+    </div>
+  `).join('');
+  document.getElementById('modal-det').classList.remove('hidden');
+}
+function fecharModalDet(e) {
+  if (!e || e.target === document.getElementById('modal-det'))
+    document.getElementById('modal-det').classList.add('hidden');
+}
+
+// ---------------------------------------------------------------------------
+// API
+// ---------------------------------------------------------------------------
+async function carregarExecucoes() {
+  try {
+    const r = await fetch(`/api/execucoes?dias=${_filtroDias}`);
+    _execucoes = await r.json();
+    renderStats(_execucoes);
+    renderResumoDiario(_execucoes);
+    renderTabela(_execucoesFiltradas());
+  } catch {
+    document.getElementById('tabela-body').innerHTML =
+      '<tr><td colspan="6" class="text-center py-16 text-red-400 text-sm">Erro ao carregar execuções</td></tr>';
+  }
+}
+
+async function carregarPendentes() {
+  try {
+    const r = await fetch('/api/pendentes');
+    const d = await r.json();
+    document.getElementById('stat-pendentes').textContent = d.count ?? '—';
+  } catch {}
+}
+
+async function atualizarChromeStatus() {
+  try {
+    const r = await fetch('/api/chrome-status');
+    const d = await r.json();
+    const pill = document.getElementById('chrome-pill');
+    const dot  = document.getElementById('chrome-dot');
+    const txt  = document.getElementById('chrome-txt');
+    pill.classList.remove('hidden');
+    pill.classList.add('flex');
+    if (d.ok) {
+      pill.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 cursor-default';
+      dot.className  = 'w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0';
+      txt.textContent = 'Chrome OK';
+      pill.title = d.browser || 'Chrome conectado';
+      pill.onclick = null;
+    } else {
+      pill.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-red-50 text-red-500 cursor-pointer hover:bg-red-100 transition-colors';
+      dot.className  = 'w-1.5 h-1.5 rounded-full bg-red-400 shrink-0';
+      txt.textContent = 'Chrome offline — clique para abrir';
+      pill.title = 'Clique para abrir o Chrome automaticamente';
+      pill.onclick = abrirChrome;
+    }
+  } catch {}
+}
+
+async function abrirChrome() {
+  const pill = document.getElementById('chrome-pill');
+  const txt  = document.getElementById('chrome-txt');
+  txt.textContent = 'Abrindo Chrome...';
+  pill.onclick = null;
+  try {
+    const r = await fetch('/api/abrir-chrome', { method: 'POST' });
+    const d = await r.json();
+    if (d.ok) {
+      toast('Chrome iniciado — aguarde alguns segundos', 'ok');
+      setTimeout(atualizarChromeStatus, 4000);
+    } else {
+      toast(d.msg || d.detail || 'Erro ao abrir Chrome', 'erro');
+      atualizarChromeStatus();
+    }
+  } catch (e) {
+    toast('Erro ao conectar ao painel: ' + e.message, 'erro');
+    atualizarChromeStatus();
+  }
+}
+
+async function toggleWatch() {
+  const btn = document.getElementById('btn-watch');
+  btn.disabled = true;
+  try {
+    if (_watchAtivo) {
+      const r = await fetch('/api/watch/parar', { method: 'POST' });
+      const d = await r.json();
+      d.ok ? toast('Watch mode encerrado') : toast(d.msg, 'erro');
+    } else {
+      const r = await fetch('/api/watch/iniciar', { method: 'POST' });
+      const d = await r.json();
+      d.ok ? toast(`Watch mode iniciado — ciclo a cada ${d.intervalo} min`) : toast(d.msg, 'erro');
+    }
+    await atualizarStatus();
+  } catch { toast('Erro de conexão', 'erro'); }
+  finally { btn.disabled = false; }
+}
+
+async function atualizarStatus() {
+  try {
+    const r = await fetch('/api/status');
+    const d = await r.json();
+    _botRodando = d.rodando;
+    _watchAtivo = d.watch_ativo || false;
+
+    const dot      = document.getElementById('dot');
+    const txt      = document.getElementById('status-txt');
+    const hoje     = document.getElementById('status-hoje');
+    const btn      = document.getElementById('btn-processar');
+    const btnTxt   = document.getElementById('btn-txt');
+    const logCard  = document.getElementById('log-card');
+    const btnWatch = document.getElementById('btn-watch');
+    const watchTxt = document.getElementById('watch-txt');
+
+    hoje.textContent = d.hoje || '';
+
+    // Botão Watch Mode
+    btnWatch.classList.remove('hidden');
+    btnWatch.classList.add('flex');
+    if (_watchAtivo) {
+      btnWatch.className = 'flex items-center gap-2 h-9 px-4 border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 text-sm font-medium rounded-xl transition-colors disabled:opacity-50';
+      watchTxt.textContent = 'Parar Watch';
+    } else {
+      btnWatch.className = 'flex items-center gap-2 h-9 px-4 border border-slate-200 hover:border-slate-300 text-slate-600 hover:text-slate-800 text-sm font-medium rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
+      watchTxt.textContent = 'Watch Mode';
+    }
+    btnWatch.disabled = _botRodando && !_watchAtivo;
+
+    if (_botRodando) {
+      dot.className   = 'w-2 h-2 rounded-full bg-emerald-500 pulse-dot shrink-0';
+      txt.textContent = _watchAtivo ? 'Watch ativo' : 'Rodando';
+      btn.disabled    = true;
+      btnTxt.textContent = 'Em execução...';
+      logCard.classList.remove('hidden');
+      await atualizarLogs();
+    } else {
+      dot.className   = 'w-2 h-2 rounded-full bg-slate-300 shrink-0';
+      txt.textContent = 'Aguardando';
+      btn.disabled    = false;
+      btnTxt.textContent = 'Processar Agora';
+    }
+  } catch {}
+}
+
+async function atualizarLogs() {
+  try {
+    const r = await fetch('/api/logs/live?ultimas=80');
+    const linhas = await r.json();
+    const container = document.getElementById('log-content');
+    if (linhas.length) {
+      container.innerHTML = linhas.map(l =>
+        `<p class="log-line ${logColor(l)}">${esc(l)}</p>`
+      ).join('');
+      container.scrollTop = container.scrollHeight;
+    }
+  } catch {}
+}
+
+async function processarAgora() {
+  if (_botRodando) return;
+  try {
+    const r = await fetch('/api/processar', { method: 'POST' });
+    const d = await r.json();
+    if (d.ok) {
+      toast('Bot iniciado com sucesso!');
+      await atualizarStatus();
+    } else {
+      toast(d.msg, 'erro');
+    }
+  } catch { toast('Erro ao iniciar o bot', 'erro'); }
+}
+
+async function adicionarUrls() {
+  const textarea = document.getElementById('textarea-urls');
+  const btn      = document.getElementById('btn-adicionar');
+  const result   = document.getElementById('add-result');
+  const summary  = document.getElementById('add-summary');
+  const details  = document.getElementById('add-details');
+
+  const raw  = textarea.value;
+  const urls = raw.split('\n').map(u => u.trim()).filter(Boolean);
+  if (!urls.length) return;
+
+  btn.disabled = true;
+  btn.innerHTML = `<svg class="w-4 h-4 spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+  </svg> Adicionando...`;
+
+  try {
+    const r = await fetch('/api/adicionar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ urls }),
+    });
+    const d = await r.json();
+
+    if (!d.ok) {
+      toast(d.msg || 'Erro ao adicionar', 'erro');
+      return;
+    }
+
+    // Summary tags
+    const tags = [];
+    if (d.adicionadas)  tags.push(`<span class="result-tag bg-emerald-100 text-emerald-700">✓ ${d.adicionadas} adicionada${d.adicionadas>1?'s':''}</span>`);
+    if (d.duplicadas)   tags.push(`<span class="result-tag bg-slate-100 text-slate-500">= ${d.duplicadas} duplicada${d.duplicadas>1?'s':''}</span>`);
+    if (d.invalidas)    tags.push(`<span class="result-tag bg-red-100 text-red-600">✗ ${d.invalidas} inválida${d.invalidas>1?'s':''}</span>`);
+    if (d.erros)        tags.push(`<span class="result-tag bg-red-100 text-red-600">! ${d.erros} erro${d.erros>1?'s':''}</span>`);
+    summary.innerHTML = tags.join('');
+
+    // Per-URL details
+    const statusIcons = {
+      adicionada: '<span class="text-emerald-500 mr-1.5">✓</span>',
+      duplicada:  '<span class="text-slate-400 mr-1.5">=</span>',
+      invalida:   '<span class="text-red-500 mr-1.5">✗</span>',
+      erro:       '<span class="text-red-500 mr-1.5">!</span>',
+    };
+    details.innerHTML = d.results.map(item => `
+      <div class="flex items-start gap-1 text-xs">
+        ${statusIcons[item.status] || ''}
+        <span class="font-mono text-slate-500 truncate flex-1">${esc(item.url)}</span>
+        <span class="text-slate-400 shrink-0 ml-2">${esc(item.msg || '')}</span>
+      </div>
+    `).join('');
+
+    // Border color
+    result.className = result.className.replace(/border-\S+/, '');
+    if (d.adicionadas && !d.invalidas && !d.erros) {
+      result.classList.add('border-emerald-200', 'bg-emerald-50/50');
+    } else if (d.invalidas || d.erros) {
+      result.classList.add('border-amber-200', 'bg-amber-50/50');
+    } else {
+      result.classList.add('border-slate-200', 'bg-slate-50');
+    }
+    result.classList.remove('hidden');
+
+    if (d.adicionadas) {
+      textarea.value = '';
+      atualizarContador();
+      await carregarPendentes();
+      toast(`${d.adicionadas} link${d.adicionadas>1?'s':''} adicionado${d.adicionadas>1?'s':''}!`);
+    }
+  } catch { toast('Erro de conexão', 'erro'); }
+  finally {
+    btn.disabled = false;
+    btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+    </svg> Adicionar à Fila`;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Contador e numeração de linhas do textarea
+// ---------------------------------------------------------------------------
+function atualizarContador() {
+  const textarea = document.getElementById('textarea-urls');
+  const linhas = textarea.value.split('\n').map(l => l.trim()).filter(Boolean);
+  const count = linhas.length;
+
+  // Contador de links
+  const counter = document.getElementById('link-counter');
+  const counterTxt = document.getElementById('counter-txt');
+  if (count > 0) {
+    counter.classList.remove('hidden');
+    counter.classList.add('inline-flex');
+    counterTxt.textContent = `${count} link${count > 1 ? 's' : ''}`;
+  } else {
+    counter.classList.add('hidden');
+    counter.classList.remove('inline-flex');
+  }
+
+  // Numeração de linhas
+  const totalLinhas = textarea.value.split('\n').length;
+  const nums = document.getElementById('line-numbers');
+  nums.innerHTML = Array.from({ length: totalLinhas }, (_, i) =>
+    `<div class="text-xs leading-[1.625rem] font-mono ${i < totalLinhas - 1 || textarea.value.endsWith('\n') ? 'text-slate-400' : 'text-slate-300'}">${i + 1}</div>`
+  ).join('');
+}
+
+// ---------------------------------------------------------------------------
+// Abas
+// ---------------------------------------------------------------------------
+let _abaAtiva = 'historico';
+
+function setTab(aba) {
+  _abaAtiva = aba;
+  const isHist = aba === 'historico';
+  document.getElementById('tab-historico').className  = `px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${isHist ? 'bg-brand-500 text-white' : 'text-slate-500 hover:text-slate-700'}`;
+  document.getElementById('tab-fila').className       = `px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${!isHist ? 'bg-brand-500 text-white' : 'text-slate-500 hover:text-slate-700'}`;
+  document.getElementById('pane-historico').classList.toggle('hidden', !isHist);
+  document.getElementById('pane-fila').classList.toggle('hidden', isHist);
+  document.getElementById('filtros-status').classList.toggle('hidden', !isHist);
+  document.getElementById('filtros-periodo').classList.toggle('hidden', !isHist);
+  document.getElementById('btn-export').classList.toggle('hidden', !isHist);
+  if (!isHist) carregarFila();
+}
+
+// ---------------------------------------------------------------------------
+// Filtros de status e período
+// ---------------------------------------------------------------------------
+let _filtroStatus = 'todos';
+let _filtroDias   = 7;
+
+function setFiltro(status) {
+  _filtroStatus = status;
+  document.querySelectorAll('.filtro-btn').forEach(b => {
+    b.className = 'filtro-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200';
+  });
+  const btn = document.getElementById(`f-${status}`);
+  if (btn) btn.className = 'filtro-btn active px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-800 text-white';
+  renderTabela(_execucoesFiltradas());
+}
+
+function setPeriodo(dias) {
+  _filtroDias = dias;
+  document.querySelectorAll('.periodo-btn').forEach(b => {
+    b.className = 'periodo-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200';
+  });
+  const btn = document.getElementById(`p-${dias}`);
+  if (btn) btn.className = 'periodo-btn active px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-800 text-white';
+  carregarExecucoes();
+}
+
+function _execucoesFiltradas() {
+  if (_filtroStatus === 'todos') return _execucoes;
+  return _execucoes.filter(e => e.status === _filtroStatus);
+}
+
+// ---------------------------------------------------------------------------
+// Export CSV
+// ---------------------------------------------------------------------------
+function exportarCSV() {
+  const cols = ['ID','Data','Início','Fim','URL','Título','Tipo','Cidade','Bairro','Status','Erros'];
+  const linhas = [cols.join(';')];
+  _execucoesFiltradas().forEach(ex => {
+    linhas.push([
+      ex.execution_id,
+      ex.data || '',
+      ex.inicio || '',
+      ex.fim || '',
+      ex.url || '',
+      (ex.titulo || '').replace(/;/g,','),
+      ex.tipo || '',
+      ex.cidade || '',
+      ex.bairro || '',
+      ex.status || '',
+      (ex.erros || []).join(' | ').replace(/;/g,','),
+    ].map(v => `"${v}"`).join(';'));
+  });
+  const blob = new Blob(['\uFEFF' + linhas.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `mercadoi_historico_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+}
+
+// ---------------------------------------------------------------------------
+// Fila
+// ---------------------------------------------------------------------------
+let _filaItems = [];
+
+async function carregarFila() {
+  try {
+    const r = await fetch('/api/fila');
+    const d = await r.json();
+    _filaItems = d.items || [];
+    document.getElementById('fila-count').textContent = _filaItems.length || '0';
+    renderFila(_filaItems);
+  } catch {}
+}
+
+function renderFila(items) {
+  const tbody = document.getElementById('fila-body');
+  if (!items.length) {
+    tbody.innerHTML = `<tr><td colspan="6" class="text-center py-16 text-slate-400 text-sm">
+      Fila vazia — nenhum item pendente ou com erro
+    </td></tr>`;
+    return;
+  }
+  const statusBadge = {
+    pendente:    'bg-blue-100 text-blue-700',
+    processando: 'bg-amber-100 text-amber-700',
+  };
+  tbody.innerHTML = items.map(item => {
+    const cls = statusBadge[item.status] || 'bg-red-100 text-red-600';
+    const label = item.status === 'pendente' ? 'Pendente'
+                : item.status === 'processando' ? 'Processando'
+                : 'Erro';
+    const criado = item.criado_em ? item.criado_em.slice(0,16).replace('T',' ') : '—';
+    return `<tr class="border-b border-slate-50 row-hover">
+      <td class="px-6 py-3.5 font-mono text-xs text-slate-400">${item.id}</td>
+      <td class="px-4 py-3.5 max-w-xs">
+        <a href="${esc(item.url)}" target="_blank" class="text-xs text-brand-500 hover:underline truncate block max-w-xs">${esc(item.url)}</a>
+      </td>
+      <td class="px-4 py-3.5">
+        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ring-1 ${cls}">${label}</span>
+      </td>
+      <td class="px-4 py-3.5 text-xs text-red-500 max-w-xs">
+        <span class="truncate block max-w-[200px]" title="${esc(item.mensagem_erro || '')}">${esc(item.mensagem_erro || '—')}</span>
+      </td>
+      <td class="px-4 py-3.5 text-xs text-slate-400 whitespace-nowrap">${criado}</td>
+      <td class="px-4 py-3.5">
+        <div class="flex items-center gap-2">
+          ${item.status !== 'pendente' && item.status !== 'processando' ? `
+          <button onclick="reprocessar('${esc(item.url)}')"
+            class="text-xs text-amber-600 hover:text-amber-800 font-medium transition-colors">Tentar novamente</button>
+          <span class="text-slate-200">|</span>` : ''}
+          <button onclick="removerDaFila(${item.id})"
+            class="text-xs text-slate-400 hover:text-red-500 font-medium transition-colors">Remover</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function removerDaFila(id) {
+  if (!confirm('Remover este item da fila permanentemente?')) return;
+  try {
+    const r = await fetch('/api/remover', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      toast('Item removido da fila');
+      await Promise.all([carregarFila(), carregarPendentes()]);
+    } else {
+      toast(d.msg || 'Erro ao remover', 'erro');
+    }
+  } catch { toast('Erro de conexão', 'erro'); }
+}
+
+async function reprocessar(url) {
+  if (!confirm('Reprocessar este imóvel? Ele voltará para a fila de pendentes.')) return;
+  try {
+    const r = await fetch('/api/reprocessar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    if (r.status === 401) { window.location.href = '/login'; return; }
+    const d = await r.json();
+    if (d.ok) {
+      toast('Imóvel voltou para a fila de pendentes');
+      await Promise.all([carregarExecucoes(), carregarPendentes()]);
+    } else {
+      toast(d.msg || 'Erro ao reprocessar', 'erro');
+    }
+  } catch { toast('Erro de conexão', 'erro'); }
+}
+
+async function logout() {
+  await fetch('/api/logout', { method: 'POST' });
+  window.location.href = '/login';
+}
+
+async function carregarConfig() {
+  try {
+    const r = await fetch('/api/config');
+    if (r.status === 401) return;
+    const d = await r.json();
+
+    // Intervalo
+    if (d.watch_intervalo_minutos) {
+      document.getElementById('cfg-intervalo').value = d.watch_intervalo_minutos;
+    }
+
+    // Badge Telegram
+    const tgBadge = document.getElementById('telegram-badge');
+    if (d.telegram_configurado) {
+      tgBadge.className = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-100 text-emerald-700';
+      tgBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Ativo';
+    } else {
+      tgBadge.className = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 text-slate-400';
+      tgBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-slate-300"></span> Não configurado';
+    }
+
+    // Badge senha
+    const snBadge = document.getElementById('senha-badge');
+    if (d.senha_configurada) {
+      snBadge.className = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-100 text-emerald-700';
+      snBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Protegido';
+    } else {
+      snBadge.className = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-amber-100 text-amber-700';
+      snBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span> Sem senha';
+    }
+
+    // Logout button (só mostra se senha ativa)
+    if (d.senha_configurada) {
+      document.getElementById('btn-logout').classList.remove('hidden');
+      document.getElementById('btn-logout').classList.add('flex');
+    }
+  } catch {}
+}
+
+async function salvarIntervalo() {
+  const val = parseInt(document.getElementById('cfg-intervalo').value);
+  if (!val || val < 1) { toast('Valor inválido', 'erro'); return; }
+  try {
+    const r = await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ watch_intervalo_minutos: val }),
+    });
+    const d = await r.json();
+    d.ok ? toast(`Intervalo salvo: ${val} minuto(s)`) : toast(d.msg, 'erro');
+  } catch { toast('Erro ao salvar', 'erro'); }
+}
+
+// Intercepta respostas 401 globalmente
+const _origFetch = window.fetch;
+window.fetch = async (...args) => {
+  const r = await _origFetch(...args);
+  if (r.status === 401 && !args[0].toString().includes('/login')) {
+    window.location.href = '/login';
+  }
+  return r;
+};
+
+// ---------------------------------------------------------------------------
+// Init + polling
+// ---------------------------------------------------------------------------
+async function init() {
+  await Promise.all([carregarExecucoes(), atualizarStatus(), carregarPendentes(), carregarConfig(), atualizarChromeStatus()]);
+
+  setInterval(async () => {
+    await atualizarStatus();
+    await atualizarChromeStatus();
+    if (!_botRodando) {
+      await carregarExecucoes();
+      if (_abaAtiva === 'fila') await carregarFila();
+    }
+  }, 8000);
+
+  setInterval(async () => {
+    if (_botRodando) await atualizarLogs();
+  }, 2000);
+
+  setInterval(carregarPendentes, 15000);
+}
+
+document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    document.getElementById('modal').classList.add('hidden');
+    document.getElementById('modal-det').classList.add('hidden');
+  }
+});
+</script>
+</body>
+</html>
