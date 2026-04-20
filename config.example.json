@@ -9,6 +9,8 @@
   "admin_senha": "",
   "panel_senha": "",
   "licenca_expira": "",
+  "licenca_assinatura": "",
   "telegram_bot_token": "",
-  "telegram_chat_id": ""
+  "telegram_chat_id": "",
+  "version_check_url": ""
 }

@@ -4,6 +4,8 @@ Acesse http://localhost:8000 após iniciar.
 """
 
 import asyncio
+import hashlib
+import hmac as _hmac_mod
 import json
 import os
 import re
@@ -13,6 +15,8 @@ import sys
 import threading
 from datetime import date, timedelta
 from pathlib import Path
+
+from version import VERSION
 
 # Python 3.12 no Windows: ProactorEventLoop gera ValueError em transports fechados.
 # SelectorEventLoop evita isso (seguro pois não usamos asyncio.create_subprocess_exec).
@@ -46,7 +50,46 @@ _PUBLIC_PATHS = {"/login", "/favicon.ico", "/licenca-expirada"}
 _ADMIN_API_PATHS = frozenset({
     "/api/config", "/api/config/senha", "/api/config/telegram",
     "/api/config/admin-senha", "/api/config/licenca", "/api/testar-telegram",
+    "/api/atualizar",
 })
+
+
+# ---------------------------------------------------------------------------
+# Segurança: hash de senhas + assinatura HMAC da licença
+# ---------------------------------------------------------------------------
+
+_LICENSE_SECRET = b"BotMercadoi@2024#7f3c9a1e"
+
+
+def _sha256(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def _is_hash(text: str) -> bool:
+    return bool(re.fullmatch(r"[0-9a-f]{64}", text))
+
+
+def _verificar_senha(raw: str, stored: str) -> bool:
+    if not stored:
+        return False
+    if _is_hash(stored):
+        return _hmac_mod.compare_digest(_sha256(raw), stored)
+    return _hmac_mod.compare_digest(raw, stored)
+
+
+def _assinar_licenca(data_str: str) -> str:
+    return _hmac_mod.new(_LICENSE_SECRET, data_str.encode(), hashlib.sha256).hexdigest()
+
+
+def _licenca_assinatura_valida(data_str: str, sig: str) -> bool:
+    if not data_str:
+        return True
+    if not sig:
+        return False
+    try:
+        return _hmac_mod.compare_digest(_assinar_licenca(data_str), sig)
+    except Exception:
+        return False
 
 
 def _licenca_expirada() -> bool:
@@ -101,10 +144,38 @@ app.add_middleware(AuthMiddleware)
 async def _startup():
     global _SENHA, _ADMIN_SENHA, _LICENCA_EXPIRA
     try:
-        cfg = json.loads((BASE_DIR / "config.json").read_text(encoding="utf-8"))
-        _SENHA          = cfg.get("panel_senha",    "").strip()
-        _ADMIN_SENHA    = cfg.get("admin_senha",    "").strip()
-        _LICENCA_EXPIRA = cfg.get("licenca_expira", "").strip()
+        path = BASE_DIR / "config.json"
+        cfg = json.loads(path.read_text(encoding="utf-8"))
+        dirty = False
+
+        panel_senha = cfg.get("panel_senha", "").strip()
+        admin_senha = cfg.get("admin_senha", "").strip()
+
+        # Auto-migrar senhas plaintext → SHA-256
+        if panel_senha and not _is_hash(panel_senha):
+            panel_senha = _sha256(panel_senha)
+            cfg["panel_senha"] = panel_senha
+            dirty = True
+        if admin_senha and not _is_hash(admin_senha):
+            admin_senha = _sha256(admin_senha)
+            cfg["admin_senha"] = admin_senha
+            dirty = True
+
+        _SENHA       = panel_senha
+        _ADMIN_SENHA = admin_senha
+
+        # Validar assinatura da licença (impede edição manual do config.json)
+        expira = cfg.get("licenca_expira", "").strip()
+        sig    = cfg.get("licenca_assinatura", "").strip()
+        if expira and not _licenca_assinatura_valida(expira, sig):
+            expira = ""
+            cfg["licenca_expira"]     = ""
+            cfg["licenca_assinatura"] = ""
+            dirty = True
+        _LICENCA_EXPIRA = expira
+
+        if dirty:
+            path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
     except Exception:
         pass
 
@@ -133,14 +204,14 @@ async def login_page(erro: str = ""):
 @app.post("/login")
 async def fazer_login(senha: str = Form(...)):
     # Admin tem prioridade (ignora expiração de licença)
-    if _ADMIN_SENHA and senha == _ADMIN_SENHA:
+    if _ADMIN_SENHA and _verificar_senha(senha, _ADMIN_SENHA):
         token = secrets.token_hex(32)
         _SESSION_TOKENS[token] = "admin"
         resp = RedirectResponse("/", status_code=303)
         resp.set_cookie("mercadoi_session", token, httponly=True, samesite="strict")
         return resp
     # Usuário comum é bloqueado se licença expirou
-    if _SENHA and senha == _SENHA:
+    if _SENHA and _verificar_senha(senha, _SENHA):
         if _licenca_expirada():
             return RedirectResponse("/licenca-expirada", status_code=303)
         token = secrets.token_hex(32)
@@ -689,11 +760,13 @@ async def salvar_senha(body: SenhaRequest):
     global _SENHA
     try:
         cfg = _load_config()
-        cfg["panel_senha"] = body.nova_senha.strip()
+        nova = body.nova_senha.strip()
+        hashed = _sha256(nova) if nova else ""
+        cfg["panel_senha"] = hashed
         (BASE_DIR / "config.json").write_text(
             json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8"
         )
-        _SENHA = cfg["panel_senha"]
+        _SENHA = hashed
         return JSONResponse({"ok": True})
     except Exception as e:
         return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
@@ -727,11 +800,13 @@ async def salvar_admin_senha(body: AdminSenhaRequest):
     global _ADMIN_SENHA
     try:
         cfg = _load_config()
-        cfg["admin_senha"] = body.nova_senha.strip()
+        nova = body.nova_senha.strip()
+        hashed = _sha256(nova) if nova else ""
+        cfg["admin_senha"] = hashed
         (BASE_DIR / "config.json").write_text(
             json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8"
         )
-        _ADMIN_SENHA = cfg["admin_senha"]
+        _ADMIN_SENHA = hashed
         return JSONResponse({"ok": True})
     except Exception as e:
         return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
@@ -749,7 +824,8 @@ async def salvar_licenca(body: LicencaRequest):
         if expira:
             date.fromisoformat(expira)  # valida formato
         cfg = _load_config()
-        cfg["licenca_expira"] = expira
+        cfg["licenca_expira"]     = expira
+        cfg["licenca_assinatura"] = _assinar_licenca(expira) if expira else ""
         (BASE_DIR / "config.json").write_text(
             json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8"
         )
@@ -818,6 +894,63 @@ async def listar_fila():
         return JSONResponse({"count": len(fila), "items": fila})
     except Exception as e:
         return JSONResponse({"count": 0, "items": [], "error": str(e)})
+
+
+# ---------------------------------------------------------------------------
+# Endpoints — versão e atualização
+# ---------------------------------------------------------------------------
+
+@app.get("/api/version")
+async def get_version():
+    try:
+        cfg = _load_config()
+        check_url = cfg.get("version_check_url", "").strip()
+    except Exception:
+        check_url = ""
+
+    versao_remota = None
+    has_update = False
+
+    if check_url:
+        try:
+            import httpx as _httpx
+            async with _httpx.AsyncClient(timeout=5) as client:
+                r = await client.get(check_url)
+                if r.status_code == 200:
+                    m = re.search(r'VERSION\s*=\s*["\']([^"\']+)["\']', r.text)
+                    if m:
+                        versao_remota = m.group(1)
+                        has_update = versao_remota != VERSION
+        except Exception:
+            pass
+
+    return JSONResponse({
+        "versao_atual":  VERSION,
+        "versao_remota": versao_remota,
+        "has_update":    has_update,
+    })
+
+
+@app.post("/api/atualizar")
+async def atualizar_bot():
+    try:
+        result = subprocess.run(
+            ["git", "pull", "--rebase"],
+            cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60,
+        )
+        saida = (result.stdout + result.stderr).strip()
+        if result.returncode == 0:
+            return JSONResponse({"ok": True, "msg": saida or "Atualizado. Reinicie o painel para aplicar."})
+        return JSONResponse({"ok": False, "msg": saida or "Erro ao atualizar."}, status_code=500)
+    except subprocess.TimeoutExpired:
+        return JSONResponse({"ok": False, "msg": "Tempo esgotado ao atualizar."}, status_code=500)
+    except Exception as e:
+        return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
 
 
 if __name__ == "__main__":
