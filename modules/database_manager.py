@@ -14,6 +14,7 @@ _CAMPOS_VALIDOS = frozenset({
     "url_instagram", "status", "titulo_gerado", "tipo_midia",
     "arquivo_midia", "cidade_aplicada", "bairro_aplicado",
     "fim_processamento", "resultado", "mensagem_erro", "id_execucao",
+    "mercadoi_url",
 })
 
 _CREATE_TABLE = """
@@ -30,6 +31,7 @@ CREATE TABLE IF NOT EXISTS imoveis (
     resultado         TEXT    DEFAULT '',
     mensagem_erro     TEXT    DEFAULT '',
     id_execucao       TEXT    DEFAULT '',
+    mercadoi_url      TEXT    DEFAULT '',
     criado_em         TEXT    DEFAULT (datetime('now', 'localtime')),
     atualizado_em     TEXT    DEFAULT (datetime('now', 'localtime'))
 )
@@ -41,7 +43,7 @@ class DatabaseManager:
         self.db_path = db_path
         self._lock = threading.Lock()
         self._init_db()
-        logger.info(f"Banco de dados iniciado: {db_path}")
+        logger.debug(f"Banco de dados iniciado: {db_path}")
 
     # ------------------------------------------------------------------
     # Conexão
@@ -57,6 +59,9 @@ class DatabaseManager:
         with self._lock:
             with self._conn() as conn:
                 conn.execute(_CREATE_TABLE)
+                cols = {r["name"] for r in conn.execute("PRAGMA table_info(imoveis)").fetchall()}
+                if "mercadoi_url" not in cols:
+                    conn.execute("ALTER TABLE imoveis ADD COLUMN mercadoi_url TEXT DEFAULT ''")
                 conn.commit()
 
     def _to_dict(self, row) -> dict:
@@ -70,7 +75,7 @@ class DatabaseManager:
 
     def _todas_as_linhas(self) -> tuple[list[str], list[dict]]:
         with self._conn() as conn:
-            rows = conn.execute("SELECT * FROM imoveis ORDER BY id").fetchall()
+            rows = conn.execute("SELECT * FROM imoveis ORDER BY id DESC").fetchall()
         headers = list(_CAMPOS_VALIDOS)
         return headers, [self._to_dict(r) for r in rows]
 
@@ -93,7 +98,10 @@ class DatabaseManager:
             urls_vistas.add(url)
             pendentes.append(d)
 
-        logger.info(f"Pendentes encontrados: {len(pendentes)}")
+        if pendentes:
+            logger.info(f"Pendentes encontrados: {len(pendentes)}")
+        else:
+            logger.debug("Pendentes encontrados: 0")
         return pendentes
 
     def listar_todos(self, limite: int = 200) -> list[dict]:
@@ -107,14 +115,17 @@ class DatabaseManager:
         with self._lock:
             with self._conn() as conn:
                 cur = conn.execute(
-                    "UPDATE imoveis SET status='pendente', "
+                    "UPDATE imoveis SET status='erro_interrompido', "
+                    "resultado='Falha', "
+                    "mensagem_erro='Processamento anterior foi interrompido antes de concluir', "
+                    "fim_processamento=datetime('now','localtime'), "
                     "atualizado_em=datetime('now','localtime') "
                     "WHERE status='processando'"
                 )
                 conn.commit()
         count = cur.rowcount
         if count:
-            logger.warning(f"{count} item(ns) travado(s) resetados para 'pendente'")
+            logger.warning(f"{count} item(ns) travado(s) marcados como erro_interrompido")
         return count
 
     # ------------------------------------------------------------------

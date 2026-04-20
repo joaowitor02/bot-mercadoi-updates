@@ -6,6 +6,7 @@ import json
 import os
 import unicodedata
 import re
+from urllib.parse import urljoin
 from playwright.async_api import async_playwright
 from modules.logger import Logger
 
@@ -71,6 +72,7 @@ class MercadoiDriver:
             "cidade_aplicada": "",
             "bairro_aplicado": "",
             "status_erro": "",
+            "mercadoi_url": "",
         }
 
         try:
@@ -96,7 +98,7 @@ class MercadoiDriver:
             await self._preencher_editor(page, conteudo)
 
             # TIPO DE IMOVEL
-            tipo_imovel = dados.get("tipo_imovel", "").strip() or "Apartamento"
+            tipo_imovel = self._normalizar_tipo_imovel(dados.get("tipo_imovel", ""))
             await self._selecionar_por_texto(page, '#prop_type', tipo_imovel)
 
             # OPERACAO
@@ -184,8 +186,8 @@ class MercadoiDriver:
             await self._marcar_nao_exibir_contato(page)
 
             # SALVAR COMO RASCUNHO
-            salvo = await self._salvar_rascunho(page)
-            if not salvo:
+            salvamento = await self._salvar_rascunho(page)
+            if not salvamento.get("ok"):
                 resultado["status_erro"] = "erro_salvamento"
                 resultado["mensagem"] = "Falha ao salvar rascunho"
                 resultado["screenshot_path"] = await self._tirar_screenshot("erro_salvamento")
@@ -193,6 +195,7 @@ class MercadoiDriver:
 
             resultado["sucesso"] = True
             resultado["mensagem"] = "Rascunho salvo com sucesso"
+            resultado["mercadoi_url"] = salvamento.get("url", "")
             return resultado
 
         except Exception as e:
@@ -201,6 +204,20 @@ class MercadoiDriver:
             resultado["mensagem"] = str(e)
             resultado["screenshot_path"] = await self._tirar_screenshot("erro_preenchimento")
             return resultado
+
+    def _normalizar_tipo_imovel(self, valor: str) -> str:
+        texto = normalizar(valor or "")
+        if "apart" in texto or "flat" in texto:
+            return "Apartamento"
+        if "casa" in texto or "resid" in texto:
+            return "Casa"
+        if "terreno" in texto or "lote" in texto:
+            return "Terreno"
+        if "sala" in texto or "comercial" in texto or "loja" in texto:
+            return "Sala Comercial"
+        if "studio" in texto or "kitnet" in texto:
+            return "Apartamento"
+        return valor.strip() or "Apartamento"
 
     async def _tirar_screenshot(self, etapa: str) -> str:
         """Captura screenshot da página atual e salva em logs/screenshots/."""
@@ -501,20 +518,27 @@ class MercadoiDriver:
 
             if not resultado or not resultado.get('ok'):
                 logger.error(f"AJAX falhou: {resultado}")
-                return False
+                return {"ok": False}
 
             try:
                 resp = json.loads(resultado.get('response', '{}'))
                 if resp.get('success') or resp.get('suc'):
                     logger.info("Rascunho salvo com sucesso via AJAX")
-                    return True
+                    property_id = resp.get("property_id") or resp.get("prop_id") or resp.get("id")
+                    url = self._montar_url_mercadoi(property_id)
+                    return {"ok": True, "property_id": property_id, "url": url}
                 else:
                     logger.error(f"AJAX retornou falha: {resp}")
-                    return False
+                    return {"ok": False}
             except Exception:
                 logger.info("AJAX completou (resposta aceita)")
-                return True
+                return {"ok": True}
 
         except Exception as e:
             logger.error(f"Erro ao salvar rascunho: {e}")
-            return False
+            return {"ok": False}
+
+    def _montar_url_mercadoi(self, property_id) -> str:
+        if not property_id:
+            return ""
+        return urljoin(self.base_url.rstrip("/") + "/", f"?p={property_id}")

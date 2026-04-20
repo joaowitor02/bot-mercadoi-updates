@@ -300,8 +300,9 @@
 
       <!-- Período (só no histórico) -->
       <div id="filtros-periodo" class="flex gap-1.5">
-        <button onclick="setPeriodo(7)"  id="p-7"  class="periodo-btn active px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-800 text-white">7d</button>
-        <button onclick="setPeriodo(30)" id="p-30" class="periodo-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200">30d</button>
+        <button onclick="setPeriodo(1)"  id="p-1"  class="periodo-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200">Hoje</button>
+        <button onclick="setPeriodo(7)"  id="p-7"  class="periodo-btn active px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-800 text-white">Semana</button>
+        <button onclick="setPeriodo(30)" id="p-30" class="periodo-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200">Mês</button>
         <button onclick="setPeriodo(90)" id="p-90" class="periodo-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200">90d</button>
       </div>
 
@@ -461,6 +462,7 @@
 
 <script>
 let _execucoes = [];
+let _execucoesVisiveis = [];
 let _botRodando = false;
 let _watchAtivo = false;
 let _toastTimer = null;
@@ -473,6 +475,7 @@ function badge(status) {
     sucesso:     { cls: 'bg-emerald-100 text-emerald-700 ring-emerald-200', label: '✓ Sucesso' },
     falha:       { cls: 'bg-red-100 text-red-600 ring-red-200',            label: '✗ Falha' },
     processando: { cls: 'bg-amber-100 text-amber-700 ring-amber-200',      label: '⟳ Andamento' },
+    pendente:    { cls: 'bg-blue-100 text-blue-700 ring-blue-200',         label: 'Pendente' },
   };
   const d = cfg[status] || { cls: 'bg-slate-100 text-slate-500 ring-slate-200', label: status };
   return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ring-1 ${d.cls}">${d.label}</span>`;
@@ -572,6 +575,7 @@ function renderStats(execs) {
 }
 
 function renderTabela(execs) {
+  _execucoesVisiveis = execs;
   const tbody = document.getElementById('tabela-body');
   if (!execs.length) {
     tbody.innerHTML = `<tr><td colspan="6" class="text-center py-16 text-slate-400 text-sm">
@@ -628,6 +632,14 @@ function renderTabela(execs) {
               </svg>
               Post
             </a>` : ''}
+          ${ex.mercadoi_url ? `
+            <a href="${esc(ex.mercadoi_url)}" target="_blank" onclick="event.stopPropagation()"
+              class="inline-flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-800 font-medium transition-colors">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+              </svg>
+              Mercadoi
+            </a>` : ''}
         </div>
       </td>
     </tr>
@@ -648,7 +660,7 @@ function fecharModal(e) {
 }
 
 function verDetalhes(i) {
-  const ex = _execucoes[i];
+  const ex = _execucoesVisiveis[i] || _execucoes[i];
   document.getElementById('det-titulo').textContent = ex.titulo || `Execução ${ex.execution_id}`;
   const rows = [
     ['ID',       `<span class="font-mono bg-slate-100 px-2 py-0.5 rounded text-xs">${ex.execution_id}</span>`],

@@ -74,6 +74,32 @@ def _validar_dados(dados: dict) -> dict:
     return dados
 
 
+def _dados_invalidos(dados: dict) -> str:
+    """Retorna um motivo quando a resposta da IA/browser nao deve virar rascunho."""
+    titulo = str(dados.get("titulo", "")).strip()
+    descricao = str(dados.get("descricao_util", "")).strip()
+    texto = f"{titulo}\n{descricao}".lower()
+    sinais_erro = [
+        "erro:",
+        "link não acessível",
+        "link nao acessivel",
+        "não foi possível acessar",
+        "nao foi possivel acessar",
+        "não consegui acessar",
+        "nao consegui acessar",
+        "post privado",
+        "publicação indisponível",
+        "publicacao indisponivel",
+    ]
+    if not titulo:
+        return "Titulo ausente"
+    if any(s in texto for s in sinais_erro):
+        return "IA/browser indicou que o post nao esta acessivel"
+    if len(titulo) < 8 and len(descricao) < 30:
+        return "Dados extraidos insuficientes para criar rascunho"
+    return ""
+
+
 # ---------------------------------------------------------------------------
 # Extração de dados
 # ---------------------------------------------------------------------------
@@ -137,7 +163,8 @@ async def processar_link(row: dict, sheet, config: dict):
     # --- ETAPA 1: Extração de dados ---
     dados = None
     motivo_falha = ""
-    tem_api_key = bool(config.get("deepseek_api_key", "").strip())
+    usar_api = bool(config.get("usar_deepseek_api", False))
+    tem_api_key = usar_api and bool(config.get("deepseek_api_key", "").strip())
 
     if tem_api_key:
         logger.info(f"[{execution_id}] Extraindo via API DeepSeek...")
@@ -164,6 +191,11 @@ async def processar_link(row: dict, sheet, config: dict):
 
     # Validação e sanitização dos dados
     dados = _validar_dados(dados)
+    motivo_invalido = _dados_invalidos(dados)
+    if motivo_invalido:
+        logger.error(f"[{execution_id}] Dados extraidos rejeitados: {motivo_invalido}")
+        status.erro("erro_extracao", motivo_invalido)
+        return
 
     sheet.atualizar_campo(row_index, "titulo_gerado", dados.get("titulo", ""))
     logger.info(f"[{execution_id}] Título: {dados.get('titulo', '')[:70]}")
@@ -184,6 +216,12 @@ async def processar_link(row: dict, sheet, config: dict):
     )
 
     # --- ETAPA 3: Publicação no Mercadoi com retry ---
+    if not arquivo_midia:
+        msg = "Nenhuma midia foi baixada para esta publicacao"
+        logger.error(f"[{execution_id}] {msg}")
+        status.erro("erro_download", msg)
+        return
+
     logger.info(f"[{execution_id}] Publicando no Mercadoi...")
     resultado = None
 
@@ -208,6 +246,7 @@ async def processar_link(row: dict, sheet, config: dict):
     if resultado and resultado["sucesso"]:
         sheet.atualizar_campo(row_index, "cidade_aplicada", resultado.get("cidade_aplicada", ""))
         sheet.atualizar_campo(row_index, "bairro_aplicado", resultado.get("bairro_aplicado", ""))
+        sheet.atualizar_campo(row_index, "mercadoi_url", resultado.get("mercadoi_url", ""))
         status.sucesso("rascunho_salvo", resultado.get("mensagem", "Rascunho salvo com sucesso"))
         logger.info(f"[{execution_id}] Sucesso!")
         for arq in arquivo_midia:

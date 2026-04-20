@@ -3,6 +3,81 @@
 Este arquivo serve como registro para humanos e outras IAs que mexerem no codigo.
 Sempre que houver alteracao, adicione uma nova entrada no topo ou logo abaixo desta nota.
 
+## 2026-04-20 - Ajustes apos teste operacional em massa
+
+### Problemas levantados no teste
+
+- API DeepSeek estava atrapalhando mais do que ajudando.
+- Alguns rascunhos eram salvos mesmo quando a IA/browser dizia que o link nao era acessivel.
+- Alguns rascunhos eram salvos sem midia.
+- Itens interrompidos podiam ficar como `processando`.
+- Algumas imagens vinham em formato nao ideal para upload, como HEIC/HEIF.
+- Frames de video podiam ficar repetidos, borrados, brancos ou em transicao.
+- O painel nao deixava claro o historico real do banco e nao mostrava link do rascunho Mercadoi.
+- Registros recentes precisavam aparecer primeiro.
+- Logs do painel estavam poluidos por consultas repetidas de banco/fila vazia.
+
+### Mudancas feitas
+
+Arquivos alterados:
+
+- `main.py`
+- `modules/database_manager.py`
+- `modules/media_resolver.py`
+- `modules/frame_extractor.py`
+- `modules/mercadoi_driver.py`
+- `panel.py`
+- `panel_static/index.html`
+- `config.example.json`
+- `requirements.txt`
+
+Resumo:
+
+- A API DeepSeek agora fica desligada por padrao. O bot so usa API se `usar_deepseek_api: true` estiver no `config.json`.
+- O bot rejeita dados extraidos com sinais de erro, como `[Erro: Link nao acessivel]`, antes de tentar criar rascunho.
+- Se nenhuma midia for baixada, o item vira `erro_download` e nao segue para publicacao.
+- Itens travados em `processando` passam a virar `erro_interrompido`, em vez de voltar silenciosamente para `pendente`.
+- O banco ganhou campo `mercadoi_url` para guardar o link/id do rascunho/anuncio criado.
+- O driver do Mercadoi normaliza melhor `tipo_imovel`, garantindo casos como `APARTAMENTO`, `studio` e textos parecidos.
+- O retorno AJAX do Mercadoi agora captura `property_id` e monta URL no formato `https://mercadoi.com.br/?p=ID`.
+- Imagens baixadas em HEIC/HEIF/WebP/PNG sao convertidas para JPG antes do upload.
+- Frames de video foram reduzidos para ate 12 e passam por filtros de brilho, nitidez, similaridade e transicao.
+- O painel agora usa o banco como fonte principal do historico, mantendo os mais recentes no topo e exibindo hora de inicio/fim.
+- O historico ganhou filtros de periodo mais claros: Hoje, Semana, Mes e 90d.
+- A tabela do historico ganhou botao `Mercadoi` quando houver link salvo.
+- O painel foi ajustado para abrir detalhes corretos mesmo quando a tabela esta filtrada.
+- Logs repetitivos de banco/fila vazia foram rebaixados para debug.
+
+### Correcao de dados locais
+
+Foram revisados 3 registros antigos que estavam como sucesso apesar de problemas:
+
+- IDs 54 e 61: alterados para `erro_extracao` porque o titulo indicava link inacessivel.
+- ID 3: alterado para `erro_download` porque estava sem midia baixada.
+
+### Validacoes
+
+- Importacao geral:
+  - `python -B -c "import main, panel; ...; print('imports ok')"`
+- Compilacao:
+  - `main.py`, `panel.py`, `modules/media_resolver.py`, `modules/frame_extractor.py`, `modules/mercadoi_driver.py`
+- Migracao do banco:
+  - Confirmado campo `mercadoi_url` na tabela `imoveis`.
+- Historico do painel:
+  - `_execucoes_db(1)` retornou registros ordenados e os IDs revisados como `falha`.
+- Tipo de imovel:
+  - `APARTAMENTO 2 quartos` e `studio` normalizam para `Apartamento`.
+- Conversao:
+  - Helper de conversao preserva JPG existente.
+
+### Riscos ou pendencias
+
+- O link `https://mercadoi.com.br/?p=ID` depende do Mercadoi aceitar acesso ao rascunho/anuncio pelo `property_id`. Se o site usar outra rota privada para edicao/visualizacao, sera preciso ajustar o formato.
+- A conversao HEIC depende de `pillow-heif`, instalado nesta rodada e adicionado ao `requirements.txt`.
+- A instalacao atual atualizou `pillow` para 12.2.0; isso gerou aviso de conflito com `streamlit`, que nao faz parte deste projeto. Se alguma ferramenta externa usar Streamlit neste mesmo Python, pode ser melhor isolar o bot em ambiente virtual.
+- O painel ainda pode ganhar uma tela mais detalhada de etapas por item no futuro; nesta rodada ele passou a exibir o historico real do banco com menos ruido.
+- A qualidade dos frames de video foi melhorada por heuristica. Pode exigir ajuste fino depois de mais testes com reels diferentes.
+
 ## 2026-04-20 - Baixar todas as imagens detectadas no FastDL
 
 ### Problema observado

@@ -9,10 +9,13 @@ import re
 from urllib.parse import urljoin
 
 from playwright.async_api import async_playwright
+from PIL import Image
+from pillow_heif import register_heif_opener
 
 from modules.logger import Logger
 
 logger = Logger("media_resolver")
+register_heif_opener()
 
 FASTDL_URL = "https://fastdl.app/pt/"
 
@@ -172,6 +175,7 @@ class MediaResolver:
                 nome_unico = f"{nome}_{i + 1}{ext}"
                 destino = os.path.join(self.downloads_path, nome_unico)
                 await download.save_as(destino)
+                destino = self._converter_para_jpg_se_necessario(destino)
                 arquivos.append(destino)
                 logger.info(f"Imagem {i + 1}/{len(botoes)} baixada: {destino}")
                 await page.wait_for_timeout(500)
@@ -179,6 +183,32 @@ class MediaResolver:
                 logger.warning(f"Erro ao baixar imagem {i + 1}: {e}")
 
         return arquivos
+
+    def _converter_para_jpg_se_necessario(self, caminho: str) -> str:
+        """Converte HEIC/HEIF/WebP/PNG para JPG quando o Mercadoi pode rejeitar o upload."""
+        ext = os.path.splitext(caminho)[1].lower()
+        if ext in (".jpg", ".jpeg"):
+            return caminho
+        if ext not in (".heic", ".heif", ".webp", ".png"):
+            return caminho
+
+        destino = os.path.splitext(caminho)[0] + ".jpg"
+        try:
+            with Image.open(caminho) as img:
+                if img.mode not in ("RGB", "L"):
+                    img = img.convert("RGB")
+                elif img.mode == "L":
+                    img = img.convert("RGB")
+                img.save(destino, "JPEG", quality=92, optimize=True)
+            try:
+                os.remove(caminho)
+            except Exception:
+                pass
+            logger.info(f"Imagem convertida para JPG: {destino}")
+            return destino
+        except Exception as e:
+            logger.warning(f"Nao foi possivel converter {os.path.basename(caminho)} para JPG: {e}")
+            return caminho
 
     async def _remover_bloqueios(self, page):
         """Remove anuncios/modais que costumam interceptar cliques no FastDL."""

@@ -207,6 +207,58 @@ def _parse_logs_ultimos_dias(dias: int = 7) -> list[dict]:
     return todas
 
 
+def _execucoes_db(dias: int = 7) -> list[dict]:
+    db = _db_manager()
+    _, rows = db._todas_as_linhas()
+    limite = date.today() - timedelta(days=dias - 1)
+    itens = []
+    for r in rows:
+        criado = (r.get("criado_em") or "")[:10]
+        fim = r.get("fim_processamento") or ""
+        data_ref = (fim or criado)[:10]
+        try:
+            if data_ref and date.fromisoformat(data_ref) < limite:
+                continue
+        except Exception:
+            pass
+
+        status_raw = (r.get("status") or "").lower()
+        if status_raw in ("rascunho_salvo", "rascunho_salvo_sem_midia_video"):
+            status = "sucesso"
+        elif status_raw == "processando":
+            status = "processando"
+        elif "erro" in status_raw:
+            status = "falha"
+        else:
+            status = status_raw or "pendente"
+
+        inicio = (r.get("criado_em") or "")[11:19]
+        fim_hora = fim[11:19] if "T" in fim else (fim[11:19] if len(fim) >= 19 else "")
+        itens.append({
+            "execution_id": r.get("id_execucao") or str(r.get("_row_index", "")),
+            "row_id": r.get("_row_index"),
+            "inicio": inicio,
+            "fim": fim_hora,
+            "criado_em": r.get("criado_em", ""),
+            "atualizado_em": r.get("atualizado_em", ""),
+            "data": data_ref or criado,
+            "url": r.get("url_instagram", ""),
+            "titulo": r.get("titulo_gerado", ""),
+            "status": status,
+            "status_raw": r.get("status", ""),
+            "erros": [r.get("mensagem_erro", "")] if r.get("mensagem_erro") else [],
+            "screenshot": "",
+            "cidade": r.get("cidade_aplicada", ""),
+            "bairro": r.get("bairro_aplicado", ""),
+            "tipo": r.get("tipo_midia", ""),
+            "arquivo_midia": r.get("arquivo_midia", ""),
+            "resultado": r.get("resultado", ""),
+            "mercadoi_url": r.get("mercadoi_url", ""),
+        })
+    itens.sort(key=lambda x: (x.get("data") or "", x.get("fim") or x.get("inicio") or "", x.get("row_id") or 0), reverse=True)
+    return itens
+
+
 # ---------------------------------------------------------------------------
 # Estado do bot
 # ---------------------------------------------------------------------------
@@ -287,14 +339,20 @@ async def dashboard():
 
 @app.get("/api/execucoes")
 async def listar_execucoes(dias: int = 7):
-    return JSONResponse(_parse_logs_ultimos_dias(dias))
+    try:
+        return JSONResponse(_execucoes_db(dias))
+    except Exception:
+        return JSONResponse(_parse_logs_ultimos_dias(dias))
 
 
 @app.get("/api/execucoes/{data}")
 async def execucoes_do_dia(data: str):
     if not re.match(r"\d{4}-\d{2}-\d{2}", data):
         raise HTTPException(400, "Formato de data inválido. Use YYYY-MM-DD.")
-    return JSONResponse(_parse_logs_dia(data))
+    try:
+        return JSONResponse([e for e in _execucoes_db(365) if e.get("data") == data])
+    except Exception:
+        return JSONResponse(_parse_logs_dia(data))
 
 
 @app.get("/api/status")
@@ -579,6 +637,8 @@ async def listar_fila():
                 "status":      r.get("status", ""),
                 "mensagem_erro": r.get("mensagem_erro", ""),
                 "criado_em":   r.get("criado_em", ""),
+                "atualizado_em": r.get("atualizado_em", ""),
+                "mercadoi_url": r.get("mercadoi_url", ""),
             }
             for r in rows
             if r.get("status", "") in ("pendente", "processando")
