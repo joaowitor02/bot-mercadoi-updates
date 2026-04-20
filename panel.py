@@ -34,26 +34,64 @@ SCREENSHOTS_DIR = LOGS_DIR / "screenshots"
 # Auth
 # ---------------------------------------------------------------------------
 
-_SENHA: str = ""
-_SESSION_TOKENS: set[str] = set()
+_SENHA: str = ""          # senha do cliente
+_ADMIN_SENHA: str = ""   # senha do administrador (você)
+_LICENCA_EXPIRA: str = ""  # "YYYY-MM-DD" ou "" para sem expiração
+_SESSION_TOKENS: dict[str, str] = {}  # token -> "admin" | "user"
 
-# Rotas que não exigem autenticação
-_PUBLIC_PATHS = {"/login", "/favicon.ico"}
+# Rotas públicas (sem auth)
+_PUBLIC_PATHS = {"/login", "/favicon.ico", "/licenca-expirada"}
+
+# Rotas exclusivas do administrador
+_ADMIN_API_PATHS = frozenset({
+    "/api/config", "/api/config/senha", "/api/config/telegram",
+    "/api/config/admin-senha", "/api/config/licenca", "/api/testar-telegram",
+})
+
+
+def _licenca_expirada() -> bool:
+    if not _LICENCA_EXPIRA:
+        return False
+    try:
+        return date.fromisoformat(_LICENCA_EXPIRA) < date.today()
+    except Exception:
+        return False
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        if not _SENHA or request.url.path in _PUBLIC_PATHS:
+        path = request.url.path
+
+        if path in _PUBLIC_PATHS:
+            return await call_next(request)
+
+        # Sem senhas configuradas: acesso livre
+        if not _SENHA and not _ADMIN_SENHA:
             return await call_next(request)
 
         token = request.cookies.get("mercadoi_session", "")
-        if token in _SESSION_TOKENS:
-            return await call_next(request)
+        nivel = _SESSION_TOKENS.get(token, "")
 
-        if request.url.path.startswith("/api/") or request.url.path.startswith("/screenshots/"):
-            return JSONResponse({"error": "Não autenticado"}, status_code=401)
+        # Licença expirada bloqueia usuário comum (admin continua)
+        if _licenca_expirada() and nivel != "admin":
+            if path.startswith("/api/") or path.startswith("/screenshots/"):
+                return JSONResponse({"error": "Licença expirada", "expirada": True}, status_code=403)
+            return RedirectResponse("/licenca-expirada", status_code=302)
 
-        return RedirectResponse("/login", status_code=302)
+        # Não autenticado
+        if not nivel:
+            if path.startswith("/api/") or path.startswith("/screenshots/"):
+                return JSONResponse({"error": "Não autenticado"}, status_code=401)
+            return RedirectResponse("/login", status_code=302)
+
+        # Rotas exclusivas do admin
+        if path in _ADMIN_API_PATHS and nivel != "admin":
+            return JSONResponse(
+                {"error": "Acesso restrito ao administrador", "admin_required": True},
+                status_code=403,
+            )
+
+        return await call_next(request)
 
 
 app.add_middleware(AuthMiddleware)
@@ -61,12 +99,25 @@ app.add_middleware(AuthMiddleware)
 
 @app.on_event("startup")
 async def _startup():
-    global _SENHA
+    global _SENHA, _ADMIN_SENHA, _LICENCA_EXPIRA
     try:
         cfg = json.loads((BASE_DIR / "config.json").read_text(encoding="utf-8"))
-        _SENHA = cfg.get("panel_senha", "").strip()
+        _SENHA          = cfg.get("panel_senha",    "").strip()
+        _ADMIN_SENHA    = cfg.get("admin_senha",    "").strip()
+        _LICENCA_EXPIRA = cfg.get("licenca_expira", "").strip()
     except Exception:
         pass
+
+
+@app.get("/licenca-expirada", response_class=HTMLResponse)
+async def licenca_expirada_page():
+    html = BASE_DIR / "panel_static" / "licenca_expirada.html"
+    if html.exists():
+        return HTMLResponse(html.read_text(encoding="utf-8"))
+    return HTMLResponse(
+        "<h1 style='font-family:sans-serif;text-align:center;margin-top:10vh'>"
+        "Licença expirada — entre em contato para renovar.</h1>"
+    )
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -81,9 +132,19 @@ async def login_page(erro: str = ""):
 
 @app.post("/login")
 async def fazer_login(senha: str = Form(...)):
-    if senha == _SENHA:
+    # Admin tem prioridade (ignora expiração de licença)
+    if _ADMIN_SENHA and senha == _ADMIN_SENHA:
         token = secrets.token_hex(32)
-        _SESSION_TOKENS.add(token)
+        _SESSION_TOKENS[token] = "admin"
+        resp = RedirectResponse("/", status_code=303)
+        resp.set_cookie("mercadoi_session", token, httponly=True, samesite="strict")
+        return resp
+    # Usuário comum é bloqueado se licença expirou
+    if _SENHA and senha == _SENHA:
+        if _licenca_expirada():
+            return RedirectResponse("/licenca-expirada", status_code=303)
+        token = secrets.token_hex(32)
+        _SESSION_TOKENS[token] = "user"
         resp = RedirectResponse("/", status_code=303)
         resp.set_cookie("mercadoi_session", token, httponly=True, samesite="strict")
         return resp
@@ -93,7 +154,7 @@ async def fazer_login(senha: str = Form(...)):
 @app.post("/api/logout")
 async def logout(request: Request):
     token = request.cookies.get("mercadoi_session", "")
-    _SESSION_TOKENS.discard(token)
+    _SESSION_TOKENS.pop(token, None)
     resp = RedirectResponse("/login", status_code=303)
     resp.delete_cookie("mercadoi_session")
     return resp
@@ -356,13 +417,17 @@ async def execucoes_do_dia(data: str):
 
 
 @app.get("/api/status")
-async def status():
+async def status(request: Request):
+    token = request.cookies.get("mercadoi_session", "")
+    sem_auth = not _SENHA and not _ADMIN_SENHA
+    nivel = _SESSION_TOKENS.get(token, "admin" if sem_auth else "")
     return JSONResponse({
         "rodando":      _bot_rodando,
         "watch_ativo":  _watch_ativo,
         "hoje":         date.today().isoformat(),
-        "autenticado":  True,
+        "autenticado":  bool(nivel),
         "senha_ativa":  bool(_SENHA),
+        "nivel":        nivel,  # "admin" | "user" | ""
     })
 
 
@@ -573,12 +638,23 @@ async def get_config():
         cfg = _load_config()
         token   = cfg.get("telegram_bot_token", "").strip()
         chat_id = cfg.get("telegram_chat_id", "").strip()
+        expira  = cfg.get("licenca_expira", "").strip()
+        # Dias restantes de licença
+        dias_restantes = None
+        if expira:
+            try:
+                dias_restantes = (date.fromisoformat(expira) - date.today()).days
+            except Exception:
+                pass
         return JSONResponse({
-            "watch_intervalo_minutos": cfg.get("watch_intervalo_minutos", 5),
-            "telegram_configurado":   bool(token and chat_id),
-            "telegram_bot_token":     token,
-            "telegram_chat_id":       chat_id,
-            "senha_configurada":      bool(cfg.get("panel_senha", "").strip()),
+            "watch_intervalo_minutos":  cfg.get("watch_intervalo_minutos", 5),
+            "telegram_configurado":     bool(token and chat_id),
+            "telegram_bot_token":       token,
+            "telegram_chat_id":         chat_id,
+            "senha_configurada":        bool(cfg.get("panel_senha", "").strip()),
+            "admin_senha_configurada":  bool(cfg.get("admin_senha", "").strip()),
+            "licenca_expira":           expira,
+            "licenca_dias_restantes":   dias_restantes,
         })
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
@@ -638,6 +714,49 @@ async def salvar_telegram(body: TelegramRequest):
             json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8"
         )
         return JSONResponse({"ok": True})
+    except Exception as e:
+        return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
+
+
+class AdminSenhaRequest(BaseModel):
+    nova_senha: str
+
+
+@app.post("/api/config/admin-senha")
+async def salvar_admin_senha(body: AdminSenhaRequest):
+    global _ADMIN_SENHA
+    try:
+        cfg = _load_config()
+        cfg["admin_senha"] = body.nova_senha.strip()
+        (BASE_DIR / "config.json").write_text(
+            json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        _ADMIN_SENHA = cfg["admin_senha"]
+        return JSONResponse({"ok": True})
+    except Exception as e:
+        return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
+
+
+class LicencaRequest(BaseModel):
+    licenca_expira: str  # "YYYY-MM-DD" ou "" para sem expiração
+
+
+@app.post("/api/config/licenca")
+async def salvar_licenca(body: LicencaRequest):
+    global _LICENCA_EXPIRA
+    try:
+        expira = body.licenca_expira.strip()
+        if expira:
+            date.fromisoformat(expira)  # valida formato
+        cfg = _load_config()
+        cfg["licenca_expira"] = expira
+        (BASE_DIR / "config.json").write_text(
+            json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        _LICENCA_EXPIRA = expira
+        return JSONResponse({"ok": True})
+    except ValueError:
+        return JSONResponse({"ok": False, "msg": "Data inválida. Use AAAA-MM-DD"}, status_code=400)
     except Exception as e:
         return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
 
