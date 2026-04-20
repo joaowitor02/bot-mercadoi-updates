@@ -12,5 +12,6 @@
   "licenca_assinatura": "",
   "telegram_bot_token": "",
   "telegram_chat_id": "",
-  "version_check_url": ""
+  "version_check_url": "",
+  "usar_tunnel": false
 }

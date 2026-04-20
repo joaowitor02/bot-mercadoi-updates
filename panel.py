@@ -50,8 +50,20 @@ _PUBLIC_PATHS = {"/login", "/favicon.ico", "/licenca-expirada"}
 _ADMIN_API_PATHS = frozenset({
     "/api/config", "/api/config/senha", "/api/config/telegram",
     "/api/config/admin-senha", "/api/config/licenca", "/api/testar-telegram",
-    "/api/atualizar",
+    "/api/atualizar", "/api/tunnel/baixar",
 })
+
+# ---------------------------------------------------------------------------
+# Tunnel (cloudflared)
+# ---------------------------------------------------------------------------
+
+_TUNNEL_URL: str = ""
+_TUNNEL_PROCESSO: subprocess.Popen | None = None
+
+CLOUDFLARED_EXE = BASE_DIR / "cloudflared.exe"
+_CLOUDFLARED_DOWNLOAD_URL = (
+    "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -90,6 +102,67 @@ def _licenca_assinatura_valida(data_str: str, sig: str) -> bool:
         return _hmac_mod.compare_digest(_assinar_licenca(data_str), sig)
     except Exception:
         return False
+
+
+async def _baixar_cloudflared() -> bool:
+    try:
+        import httpx as _httpx
+        async with _httpx.AsyncClient(timeout=120, follow_redirects=True) as c:
+            r = await c.get(_CLOUDFLARED_DOWNLOAD_URL)
+            if r.status_code == 200:
+                CLOUDFLARED_EXE.write_bytes(r.content)
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def _notificar_tunnel_url(url: str):
+    import asyncio
+    try:
+        cfg = _load_config()
+        loop = asyncio.new_event_loop()
+        from modules.notificador import notificar
+        loop.run_until_complete(
+            notificar(cfg,
+                f"🔑 <b>Painel online</b>\n"
+                f"<a href='{url}'>{url}</a>\n\n"
+                f"Acesse com sua senha admin.")
+        )
+        loop.close()
+    except Exception:
+        pass
+
+
+def _tunnel_worker():
+    global _TUNNEL_URL, _TUNNEL_PROCESSO
+    try:
+        proc = subprocess.Popen(
+            [str(CLOUDFLARED_EXE), "tunnel", "--url", "http://localhost:8000"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+        )
+        _TUNNEL_PROCESSO = proc
+        _url_re = re.compile(r"https://[a-z0-9\-]+\.trycloudflare\.com")
+        for linha in proc.stdout:
+            m = _url_re.search(linha)
+            if m and not _TUNNEL_URL:
+                _TUNNEL_URL = m.group(0)
+                threading.Thread(
+                    target=_notificar_tunnel_url,
+                    args=(_TUNNEL_URL,),
+                    daemon=True,
+                ).start()
+        proc.wait()
+    except Exception:
+        pass
+    finally:
+        _TUNNEL_URL = ""
+        _TUNNEL_PROCESSO = None
 
 
 def _licenca_expirada() -> bool:
@@ -176,6 +249,14 @@ async def _startup():
 
         if dirty:
             path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
+
+        # Iniciar tunnel se cloudflared presente ou usar_tunnel=true no config
+        if CLOUDFLARED_EXE.exists():
+            threading.Thread(target=_tunnel_worker, daemon=True).start()
+        elif cfg.get("usar_tunnel", False):
+            ok = await _baixar_cloudflared()
+            if ok:
+                threading.Thread(target=_tunnel_worker, daemon=True).start()
     except Exception:
         pass
 
@@ -894,6 +975,32 @@ async def listar_fila():
         return JSONResponse({"count": len(fila), "items": fila})
     except Exception as e:
         return JSONResponse({"count": 0, "items": [], "error": str(e)})
+
+
+# ---------------------------------------------------------------------------
+# Endpoints — tunnel
+# ---------------------------------------------------------------------------
+
+@app.get("/api/tunnel")
+async def get_tunnel():
+    return JSONResponse({
+        "url":                  _TUNNEL_URL,
+        "ativo":                bool(_TUNNEL_URL),
+        "cloudflared_presente": CLOUDFLARED_EXE.exists(),
+    })
+
+
+@app.post("/api/tunnel/baixar")
+async def baixar_cloudflared_endpoint():
+    if CLOUDFLARED_EXE.exists():
+        if not _TUNNEL_URL:
+            threading.Thread(target=_tunnel_worker, daemon=True).start()
+        return JSONResponse({"ok": True, "msg": "cloudflared já está presente. Tunnel iniciando..."})
+    ok = await _baixar_cloudflared()
+    if ok:
+        threading.Thread(target=_tunnel_worker, daemon=True).start()
+        return JSONResponse({"ok": True, "msg": "cloudflared baixado. Tunnel iniciando — aguarde ~10s."})
+    return JSONResponse({"ok": False, "msg": "Falha ao baixar cloudflared. Verifique a conexão."}, status_code=500)
 
 
 # ---------------------------------------------------------------------------
