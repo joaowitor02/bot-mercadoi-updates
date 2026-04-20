@@ -571,13 +571,14 @@ async def reprocessar(body: ReprocessarRequest):
 async def get_config():
     try:
         cfg = _load_config()
+        token   = cfg.get("telegram_bot_token", "").strip()
+        chat_id = cfg.get("telegram_chat_id", "").strip()
         return JSONResponse({
             "watch_intervalo_minutos": cfg.get("watch_intervalo_minutos", 5),
-            "telegram_configurado": bool(
-                cfg.get("telegram_bot_token", "").strip() and
-                cfg.get("telegram_chat_id", "").strip()
-            ),
-            "senha_configurada": bool(cfg.get("panel_senha", "").strip()),
+            "telegram_configurado":   bool(token and chat_id),
+            "telegram_bot_token":     token,
+            "telegram_chat_id":       chat_id,
+            "senha_configurada":      bool(cfg.get("panel_senha", "").strip()),
         })
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
@@ -599,6 +600,57 @@ async def update_config(body: ConfigRequest):
             json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8"
         )
         return JSONResponse({"ok": True})
+    except Exception as e:
+        return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
+
+
+class SenhaRequest(BaseModel):
+    nova_senha: str
+
+
+@app.post("/api/config/senha")
+async def salvar_senha(body: SenhaRequest):
+    global _SENHA
+    try:
+        cfg = _load_config()
+        cfg["panel_senha"] = body.nova_senha.strip()
+        (BASE_DIR / "config.json").write_text(
+            json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        _SENHA = cfg["panel_senha"]
+        return JSONResponse({"ok": True})
+    except Exception as e:
+        return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
+
+
+class TelegramRequest(BaseModel):
+    telegram_bot_token: str
+    telegram_chat_id: str
+
+
+@app.post("/api/config/telegram")
+async def salvar_telegram(body: TelegramRequest):
+    try:
+        cfg = _load_config()
+        cfg["telegram_bot_token"] = body.telegram_bot_token.strip()
+        cfg["telegram_chat_id"]   = body.telegram_chat_id.strip()
+        (BASE_DIR / "config.json").write_text(
+            json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        return JSONResponse({"ok": True})
+    except Exception as e:
+        return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
+
+
+@app.post("/api/testar-telegram")
+async def testar_telegram():
+    try:
+        cfg = _load_config()
+        from modules.notificador import notificar
+        ok = await notificar(cfg, "✅ <b>Bot Mercadoi</b> — Teste de notificação funcionando!")
+        if ok:
+            return JSONResponse({"ok": True, "msg": "Mensagem enviada com sucesso!"})
+        return JSONResponse({"ok": False, "msg": "Falha ao enviar. Verifique o token e chat_id."}, status_code=400)
     except Exception as e:
         return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
 

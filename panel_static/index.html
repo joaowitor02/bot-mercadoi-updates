@@ -372,7 +372,7 @@
       <h2 class="text-sm font-semibold text-slate-800">Configurações</h2>
     </div>
 
-    <div class="p-5 grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+    <div class="p-5 grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
 
       <!-- Intervalo Watch -->
       <div class="space-y-2">
@@ -386,29 +386,58 @@
             Salvar
           </button>
         </div>
-        <p class="text-xs text-slate-400">Intervalo entre ciclos automáticos (<code class="bg-slate-100 px-1 rounded">--watch</code>)</p>
+        <p class="text-xs text-slate-400">Intervalo entre ciclos automáticos do Watch.</p>
+      </div>
+
+      <!-- Senha do Painel -->
+      <div class="space-y-2">
+        <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide">Senha do Painel</label>
+        <div class="flex items-center gap-2">
+          <input type="password" id="cfg-senha" autocomplete="new-password"
+            placeholder="Nova senha..."
+            class="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent" />
+          <button onclick="salvarSenha()"
+            class="h-9 px-3 bg-brand-500 hover:bg-brand-600 text-white text-xs font-semibold rounded-lg transition-colors whitespace-nowrap">
+            Salvar
+          </button>
+        </div>
+        <div class="flex items-center gap-2">
+          <span id="senha-badge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 text-slate-500">
+            <span class="w-1.5 h-1.5 rounded-full bg-slate-300"></span> Verificando...
+          </span>
+          <p class="text-xs text-slate-400">Deixe vazio para desativar o login.</p>
+        </div>
       </div>
 
       <!-- Telegram -->
       <div class="space-y-2">
         <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide">Notificações Telegram</label>
-        <div class="flex items-center gap-2">
-          <span id="telegram-badge" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 text-slate-500">
-            <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Verificando...
+        <div class="space-y-1.5">
+          <input type="text" id="cfg-tg-token" autocomplete="off" spellcheck="false"
+            placeholder="Token do bot  (ex: 123456:ABC-DEF...)"
+            class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent font-mono" />
+          <input type="text" id="cfg-tg-chat" autocomplete="off" spellcheck="false"
+            placeholder="Chat ID  (ex: -100123456789)"
+            class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent font-mono" />
+        </div>
+        <div class="flex items-center gap-2 flex-wrap">
+          <button onclick="salvarTelegram()"
+            class="h-8 px-3 bg-brand-500 hover:bg-brand-600 text-white text-xs font-semibold rounded-lg transition-colors">
+            Salvar
+          </button>
+          <button onclick="testarTelegram()" id="btn-tg-test"
+            class="h-8 px-3 border border-slate-200 hover:border-slate-300 text-slate-600 hover:text-slate-800 text-xs font-semibold rounded-lg transition-colors">
+            Testar envio
+          </button>
+          <span id="telegram-badge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 text-slate-500">
+            <span class="w-1.5 h-1.5 rounded-full bg-slate-300"></span> Verificando...
           </span>
         </div>
-        <p class="text-xs text-slate-400">Configure <code class="bg-slate-100 px-1 rounded">telegram_bot_token</code> e <code class="bg-slate-100 px-1 rounded">telegram_chat_id</code> no config.json</p>
-      </div>
-
-      <!-- Segurança -->
-      <div class="space-y-2">
-        <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide">Segurança do Painel</label>
-        <div class="flex items-center gap-2">
-          <span id="senha-badge" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 text-slate-500">
-            <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> Verificando...
-          </span>
-        </div>
-        <p class="text-xs text-slate-400">Configure <code class="bg-slate-100 px-1 rounded">panel_senha</code> no config.json para proteger o painel</p>
+        <p class="text-xs text-slate-400">
+          <a href="https://t.me/BotFather" target="_blank" class="text-brand-500 hover:underline">Criar bot no BotFather</a>
+          · Envie uma mensagem ao bot para obter o chat_id em
+          <code class="bg-slate-100 px-1 rounded">getUpdates</code>
+        </p>
       </div>
 
     </div>
@@ -1139,32 +1168,34 @@ async function carregarConfig() {
     if (r.status === 401) return;
     const d = await r.json();
 
-    // Intervalo
     if (d.watch_intervalo_minutos) {
       document.getElementById('cfg-intervalo').value = d.watch_intervalo_minutos;
     }
 
+    // Pré-preencher campos Telegram
+    if (d.telegram_bot_token !== undefined) document.getElementById('cfg-tg-token').value = d.telegram_bot_token;
+    if (d.telegram_chat_id   !== undefined) document.getElementById('cfg-tg-chat').value  = d.telegram_chat_id;
+
     // Badge Telegram
     const tgBadge = document.getElementById('telegram-badge');
     if (d.telegram_configurado) {
-      tgBadge.className = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-100 text-emerald-700';
+      tgBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-100 text-emerald-700';
       tgBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Ativo';
     } else {
-      tgBadge.className = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 text-slate-400';
+      tgBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 text-slate-400';
       tgBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-slate-300"></span> Não configurado';
     }
 
     // Badge senha
     const snBadge = document.getElementById('senha-badge');
     if (d.senha_configurada) {
-      snBadge.className = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-100 text-emerald-700';
+      snBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-100 text-emerald-700';
       snBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Protegido';
     } else {
-      snBadge.className = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-amber-100 text-amber-700';
+      snBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-100 text-amber-700';
       snBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span> Sem senha';
     }
 
-    // Logout button (só mostra se senha ativa)
     if (d.senha_configurada) {
       document.getElementById('btn-logout').classList.remove('hidden');
       document.getElementById('btn-logout').classList.add('flex');
@@ -1184,6 +1215,55 @@ async function salvarIntervalo() {
     const d = await r.json();
     d.ok ? toast(`Intervalo salvo: ${val} minuto(s)`) : toast(d.msg, 'erro');
   } catch { toast('Erro ao salvar', 'erro'); }
+}
+
+async function salvarSenha() {
+  const val = document.getElementById('cfg-senha').value;
+  try {
+    const r = await fetch('/api/config/senha', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nova_senha: val }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      toast(val.trim() ? 'Senha salva — painel protegido' : 'Senha removida — login desativado');
+      document.getElementById('cfg-senha').value = '';
+      await carregarConfig();
+    } else {
+      toast(d.msg || 'Erro ao salvar senha', 'erro');
+    }
+  } catch { toast('Erro de conexão', 'erro'); }
+}
+
+async function salvarTelegram() {
+  const token  = document.getElementById('cfg-tg-token').value.trim();
+  const chatId = document.getElementById('cfg-tg-chat').value.trim();
+  try {
+    const r = await fetch('/api/config/telegram', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ telegram_bot_token: token, telegram_chat_id: chatId }),
+    });
+    const d = await r.json();
+    d.ok ? toast('Configuração Telegram salva') : toast(d.msg || 'Erro', 'erro');
+    if (d.ok) await carregarConfig();
+  } catch { toast('Erro de conexão', 'erro'); }
+}
+
+async function testarTelegram() {
+  const btn = document.getElementById('btn-tg-test');
+  btn.disabled = true;
+  btn.textContent = 'Enviando...';
+  try {
+    const r = await fetch('/api/testar-telegram', { method: 'POST' });
+    const d = await r.json();
+    d.ok ? toast('Mensagem enviada! Verifique o Telegram') : toast(d.msg || 'Falha ao enviar', 'erro');
+  } catch { toast('Erro de conexão', 'erro'); }
+  finally {
+    btn.disabled = false;
+    btn.textContent = 'Testar envio';
+  }
 }
 
 // Intercepta respostas 401 globalmente
