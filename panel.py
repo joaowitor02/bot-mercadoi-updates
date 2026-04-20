@@ -50,7 +50,7 @@ _PUBLIC_PATHS = {"/login", "/favicon.ico", "/licenca-expirada"}
 _ADMIN_API_PATHS = frozenset({
     "/api/config", "/api/config/senha", "/api/config/telegram",
     "/api/config/admin-senha", "/api/config/licenca", "/api/testar-telegram",
-    "/api/atualizar", "/api/tunnel/baixar",
+    "/api/atualizar", "/api/tunnel/baixar", "/api/config/avancada",
 })
 
 # ---------------------------------------------------------------------------
@@ -807,6 +807,16 @@ async def get_config():
             "admin_senha_configurada":  bool(cfg.get("admin_senha", "").strip()),
             "licenca_expira":           expira,
             "licenca_dias_restantes":   dias_restantes,
+            # campos avançados
+            "mercadoi_url":             cfg.get("mercadoi_url", ""),
+            "downloads_path":           cfg.get("downloads_path", ""),
+            "deepseek_api_key":         cfg.get("deepseek_api_key", ""),
+            "deepseek_profile_path":    cfg.get("deepseek_profile_path", ""),
+            "mercadoi_profile_path":    cfg.get("mercadoi_profile_path", ""),
+            "chrome_path":              cfg.get("chrome_path", ""),
+            "version_check_url":        cfg.get("version_check_url", ""),
+            "usar_tunnel":              cfg.get("usar_tunnel", False),
+            "usar_deepseek_api":        cfg.get("usar_deepseek_api", False),
         })
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
@@ -914,6 +924,36 @@ async def salvar_licenca(body: LicencaRequest):
         return JSONResponse({"ok": True})
     except ValueError:
         return JSONResponse({"ok": False, "msg": "Data inválida. Use AAAA-MM-DD"}, status_code=400)
+    except Exception as e:
+        return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
+
+
+class ConfigAvancadaRequest(BaseModel):
+    mercadoi_url:          str | None = None
+    downloads_path:        str | None = None
+    deepseek_api_key:      str | None = None
+    deepseek_profile_path: str | None = None
+    mercadoi_profile_path: str | None = None
+    chrome_path:           str | None = None
+    version_check_url:     str | None = None
+    usar_tunnel:           bool | None = None
+    usar_deepseek_api:     bool | None = None
+
+
+@app.post("/api/config/avancada")
+async def salvar_config_avancada(body: ConfigAvancadaRequest):
+    try:
+        cfg = _load_config()
+        campos = body.model_dump(exclude_none=True)
+        # Sanitizar strings
+        for k, v in campos.items():
+            if isinstance(v, str):
+                campos[k] = v.strip()
+        cfg.update(campos)
+        (BASE_DIR / "config.json").write_text(
+            json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        return JSONResponse({"ok": True})
     except Exception as e:
         return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
 

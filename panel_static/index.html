@@ -530,6 +530,91 @@
         </p>
       </div>
 
+      <!-- Config Avançada -->
+      <div class="sm:col-span-2 lg:col-span-3 border-t border-slate-100 pt-4">
+        <button onclick="toggleAvancada()" class="flex items-center gap-2 text-xs font-semibold text-slate-400 hover:text-slate-600 transition-colors mb-3">
+          <svg id="avancada-chevron" class="w-3.5 h-3.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+          </svg>
+          CONFIG AVANÇADA
+        </button>
+        <div id="avancada-body" class="hidden grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+
+          <div class="space-y-1">
+            <label class="block text-xs text-slate-400">URL do Mercadoi</label>
+            <input id="adv-mercadoi-url" type="text" autocomplete="off"
+              placeholder="https://mercadoi.com.br"
+              class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent" />
+          </div>
+
+          <div class="space-y-1">
+            <label class="block text-xs text-slate-400">Pasta de Downloads</label>
+            <input id="adv-downloads-path" type="text" autocomplete="off"
+              placeholder="C:\Users\...\Downloads"
+              class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 font-mono focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent" />
+          </div>
+
+          <div class="space-y-1">
+            <label class="block text-xs text-slate-400">Chave API DeepSeek</label>
+            <div class="relative">
+              <input id="adv-deepseek-key" type="password" autocomplete="off" spellcheck="false"
+                placeholder="sk-..."
+                class="w-full border border-slate-200 rounded-xl px-3 py-2 pr-9 text-sm text-slate-700 font-mono focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent" />
+              <button onclick="toggleVer('adv-deepseek-key')" class="absolute right-2 top-2 text-slate-300 hover:text-slate-500" title="Mostrar/ocultar">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="space-y-1">
+            <label class="block text-xs text-slate-400">Perfil Chrome — Mercadoi</label>
+            <input id="adv-mercadoi-profile" type="text" autocomplete="off"
+              placeholder="C:\chrome_bot_mercadoi"
+              class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 font-mono focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent" />
+          </div>
+
+          <div class="space-y-1">
+            <label class="block text-xs text-slate-400">Perfil Chrome — DeepSeek</label>
+            <input id="adv-deepseek-profile" type="text" autocomplete="off"
+              placeholder="C:\chrome_bot_deepseek"
+              class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 font-mono focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent" />
+          </div>
+
+          <div class="space-y-1">
+            <label class="block text-xs text-slate-400">Caminho do Chrome (opcional)</label>
+            <input id="adv-chrome-path" type="text" autocomplete="off"
+              placeholder="C:\Program Files\Google\Chrome\..."
+              class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 font-mono focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent" />
+          </div>
+
+          <div class="space-y-1">
+            <label class="block text-xs text-slate-400">URL de verificação de versão</label>
+            <input id="adv-version-url" type="text" autocomplete="off"
+              placeholder="https://raw.githubusercontent.com/..."
+              class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 font-mono focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent" />
+          </div>
+
+          <div class="space-y-2 flex flex-col justify-end">
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" id="adv-usar-tunnel" class="w-4 h-4 rounded accent-brand-500" />
+              <span class="text-sm text-slate-600">Ativar tunnel automático</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" id="adv-usar-deepseek" class="w-4 h-4 rounded accent-brand-500" />
+              <span class="text-sm text-slate-600">Usar API DeepSeek</span>
+            </label>
+          </div>
+
+          <div class="flex items-end">
+            <button onclick="salvarAvancada()"
+              class="h-9 px-4 bg-slate-700 hover:bg-slate-800 text-white text-sm font-semibold rounded-xl transition-colors">
+              Salvar config avançada
+            </button>
+          </div>
+
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -1325,6 +1410,19 @@ async function carregarConfig() {
       document.getElementById('btn-logout').classList.remove('hidden');
       document.getElementById('btn-logout').classList.add('flex');
     }
+
+    // Campos avançados
+    const set = (id, val) => { const el = document.getElementById(id); if (el && val !== undefined) el.value = val; };
+    const setChk = (id, val) => { const el = document.getElementById(id); if (el && val !== undefined) el.checked = !!val; };
+    set('adv-mercadoi-url',    d.mercadoi_url);
+    set('adv-downloads-path',  d.downloads_path);
+    set('adv-deepseek-key',    d.deepseek_api_key);
+    set('adv-mercadoi-profile', d.mercadoi_profile_path);
+    set('adv-deepseek-profile', d.deepseek_profile_path);
+    set('adv-chrome-path',     d.chrome_path);
+    set('adv-version-url',     d.version_check_url);
+    setChk('adv-usar-tunnel',  d.usar_tunnel);
+    setChk('adv-usar-deepseek', d.usar_deepseek_api);
   } catch {}
 }
 
@@ -1430,6 +1528,47 @@ async function testarTelegram() {
     btn.disabled = false;
     btn.textContent = 'Testar envio';
   }
+}
+
+function toggleAvancada() {
+  const body    = document.getElementById('avancada-body');
+  const chevron = document.getElementById('avancada-chevron');
+  const hidden  = body.classList.contains('hidden');
+  body.classList.toggle('hidden', !hidden);
+  chevron.style.transform = hidden ? 'rotate(90deg)' : '';
+}
+
+function toggleVer(id) {
+  const el = document.getElementById(id);
+  el.type = el.type === 'password' ? 'text' : 'password';
+}
+
+async function salvarAvancada() {
+  const payload = {
+    mercadoi_url:          document.getElementById('adv-mercadoi-url').value,
+    downloads_path:        document.getElementById('adv-downloads-path').value,
+    deepseek_api_key:      document.getElementById('adv-deepseek-key').value,
+    mercadoi_profile_path: document.getElementById('adv-mercadoi-profile').value,
+    deepseek_profile_path: document.getElementById('adv-deepseek-profile').value,
+    chrome_path:           document.getElementById('adv-chrome-path').value,
+    version_check_url:     document.getElementById('adv-version-url').value,
+    usar_tunnel:           document.getElementById('adv-usar-tunnel').checked,
+    usar_deepseek_api:     document.getElementById('adv-usar-deepseek').checked,
+  };
+  // Remove campos vazios para não sobrescrever com string vazia inadvertidamente
+  // (booleans sempre enviados)
+  Object.keys(payload).forEach(k => {
+    if (typeof payload[k] === 'string' && payload[k].trim() === '') delete payload[k];
+  });
+  try {
+    const r = await fetch('/api/config/avancada', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const d = await r.json();
+    d.ok ? toast('Config avançada salva') : toast(d.msg || 'Erro ao salvar', 'erro');
+  } catch { toast('Erro de conexão', 'erro'); }
 }
 
 async function verificarTunnel() {
