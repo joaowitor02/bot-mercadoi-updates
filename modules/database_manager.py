@@ -14,7 +14,7 @@ _CAMPOS_VALIDOS = frozenset({
     "url_instagram", "status", "titulo_gerado", "tipo_midia",
     "arquivo_midia", "cidade_aplicada", "bairro_aplicado",
     "fim_processamento", "resultado", "mensagem_erro", "id_execucao",
-    "mercadoi_url",
+    "mercadoi_url", "tentativas",
 })
 
 _CREATE_TABLE = """
@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS imoveis (
     mensagem_erro     TEXT    DEFAULT '',
     id_execucao       TEXT    DEFAULT '',
     mercadoi_url      TEXT    DEFAULT '',
+    tentativas        INTEGER DEFAULT 0,
     criado_em         TEXT    DEFAULT (datetime('now', 'localtime')),
     atualizado_em     TEXT    DEFAULT (datetime('now', 'localtime'))
 )
@@ -62,6 +63,8 @@ class DatabaseManager:
                 cols = {r["name"] for r in conn.execute("PRAGMA table_info(imoveis)").fetchall()}
                 if "mercadoi_url" not in cols:
                     conn.execute("ALTER TABLE imoveis ADD COLUMN mercadoi_url TEXT DEFAULT ''")
+                if "tentativas" not in cols:
+                    conn.execute("ALTER TABLE imoveis ADD COLUMN tentativas INTEGER DEFAULT 0")
                 conn.commit()
 
     def _to_dict(self, row) -> dict:
@@ -169,6 +172,7 @@ class DatabaseManager:
                     return True
                 conn.execute(
                     "UPDATE imoveis SET status='pendente', mensagem_erro='', "
+                    "tentativas=tentativas+1, "
                     "atualizado_em=datetime('now','localtime') WHERE id=?",
                     (row["id"],),
                 )

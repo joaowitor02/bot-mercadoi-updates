@@ -300,12 +300,16 @@
 
     <!-- Tabela da Fila -->
     <div class="bg-white rounded-2xl border border-slate-100 overflow-hidden">
-      <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+      <div class="px-6 py-3 border-b border-slate-100 flex flex-wrap items-center gap-3">
         <div>
           <h2 class="text-sm font-semibold text-slate-800">Itens na Fila</h2>
-          <p class="text-xs text-slate-400">Pendentes e com erro aguardando processamento</p>
         </div>
-        <div class="flex items-center gap-2">
+        <div class="flex gap-1.5">
+          <button onclick="setFilaFiltro('todos')"      id="ff-todos"      class="fila-filtro-btn active px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-800 text-white">Todos</button>
+          <button onclick="setFilaFiltro('pendente')"   id="ff-pendente"   class="fila-filtro-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200">Pendente</button>
+          <button onclick="setFilaFiltro('erro')"       id="ff-erro"       class="fila-filtro-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200">Erro</button>
+        </div>
+        <div class="ml-auto flex items-center gap-2">
           <span id="fila-item-count" class="text-xs text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full">0 itens</span>
           <button onclick="limparPendentes()" class="text-xs text-red-500 hover:text-red-700 font-medium px-2.5 py-1 rounded-lg border border-red-100 hover:bg-red-50 transition-colors">Limpar pendentes</button>
         </div>
@@ -1277,26 +1281,55 @@ function exportarCSV() {
 // Fila
 // ---------------------------------------------------------------------------
 let _filaItems = [];
+let _filaFiltro = 'todos';
+
+function setFilaFiltro(filtro) {
+  _filaFiltro = filtro;
+  document.querySelectorAll('.fila-filtro-btn').forEach(b => {
+    b.className = 'fila-filtro-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200';
+  });
+  const btn = document.getElementById(`ff-${filtro}`);
+  if (btn) btn.className = 'fila-filtro-btn active px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-800 text-white';
+  renderFila(_filaItemsFiltrados());
+}
+
+function _filaItemsFiltrados() {
+  if (_filaFiltro === 'todos') return _filaItems;
+  if (_filaFiltro === 'erro') return _filaItems.filter(i => i.status.includes('erro'));
+  return _filaItems.filter(i => i.status === _filaFiltro);
+}
 
 async function carregarFila() {
   try {
     const r = await fetch('/api/fila');
     const d = await r.json();
     _filaItems = d.items || [];
-    const count = _filaItems.length;
-    document.getElementById('fila-count').textContent = count || '0';
+    const total = _filaItems.length;
+    const pendentes = _filaItems.filter(i => i.status === 'pendente').length;
+    const erros = _filaItems.filter(i => i.status.includes('erro')).length;
+    document.getElementById('fila-count').textContent = total || '0';
     const itemCount = document.getElementById('fila-item-count');
-    if (itemCount) itemCount.textContent = `${count} ${count === 1 ? 'item' : 'itens'}`;
-    renderFila(_filaItems);
+    if (itemCount) {
+      const partes = [];
+      if (pendentes) partes.push(`${pendentes} pendente${pendentes>1?'s':''}`);
+      if (erros)     partes.push(`${erros} erro${erros>1?'s':''}`);
+      itemCount.textContent = partes.length ? partes.join(' · ') : '0 itens';
+    }
+    // Atualiza contadores nos botões de filtro
+    document.getElementById('ff-todos').textContent    = `Todos (${total})`;
+    document.getElementById('ff-pendente').textContent = `Pendente (${pendentes})`;
+    document.getElementById('ff-erro').textContent     = `Erro (${erros})`;
+    renderFila(_filaItemsFiltrados());
   } catch {}
 }
 
 function renderFila(items) {
   const tbody = document.getElementById('fila-body');
   if (!items.length) {
-    tbody.innerHTML = `<tr><td colspan="6" class="text-center py-16 text-slate-400 text-sm">
-      Fila vazia — nenhum item pendente ou com erro
-    </td></tr>`;
+    const msgFiltro = _filaFiltro === 'todos'
+      ? 'Fila vazia — nenhum item pendente ou com erro'
+      : `Nenhum item com status "${_filaFiltro}"`;
+    tbody.innerHTML = `<tr><td colspan="6" class="text-center py-16 text-slate-400 text-sm">${msgFiltro}</td></tr>`;
     return;
   }
   const statusBadge = {
@@ -1309,13 +1342,17 @@ function renderFila(items) {
                 : item.status === 'processando' ? 'Processando'
                 : 'Erro';
     const criado = item.criado_em ? item.criado_em.slice(0,16).replace('T',' ') : '—';
+    const tentativas = (item.tentativas || 0);
+    const tentativasHtml = tentativas > 0
+      ? `<span class="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-600" title="${tentativas} tentativa${tentativas>1?'s':''} anterior${tentativas>1?'es':''}">${tentativas}×</span>`
+      : '';
     return `<tr class="border-b border-slate-50 row-hover">
       <td class="px-6 py-3.5 font-mono text-xs text-slate-400">${item.id}</td>
       <td class="px-4 py-3.5 max-w-xs">
         <a href="${esc(item.url)}" target="_blank" class="text-xs text-brand-500 hover:underline truncate block max-w-xs">${esc(item.url)}</a>
       </td>
       <td class="px-4 py-3.5">
-        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ring-1 ${cls}">${label}</span>
+        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ring-1 ${cls}">${label}</span>${tentativasHtml}
       </td>
       <td class="px-4 py-3.5 text-xs text-red-500 max-w-xs">
         <span class="truncate block max-w-[200px]" title="${esc(item.mensagem_erro || '')}">${esc(item.mensagem_erro || '—')}</span>
@@ -1362,10 +1399,11 @@ async function reprocessar(url) {
       body: JSON.stringify({ url }),
     });
     if (r.status === 401) { window.location.href = '/login'; return; }
+    if (r.status === 409) { toast('Aguarde o bot terminar antes de reprocessar', 'erro'); return; }
     const d = await r.json();
     if (d.ok) {
       toast('Imóvel voltou para a fila de pendentes');
-      await Promise.all([carregarExecucoes(), carregarPendentes()]);
+      await Promise.all([carregarFila(), carregarExecucoes(), carregarPendentes()]);
     } else {
       toast(d.msg || 'Erro ao reprocessar', 'erro');
     }

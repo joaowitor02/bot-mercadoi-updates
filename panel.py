@@ -780,7 +780,14 @@ async def adicionar_url(body: AdicionarRequest):
                 except Exception as e:
                     results.append({"url": url, "status": "erro", "msg": str(e)})
             else:
-                results.append({"url": url, "status": "duplicada", "msg": "Já existe na fila"})
+                _STATUS_PUBLICADO = {"rascunho_salvo", "rascunho_salvo_sem_midia_video"}
+                if status_existente in _STATUS_PUBLICADO:
+                    msg_dup = "Já publicado com sucesso"
+                elif status_existente == "pendente":
+                    msg_dup = "Já está na fila aguardando processamento"
+                else:
+                    msg_dup = "Já existe na fila"
+                results.append({"url": url, "status": "duplicada", "msg": msg_dup})
             continue
         try:
             linha = sheet.adicionar_pendente(url)
@@ -1059,13 +1066,14 @@ async def listar_fila():
         _, rows = db._todas_as_linhas()
         fila = [
             {
-                "id":          r["_row_index"],
-                "url":         r.get("url_instagram", ""),
-                "status":      r.get("status", ""),
+                "id":            r["_row_index"],
+                "url":           r.get("url_instagram", ""),
+                "status":        r.get("status", ""),
                 "mensagem_erro": r.get("mensagem_erro", ""),
-                "criado_em":   r.get("criado_em", ""),
+                "tentativas":    r.get("tentativas", 0),
+                "criado_em":     r.get("criado_em", ""),
                 "atualizado_em": r.get("atualizado_em", ""),
-                "mercadoi_url": r.get("mercadoi_url", ""),
+                "mercadoi_url":  r.get("mercadoi_url", ""),
             }
             for r in rows
             if r.get("status", "") in ("pendente", "processando")
