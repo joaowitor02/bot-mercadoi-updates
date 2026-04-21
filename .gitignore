@@ -36,3 +36,6 @@ build/
 
 # Arquivos de saída acidental do pip
 =*
+
+# Flag de instalação gerada pelo launcher (local por máquina)
+.installed

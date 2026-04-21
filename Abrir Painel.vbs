@@ -1,22 +1,104 @@
-Dim objShell, strDir, objHTTP, blnRodando
+'==============================================================================
+'  Bot Mercadoi — Iniciador
+'  Duplo-clique para abrir o painel de controle no navegador.
+'
+'  Na primeira execucao instala automaticamente todas as dependencias.
+'  Nas proximas, abre o painel em menos de 2 segundos.
+'==============================================================================
+Option Explicit
+
+Dim objShell, objFSO, strDir, strLogs, strFlag
 
 Set objShell = CreateObject("WScript.Shell")
-strDir = Left(WScript.ScriptFullName, InStrRev(WScript.ScriptFullName, "\"))
+Set objFSO   = CreateObject("Scripting.FileSystemObject")
 
-' Verifica se o painel já está rodando
-blnRodando = False
-On Error Resume Next
-Set objHTTP = CreateObject("MSXML2.XMLHTTP")
-objHTTP.open "GET", "http://localhost:8000/api/status", False
-objHTTP.send
-blnRodando = (Err.Number = 0 And objHTTP.status = 200)
-On Error GoTo 0
+' Diretorio do script (sem barra final)
+strDir  = Left(WScript.ScriptFullName, InStrRev(WScript.ScriptFullName, "\") - 1)
+strLogs = strDir & "\logs"
+strFlag = strDir & "\.installed"
 
-If Not blnRodando Then
-    ' Instala dependências e inicia o painel sem mostrar terminal
-    objShell.Run "cmd /c cd /d """ & strDir & """ && py -m pip install -r requirements.txt -q && py panel.py", 0, False
-    WScript.Sleep 4000
+' === 1. Painel ja esta no ar? Abre o navegador e sai =========================
+If PainelRodando() Then
+    objShell.Run "http://localhost:8000"
+    WScript.Quit 0
 End If
 
-' Abre o painel no navegador padrão
+' === 2. Verifica Python =======================================================
+If objShell.Run("py --version", 0, True) <> 0 Then
+    MsgBox "Python nao foi encontrado." & vbCrLf & vbCrLf & _
+           "Instale o Python 3.10+ em:" & vbCrLf & _
+           "  https://www.python.org/downloads/" & vbCrLf & vbCrLf & _
+           "IMPORTANTE: marque 'Add Python to PATH' durante a instalacao.", _
+           vbCritical, "Bot Mercadoi — Configuracao necessaria"
+    WScript.Quit 1
+End If
+
+' === 3. Cria pasta de logs ====================================================
+If Not objFSO.FolderExists(strLogs) Then objFSO.CreateFolder strLogs
+
+' === 4. Primeira execucao: instala dependencias ===============================
+If Not objFSO.FileExists(strFlag) Then
+    ' Instala pacotes Python
+    Executar "py -m pip install --upgrade pip -q"
+    Executar "py -m pip install -r """ & strDir & "\requirements.txt"" -q"
+
+    ' Instala o browser Chromium do Playwright
+    Executar "py -m playwright install chromium"
+
+    ' Marca como instalado
+    Dim f : Set f = objFSO.CreateTextFile(strFlag, True)
+    f.WriteLine Now()
+    f.Close
+End If
+
+' === 5. Inicia o painel (sem janela de terminal) ==============================
+Dim strCmd
+strCmd = "cmd /c cd /d """ & strDir & """ && " & _
+         "py panel.py >> """ & strLogs & "\painel.log"" 2>&1"
+objShell.Run strCmd, 0, False   ' 0 = sem janela, False = nao aguarda
+
+' === 6. Aguarda o painel responder (ate 25 segundos) =========================
+Dim i, blnOk
+blnOk = False
+For i = 1 To 25
+    WScript.Sleep 1000
+    If PainelRodando() Then
+        blnOk = True
+        Exit For
+    End If
+Next
+
+If Not blnOk Then
+    MsgBox "O painel nao respondeu apos 25 segundos." & vbCrLf & vbCrLf & _
+           "Verifique o log de erros em:" & vbCrLf & _
+           "  " & strLogs & "\painel.log", _
+           vbExclamation, "Bot Mercadoi — Erro ao iniciar"
+    WScript.Quit 1
+End If
+
+' === 7. Abre o navegador ======================================================
 objShell.Run "http://localhost:8000"
+WScript.Quit 0
+
+
+'==============================================================================
+' Funcoes auxiliares
+'==============================================================================
+
+Function PainelRodando()
+    Dim obj
+    On Error Resume Next
+    Set obj = CreateObject("MSXML2.XMLHTTP")
+    obj.open "GET", "http://localhost:8000/api/status", False
+    obj.send
+    PainelRodando = (Err.Number = 0 And obj.status = 200)
+    On Error GoTo 0
+End Function
+
+Sub Executar(strComando)
+    ' Roda o comando no diretorio do projeto e redireciona saida para o log
+    Dim strFull
+    strFull = "cmd /c cd /d """ & strDir & """ && " & strComando & _
+              " >> """ & strLogs & "\setup.log"" 2>&1"
+    objShell.Run strFull, 0, True   ' True = aguarda terminar
+End Sub
