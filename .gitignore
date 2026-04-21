@@ -2,6 +2,7 @@
 config.json
 credentials.json
 botmercadoi.db
+*.credentials
 botmercadoi.db-*
 *.sqlite
 *.sqlite3
