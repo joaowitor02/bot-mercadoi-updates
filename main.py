@@ -228,6 +228,25 @@ async def processar_link(row: dict, sheet, config: dict):
         status.erro("erro_extracao", motivo_invalido)
         return
 
+    # Garante links de contato sempre presentes quando disponíveis.
+    # url_publicacao: sempre o link do post do Instagram (sempre conhecido).
+    if not dados.get("url_publicacao"):
+        dados["url_publicacao"] = url
+        logger.info(f"[{execution_id}] url_publicacao definida a partir da URL do post")
+
+    # whatsapp_url: usa o número padrão do config quando o post não menciona WhatsApp.
+    if not dados.get("whatsapp_url"):
+        whatsapp_default = config.get("whatsapp_default", "").strip()
+        if whatsapp_default:
+            dados["whatsapp_url"] = whatsapp_default
+            logger.info(f"[{execution_id}] whatsapp_url definido a partir do config (padrão)")
+        else:
+            logger.warning(f"[{execution_id}] whatsapp_url ausente — configure 'whatsapp_default' no config")
+
+    # instagram_url: perfil do anunciante. Se DeepSeek não extraiu, não temos fallback confiável.
+    if not dados.get("instagram_url"):
+        logger.warning(f"[{execution_id}] instagram_url ausente — ícone do Instagram não será exibido")
+
     sheet.atualizar_campo(row_index, "titulo_gerado", dados.get("titulo", ""))
     logger.info(f"[{execution_id}] Título: {dados.get('titulo', '')[:70]}")
 

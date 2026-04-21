@@ -624,6 +624,13 @@
               class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 font-mono focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent" />
           </div>
 
+          <div class="space-y-1">
+            <label class="block text-xs text-slate-400">WhatsApp padrão (quando o post não mencionar)</label>
+            <input id="adv-whatsapp-default" type="text" autocomplete="off"
+              placeholder="https://wa.me/+5583999999999"
+              class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 font-mono focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent" />
+          </div>
+
           <div class="space-y-2 flex flex-col justify-end">
             <label class="flex items-center gap-2 cursor-pointer select-none">
               <input type="checkbox" id="adv-usar-tunnel" class="w-4 h-4 rounded accent-brand-500" />
@@ -1495,15 +1502,16 @@ async function carregarConfig() {
 
     const set = (id, val) => { const el = document.getElementById(id); if (el && val !== undefined) el.value = val; };
     const setChk = (id, val) => { const el = document.getElementById(id); if (el && val !== undefined) el.checked = !!val; };
-    set('adv-mercadoi-url',    d.mercadoi_url);
-    set('adv-downloads-path',  d.downloads_path);
-    set('adv-deepseek-key',    d.deepseek_api_key);
-    set('adv-mercadoi-profile', d.mercadoi_profile_path);
-    set('adv-deepseek-profile', d.deepseek_profile_path);
-    set('adv-chrome-path',     d.chrome_path);
-    set('adv-version-url',     d.version_check_url);
-    setChk('adv-usar-tunnel',  d.usar_tunnel);
-    setChk('adv-usar-deepseek', d.usar_deepseek_api);
+    set('adv-mercadoi-url',       d.mercadoi_url);
+    set('adv-downloads-path',     d.downloads_path);
+    set('adv-deepseek-key',       d.deepseek_api_key);
+    set('adv-mercadoi-profile',   d.mercadoi_profile_path);
+    set('adv-deepseek-profile',   d.deepseek_profile_path);
+    set('adv-chrome-path',        d.chrome_path);
+    set('adv-version-url',        d.version_check_url);
+    set('adv-whatsapp-default',   d.whatsapp_default);
+    setChk('adv-usar-tunnel',     d.usar_tunnel);
+    setChk('adv-usar-deepseek',   d.usar_deepseek_api);
   } catch {}
 }
 
@@ -1632,6 +1640,7 @@ async function salvarAvancada() {
     deepseek_profile_path: document.getElementById('adv-deepseek-profile').value,
     chrome_path:           document.getElementById('adv-chrome-path').value,
     version_check_url:     document.getElementById('adv-version-url').value,
+    whatsapp_default:      document.getElementById('adv-whatsapp-default').value,
     usar_tunnel:           document.getElementById('adv-usar-tunnel').checked,
     usar_deepseek_api:     document.getElementById('adv-usar-deepseek').checked,
   };

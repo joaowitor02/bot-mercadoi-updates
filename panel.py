@@ -863,6 +863,7 @@ async def get_config():
             "version_check_url":        cfg.get("version_check_url", ""),
             "usar_tunnel":              cfg.get("usar_tunnel", False),
             "usar_deepseek_api":        cfg.get("usar_deepseek_api", False),
+            "whatsapp_default":         cfg.get("whatsapp_default", ""),
         })
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
@@ -992,6 +993,7 @@ class ConfigAvancadaRequest(BaseModel):
     version_check_url:     str | None = None
     usar_tunnel:           bool | None = None
     usar_deepseek_api:     bool | None = None
+    whatsapp_default:      str | None = None
 
 
 @app.post("/api/config/avancada")

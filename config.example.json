@@ -16,5 +16,6 @@
   "telegram_bot_token": "",
   "telegram_chat_id": "",
   "version_check_url": "",
-  "usar_tunnel": false
+  "usar_tunnel": false,
+  "whatsapp_default": "https://wa.me/+5583999999999"
 }
