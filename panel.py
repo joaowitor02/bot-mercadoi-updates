@@ -56,6 +56,7 @@ _ADMIN_API_PATHS = frozenset({
     "/api/config", "/api/config/senha", "/api/config/telegram",
     "/api/config/admin-senha", "/api/config/licenca", "/api/testar-telegram",
     "/api/atualizar", "/api/tunnel/baixar", "/api/config/avancada",
+    "/api/licenca/status",
 })
 
 # ---------------------------------------------------------------------------
@@ -853,6 +854,10 @@ async def get_config():
             "admin_senha_configurada":  bool(cfg.get("admin_senha", "").strip()),
             "licenca_expira":           expira,
             "licenca_dias_restantes":   dias_restantes,
+            "licenciamento_habilitado": cfg.get("licenciamento_habilitado", False),
+            "licenca_chave":            cfg.get("licenca_chave", ""),
+            "licenca_servidor_url":     cfg.get("licenca_servidor_url", ""),
+            "licenca_cache_horas":      cfg.get("licenca_cache_horas", 24),
             # campos avançados
             "mercadoi_url":             cfg.get("mercadoi_url", ""),
             "downloads_path":           cfg.get("downloads_path", ""),
@@ -996,6 +1001,10 @@ class ConfigAvancadaRequest(BaseModel):
     usar_tunnel:           bool | None = None
     usar_deepseek_api:     bool | None = None
     whatsapp_default:      str | None = None
+    licenciamento_habilitado: bool | None = None
+    licenca_chave:            str | None = None
+    licenca_servidor_url:     str | None = None
+    licenca_cache_horas:      int | None = None
 
 
 @app.post("/api/config/avancada")
@@ -1012,6 +1021,27 @@ async def salvar_config_avancada(body: ConfigAvancadaRequest):
             json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8"
         )
         return JSONResponse({"ok": True})
+    except Exception as e:
+        return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
+
+
+@app.get("/api/licenca/status")
+async def licenca_status():
+    try:
+        cfg = _load_config()
+        from modules.licensing import machine_id, validar_licenca
+
+        status = await validar_licenca(cfg, app_version="3.1")
+        return JSONResponse({
+            "ok": status.ok,
+            "mensagem": status.message,
+            "machine_id": machine_id(),
+            "machine_id_curto": machine_id()[:12],
+            "cliente": status.cliente,
+            "expira_em": status.expires_at,
+            "origem": status.origem,
+            "habilitado": bool(cfg.get("licenciamento_habilitado", False)),
+        })
     except Exception as e:
         return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
 

@@ -1,0 +1,9 @@
+{
+  "BMI-EXEMPLO-CLIENTE-001": {
+    "cliente": "Cliente Exemplo",
+    "ativa": true,
+    "expira_em": "2026-12-31",
+    "limite_maquinas": 1,
+    "maquinas": []
+  }
+}

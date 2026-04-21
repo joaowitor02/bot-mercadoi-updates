@@ -1,6 +1,8 @@
 # Dados locais e segredos
 config.json
 credentials.json
+license_cache.json
+license_server/licenses.json
 botmercadoi.db
 *.credentials
 botmercadoi.db-*
