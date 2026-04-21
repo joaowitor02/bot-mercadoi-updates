@@ -446,35 +446,50 @@ class MercadoiDriver:
 
     def _montar_conteudo(self, dados):
         descricao = dados.get("descricao_util", "")
-        url_pub = dados.get("url_publicacao", "").strip()
-        whatsapp = dados.get("whatsapp_url", "").strip()
-        instagram = dados.get("instagram_url", "").strip()
-
-        def url_valida(v):
-            return v.startswith("http://") or v.startswith("https://")
+        url_pub   = self._normalizar_url(dados.get("url_publicacao", ""))
+        whatsapp  = self._normalizar_url(dados.get("whatsapp_url", ""))
+        instagram = self._normalizar_url(dados.get("instagram_url", ""))
 
         icones = []
-        if url_pub and url_valida(url_pub):
+        if url_pub:
             icones.append(
                 f'<a href="{url_pub}" target="_blank" rel="noopener">'
                 f'<img class="" src="https://mercadoi.com.br/ver-video-mi/" width="120" height="120" '
                 f'data-src="https://mercadoi.com.br/ver-video-mi/" /></a>'
             )
-        if whatsapp and url_valida(whatsapp):
+        if whatsapp:
             icones.append(
                 f'<a href="{whatsapp}" target="_blank" rel="noopener">'
                 f'<img class="" src="https://mercadoi.com.br/whatsapp-mi/" width="75" height="75" '
                 f'data-src="https://mercadoi.com.br/whatsapp-mi/" /></a>'
             )
-        if instagram and url_valida(instagram):
+        if instagram:
             icones.append(
                 f'<a href="{instagram}" target="_blank" rel="noopener">'
                 f'<img class="" src="https://mercadoi.com.br/instagram-mi/" width="75" height="75" '
                 f'data-src="https://mercadoi.com.br/instagram-mi/" /></a>'
             )
 
+        if icones:
+            logger.info(f"Ícones de contato inseridos: "
+                        f"{'Ver Imóvel ' if url_pub else ''}"
+                        f"{'WhatsApp ' if whatsapp else ''}"
+                        f"{'Instagram' if instagram else ''}")
         bloco_html = ("\n\n<pre>" + "".join(icones) + "</pre>") if icones else ""
         return descricao + bloco_html
+
+    @staticmethod
+    def _normalizar_url(v: str) -> str:
+        """Normaliza e valida uma URL. Aceita wa.me sem prefixo, retorna '' se inválida."""
+        v = v.strip()
+        if not v:
+            return ""
+        # Adiciona https:// quando ausente em wa.me e instagram.com
+        if v.startswith("wa.me/") or v.startswith("instagram.com/"):
+            v = "https://" + v
+        if v.startswith("http://") or v.startswith("https://"):
+            return v
+        return ""
 
     async def _preencher_editor(self, page, conteudo):
         try:
