@@ -511,7 +511,7 @@
       </div>
 
       <!-- Versão & Atualização -->
-      <div class="space-y-2">
+      <div class="space-y-3 sm:col-span-2 lg:col-span-3">
         <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide">Versão & Atualização</label>
         <div class="flex items-center gap-2 flex-wrap">
           <span id="version-atual-badge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 text-slate-500">
@@ -521,13 +521,16 @@
             <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
             Nova versão disponível
           </span>
-        </div>
-        <div class="flex items-center gap-2">
           <button id="btn-atualizar" onclick="atualizarBot()" class="hidden h-8 px-3 bg-slate-700 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg transition-colors">
             Atualizar agora
           </button>
         </div>
         <p class="text-xs text-slate-400" id="update-info">Verificando versão remota...</p>
+        <!-- Changelog exibido quando há atualização disponível -->
+        <div id="changelog-box" class="hidden rounded-xl border border-amber-200 bg-amber-50/60 p-4 max-h-64 overflow-y-auto">
+          <p class="text-xs font-semibold text-amber-700 mb-2">O que há de novo:</p>
+          <div id="changelog-content" class="text-xs text-slate-600 space-y-1 leading-relaxed font-mono whitespace-pre-wrap"></div>
+        </div>
       </div>
 
       <!-- Telegram -->
@@ -618,9 +621,16 @@
           </div>
 
           <div class="space-y-1">
-            <label class="block text-xs text-slate-400">URL de verificação de versão</label>
+            <label class="block text-xs text-slate-400">URL de verificação de versão <span class="text-slate-300">(version.py raw)</span></label>
             <input id="adv-version-url" type="text" autocomplete="off"
-              placeholder="https://raw.githubusercontent.com/..."
+              placeholder="https://raw.githubusercontent.com/usuario/repo/main/version.py"
+              class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 font-mono focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent" />
+          </div>
+
+          <div class="space-y-1">
+            <label class="block text-xs text-slate-400">URL do zip de atualização <span class="text-slate-300">(GitHub archive)</span></label>
+            <input id="adv-update-zip-url" type="text" autocomplete="off"
+              placeholder="https://github.com/usuario/repo/archive/refs/heads/main.zip"
               class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 font-mono focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent" />
           </div>
 
@@ -1509,6 +1519,7 @@ async function carregarConfig() {
     set('adv-deepseek-profile',   d.deepseek_profile_path);
     set('adv-chrome-path',        d.chrome_path);
     set('adv-version-url',        d.version_check_url);
+    set('adv-update-zip-url',     d.update_zip_url);
     set('adv-whatsapp-default',   d.whatsapp_default);
     setChk('adv-usar-tunnel',     d.usar_tunnel);
     setChk('adv-usar-deepseek',   d.usar_deepseek_api);
@@ -1640,6 +1651,7 @@ async function salvarAvancada() {
     deepseek_profile_path: document.getElementById('adv-deepseek-profile').value,
     chrome_path:           document.getElementById('adv-chrome-path').value,
     version_check_url:     document.getElementById('adv-version-url').value,
+    update_zip_url:        document.getElementById('adv-update-zip-url').value,
     whatsapp_default:      document.getElementById('adv-whatsapp-default').value,
     usar_tunnel:           document.getElementById('adv-usar-tunnel').checked,
     usar_deepseek_api:     document.getElementById('adv-usar-deepseek').checked,
@@ -1746,16 +1758,41 @@ async function verificarAtualizacao() {
     if (d.versao_remota) {
       if (d.has_update) {
         if (updateBadge) { updateBadge.classList.remove('hidden'); updateBadge.classList.add('inline-flex'); }
-        if (btnAtualizar) btnAtualizar.classList.remove('hidden');
-        if (updateInfo)   updateInfo.textContent = `Nova versão disponível: v${d.versao_remota}`;
+        if (btnAtualizar) { btnAtualizar.classList.remove('hidden'); btnAtualizar.disabled = false; btnAtualizar.textContent = 'Atualizar agora'; }
+        if (updateInfo)   updateInfo.textContent = `Nova versão disponível: v${d.versao_remota} (atual: v${d.versao_atual})`;
         if (pill) pill.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 cursor-default';
+        // Exibe changelog
+        const box = document.getElementById('changelog-box');
+        const content = document.getElementById('changelog-content');
+        if (box && content && d.changelog) {
+          content.textContent = _extrairChangelog(d.changelog, d.versao_remota);
+          box.classList.remove('hidden');
+        }
       } else {
-        if (updateInfo) updateInfo.textContent = `Atualizado — versão remota: v${d.versao_remota}`;
+        if (updateInfo) updateInfo.textContent = `✓ Versão v${d.versao_atual} — atualizada`;
       }
     } else {
-      if (updateInfo) updateInfo.textContent = 'URL de verificação não configurada (version_check_url).';
+      if (updateInfo) updateInfo.textContent = 'Configure version_check_url em Config Avançada para habilitar atualizações.';
     }
   } catch {}
+}
+
+function _extrairChangelog(texto, versao) {
+  // Extrai apenas as seções relevantes (versão nova e talvez uma anterior)
+  if (!texto) return '';
+  const linhas = texto.split('\n');
+  const resultado = [];
+  let capturando = false;
+  let secoes = 0;
+  for (const linha of linhas) {
+    if (linha.startsWith('## [')) {
+      if (secoes >= 2) break; // mostra no máximo 2 versões
+      capturando = true;
+      secoes++;
+    }
+    if (capturando) resultado.push(linha);
+  }
+  return resultado.join('\n').trim();
 }
 
 async function atualizarBot() {

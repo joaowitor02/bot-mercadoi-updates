@@ -861,6 +861,7 @@ async def get_config():
             "mercadoi_profile_path":    cfg.get("mercadoi_profile_path", ""),
             "chrome_path":              cfg.get("chrome_path", ""),
             "version_check_url":        cfg.get("version_check_url", ""),
+            "update_zip_url":           cfg.get("update_zip_url", ""),
             "usar_tunnel":              cfg.get("usar_tunnel", False),
             "usar_deepseek_api":        cfg.get("usar_deepseek_api", False),
             "whatsapp_default":         cfg.get("whatsapp_default", ""),
@@ -991,6 +992,7 @@ class ConfigAvancadaRequest(BaseModel):
     mercadoi_profile_path: str | None = None
     chrome_path:           str | None = None
     version_check_url:     str | None = None
+    update_zip_url:        str | None = None
     usar_tunnel:           bool | None = None
     usar_deepseek_api:     bool | None = None
     whatsapp_default:      str | None = None
@@ -1125,18 +1127,29 @@ async def get_version():
         check_url = ""
 
     versao_remota = None
-    has_update = False
+    has_update    = False
+    changelog     = ""
 
     if check_url:
         try:
             import httpx as _httpx
-            async with _httpx.AsyncClient(timeout=5) as client:
+            async with _httpx.AsyncClient(timeout=8, follow_redirects=True) as client:
                 r = await client.get(check_url)
                 if r.status_code == 200:
                     m = re.search(r'VERSION\s*=\s*["\']([^"\']+)["\']', r.text)
                     if m:
                         versao_remota = m.group(1)
-                        has_update = versao_remota != VERSION
+                        has_update    = versao_remota != VERSION
+
+                # Busca CHANGELOG.md na mesma base da version_check_url
+                if has_update:
+                    changelog_url = re.sub(r'[^/]+$', 'CHANGELOG.md', check_url)
+                    try:
+                        rc = await client.get(changelog_url)
+                        if rc.status_code == 200:
+                            changelog = rc.text[:6000]  # limita tamanho
+                    except Exception:
+                        pass
         except Exception:
             pass
 
@@ -1144,27 +1157,87 @@ async def get_version():
         "versao_atual":  VERSION,
         "versao_remota": versao_remota,
         "has_update":    has_update,
+        "changelog":     changelog,
     })
+
+
+# Arquivos e pastas que nunca devem ser sobrescritos na atualização
+_PRESERVAR_ARQUIVOS = frozenset({
+    "config.json", "botmercadoi.db", "botmercadoi.db-shm",
+    "botmercadoi.db-wal", ".installed", "credentials.json", "cloudflared.exe",
+})
+_PRESERVAR_PASTAS = frozenset({"logs", ".git", ".claude", "__pycache__"})
 
 
 @app.post("/api/atualizar")
 async def atualizar_bot():
+    """Baixa o zip da nova versão e extrai sobre os arquivos atuais."""
     try:
-        result = subprocess.run(
-            ["git", "pull", "--rebase"],
-            cwd=str(BASE_DIR),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=60,
-        )
-        saida = (result.stdout + result.stderr).strip()
-        if result.returncode == 0:
-            return JSONResponse({"ok": True, "msg": saida or "Atualizado. Reinicie o painel para aplicar."})
-        return JSONResponse({"ok": False, "msg": saida or "Erro ao atualizar."}, status_code=500)
-    except subprocess.TimeoutExpired:
-        return JSONResponse({"ok": False, "msg": "Tempo esgotado ao atualizar."}, status_code=500)
+        cfg = _load_config()
+        zip_url = cfg.get("update_zip_url", "").strip()
+        if not zip_url:
+            return JSONResponse(
+                {"ok": False, "msg": "update_zip_url não configurado em Config Avançada."},
+                status_code=400,
+            )
+
+        import httpx as _httpx
+        import zipfile
+        import tempfile
+        import shutil
+
+        async with _httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
+            r = await client.get(zip_url)
+            if r.status_code != 200:
+                return JSONResponse(
+                    {"ok": False, "msg": f"Falha ao baixar atualização (HTTP {r.status_code})."},
+                    status_code=500,
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            zip_path = os.path.join(tmp, "update.zip")
+            with open(zip_path, "wb") as f:
+                f.write(r.content)
+
+            with zipfile.ZipFile(zip_path, "r") as z:
+                z.extractall(tmp)
+
+            # GitHub cria subpasta REPO-main/ ao exportar zip
+            subdirs = [
+                d for d in os.listdir(tmp)
+                if os.path.isdir(os.path.join(tmp, d)) and d != "__MACOSX"
+            ]
+            src_dir = os.path.join(tmp, subdirs[0]) if subdirs else tmp
+
+            copiados = 0
+            for root, dirs, files in os.walk(src_dir):
+                dirs[:] = [d for d in dirs if d not in _PRESERVAR_PASTAS]
+                rel_root = os.path.relpath(root, src_dir)
+                for fname in files:
+                    if fname in _PRESERVAR_ARQUIVOS:
+                        continue
+                    src = os.path.join(root, fname)
+                    if rel_root == ".":
+                        dst_dir = BASE_DIR
+                    else:
+                        dst_dir = BASE_DIR / rel_root
+                    dst_dir.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src, dst_dir / fname)
+                    copiados += 1
+
+        # Apaga flag .installed para forçar reinstalação das dependências
+        flag = BASE_DIR / ".installed"
+        if flag.exists():
+            flag.unlink()
+
+        _logger.info(f"Atualização aplicada: {copiados} arquivo(s) substituído(s)")
+        return JSONResponse({
+            "ok":  True,
+            "msg": f"✅ Atualização aplicada ({copiados} arquivos).\n\nFeche e abra novamente o painel (Abrir Painel.vbs) para concluir.",
+        })
+
+    except zipfile.BadZipFile:
+        return JSONResponse({"ok": False, "msg": "Arquivo baixado não é um zip válido."}, status_code=500)
     except Exception as e:
         return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
 
