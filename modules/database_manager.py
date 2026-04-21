@@ -111,6 +111,16 @@ class DatabaseManager:
             ).fetchall()
         return [self._to_dict(r) for r in rows]
 
+    def limpar_pendentes(self) -> int:
+        with self._lock:
+            with self._conn() as conn:
+                cur = conn.execute("DELETE FROM imoveis WHERE status='pendente'")
+                conn.commit()
+        count = cur.rowcount
+        if count:
+            logger.info(f"{count} item(ns) pendente(s) removido(s)")
+        return count
+
     def resetar_travados(self) -> int:
         with self._lock:
             with self._conn() as conn:

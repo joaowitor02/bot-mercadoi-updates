@@ -6,3 +6,5 @@ uvicorn>=0.29.0
 python-multipart>=0.0.9
 pillow>=11.1.0
 pillow-heif>=1.3.0
+opencv-python>=4.9.0
+psutil>=5.9.0

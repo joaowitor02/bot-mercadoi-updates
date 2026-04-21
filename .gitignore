@@ -29,6 +29,10 @@ Thumbs.db
 *.tmp
 *.bak
 
-# Artefatos acidentais de instalacao
-=0.27.0
-=1.30.0
+# Build artifacts
+cloudflared.exe
+dist/
+build/
+
+# Arquivos de saída acidental do pip
+=*

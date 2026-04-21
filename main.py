@@ -12,6 +12,7 @@ import uuid
 import httpx
 from modules.database_manager import DatabaseManager
 from modules.instagram_scraper import InstagramScraper
+from modules.instagram_chrome_scraper import extrair_via_chrome
 from modules.deepseek_api import DeepSeekAPIClient
 from modules.deepseek_client import DeepSeekClient
 from modules.deepseek_parser import DeepSeekParser
@@ -118,13 +119,23 @@ _MOTIVOS_DEFINITIVOS = {"url_invalida", "nao_encontrado"}
 
 async def _via_api(url: str, config: dict) -> tuple[dict | None, str]:
     """
-    Tenta extrair dados via Instagram scraper + DeepSeek API oficial.
+    Extrai legenda via Chrome (já logado no Instagram) e processa com DeepSeek API.
     Retorna (dados, motivo_falha). motivo_falha é '' em caso de sucesso.
     """
-    scraper = InstagramScraper()
-    post = await scraper.extrair(url)
+    # Tenta extrair via Chrome primeiro (logado no Instagram, sem bloqueio)
+    post = await extrair_via_chrome(url)
+
+    # Fallback: scraper HTTP (funciona para posts públicos sem login)
+    if not post.get("ok"):
+        motivo = post.get("motivo", "erro_rede")
+        if motivo not in ("url_invalida",):
+            logger.info(f"Chrome scraper falhou ({motivo}), tentando HTTP scraper...")
+            scraper = InstagramScraper()
+            post = await scraper.extrair(url)
+
     if not post.get("ok"):
         return None, post.get("motivo", "erro_rede")
+
     cliente = DeepSeekAPIClient(config["deepseek_api_key"])
     dados = await cliente.extrair(
         caption=post["caption"],
@@ -134,15 +145,33 @@ async def _via_api(url: str, config: dict) -> tuple[dict | None, str]:
     return dados, ""
 
 
-async def _via_browser(url: str, config: dict) -> dict | None:
-    """Extrai dados via DeepSeek browser (fallback)."""
+_SINAIS_INACESSIVEL = [
+    "não foi possível acessar",
+    "nao foi possivel acessar",
+    "não consigo acessar",
+    "nao consigo acessar",
+    "verifique se o link está correto",
+    "verifique se a publicação é pública",
+    "publicação não está disponível",
+    "conteúdo não disponível",
+    "unable to access",
+    "cannot access",
+]
+
+async def _via_browser(url: str, config: dict) -> tuple[dict | None, str]:
+    """Extrai dados via DeepSeek browser. Retorna (dados, motivo_erro)."""
     deepseek = DeepSeekClient(config.get("deepseek_profile_path", "C:\\chrome_bot_deepseek"))
     parser = DeepSeekParser()
     resposta = await deepseek.extrair(url)
     if not resposta:
-        return None
+        return None, "erro_rede"
+    # Detecta resposta indicando post privado ou inacessível
+    resp_lower = resposta.lower()
+    if any(s in resp_lower for s in _SINAIS_INACESSIVEL) and len(resposta) < 600:
+        logger.warning(f"DeepSeek indicou post inacessível: {resposta[:200]}")
+        return None, "acesso_restrito"
     dados = parser.parse(resposta)
-    return dados if dados and dados.get("titulo") else None
+    return (dados, "") if dados and dados.get("titulo") else (None, "erro_rede")
 
 
 # ---------------------------------------------------------------------------
@@ -181,7 +210,9 @@ async def processar_link(row: dict, sheet, config: dict):
 
     if not dados:
         logger.info(f"[{execution_id}] Extraindo via DeepSeek browser...")
-        dados = await _via_browser(url, config)
+        dados, motivo_browser = await _via_browser(url, config)
+        if not dados and motivo_browser:
+            motivo_falha = motivo_browser
 
     if not dados or not dados.get("titulo"):
         msg_final = _MOTIVO_MSGS.get(motivo_falha, "Não foi possível extrair dados do imóvel")
@@ -246,7 +277,8 @@ async def processar_link(row: dict, sheet, config: dict):
     if resultado and resultado["sucesso"]:
         sheet.atualizar_campo(row_index, "cidade_aplicada", resultado.get("cidade_aplicada", ""))
         sheet.atualizar_campo(row_index, "bairro_aplicado", resultado.get("bairro_aplicado", ""))
-        sheet.atualizar_campo(row_index, "mercadoi_url", resultado.get("mercadoi_url", ""))
+        mercadoi_url = resultado.get("mercadoi_url", "")
+        sheet.atualizar_campo(row_index, "mercadoi_url", mercadoi_url)
         status.sucesso("rascunho_salvo", resultado.get("mensagem", "Rascunho salvo com sucesso"))
         logger.info(f"[{execution_id}] Sucesso!")
         for arq in arquivo_midia:
@@ -297,6 +329,7 @@ async def executar_ciclo(config: dict):
 
     if not await _verificar_chrome():
         logger.error("Chrome do Mercadoi não está aberto. Abra o Chrome com remote debugging na porta 9222.")
+        await notificar(config, "⚠️ <b>Bot Mercadoi</b> — Chrome não está aberto.\nAbra o Chrome com remote debugging para retomar o processamento.")
         return 0
 
     urls_processadas = {row["url_instagram"].strip() for row in pendentes}
@@ -321,16 +354,28 @@ async def executar_ciclo(config: dict):
     falhas_list  = [r for r in processadas if "erro" in r.get("status", "").lower()]
 
     if total:
+        sucessos_list = [r for r in processadas if r.get("status", "") in ("rascunho_salvo", "rascunho_salvo_sem_midia_video")]
+        linhas = []
+        for r in sucessos_list[:10]:
+            titulo = (r.get("titulo_gerado") or "")[:50] or r.get("url_instagram", "")[:50]
+            url_m = r.get("mercadoi_url", "")
+            linhas.append(f"  ✅ <a href='{url_m}'>{titulo}</a>" if url_m else f"  ✅ {titulo}")
+        for r in falhas_list[:5]:
+            linhas.append(f"  ❌ {r.get('url_instagram','')[:50]}")
+        mais_suc = f"\n  (+ {len(sucessos_list)-10} outros)" if len(sucessos_list) > 10 else ""
+        mais_err = f"\n  (+ {len(falhas_list)-5} outros erros)" if len(falhas_list) > 5 else ""
+        corpo = "\n".join(linhas) + mais_suc + mais_err
         if falhas_list:
-            erros_txt = "\n".join(f"  • {r.get('url_instagram','')[:60]}" for r in falhas_list[:5])
-            mais = f"\n  (+ {len(falhas_list)-5} outros)" if len(falhas_list) > 5 else ""
             msg = (
                 f"⚠️ <b>Bot Mercadoi</b> — Ciclo concluído\n"
                 f"✅ {sucessos} publicado(s)  |  ❌ {len(falhas_list)} falha(s)\n\n"
-                f"<b>Erros:</b>\n{erros_txt}{mais}"
+                f"{corpo}"
             )
         else:
-            msg = f"✅ <b>Bot Mercadoi</b> — {total} imóvel(is) publicado(s) com sucesso!"
+            msg = (
+                f"✅ <b>Bot Mercadoi</b> — {total} imóvel(is) publicado(s)!\n\n"
+                f"{corpo}"
+            )
         await notificar(config, msg)
 
     return total
@@ -350,9 +395,17 @@ async def main(watch: bool = False, intervalo: int = 5):
 
     if watch:
         logger.info(f"=== Bot Mercadoi v3.1 — Modo Watch ({intervalo} min) ===")
+        await notificar(config, f"🤖 <b>Bot Mercadoi iniciado</b> — monitorando a cada {intervalo} min.")
         ciclo = 1
         while True:
             logger.info(f"--- Ciclo #{ciclo} ---")
+            # Recarrega config a cada ciclo para capturar mudanças feitas no painel
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+                intervalo = config.get("watch_intervalo_minutos", intervalo)
+            except Exception as e:
+                logger.warning(f"Não foi possível recarregar config.json: {e}")
             await executar_ciclo(config)
             logger.info(f"Aguardando {intervalo} minuto(s)...")
             await asyncio.sleep(intervalo * 60)

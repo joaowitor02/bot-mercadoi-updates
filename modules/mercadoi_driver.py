@@ -19,6 +19,79 @@ def normalizar(texto):
     return re.sub(r"\s+", " ", sem_acento.lower().strip())
 
 
+# Mapeamento bairro → cidade para municípios da Paraíba
+_BAIRRO_CIDADE_PB: dict[str, str] = {
+    # João Pessoa
+    "manaira": "João Pessoa", "tambau": "João Pessoa", "cabo branco": "João Pessoa",
+    "miramar": "João Pessoa", "bessa": "João Pessoa", "torre": "João Pessoa",
+    "bancarios": "João Pessoa", "mangabeira": "João Pessoa", "valentina": "João Pessoa",
+    "brisamar": "João Pessoa", "jardim oceania": "João Pessoa", "oceania": "João Pessoa",
+    "estados": "João Pessoa", "bairro dos estados": "João Pessoa",
+    "epitacio pessoa": "João Pessoa", "altiplano": "João Pessoa",
+    "roger": "João Pessoa", "jaguaribe": "João Pessoa", "geisel": "João Pessoa",
+    "cristo redentor": "João Pessoa", "castelo branco": "João Pessoa",
+    "agua fria": "João Pessoa", "cruz das armas": "João Pessoa",
+    "funcionarios": "João Pessoa", "expedicionarios": "João Pessoa",
+    "tambia": "João Pessoa", "varadouro": "João Pessoa", "trincheiras": "João Pessoa",
+    "pedro gondim": "João Pessoa", "aeroclube": "João Pessoa", "grotao": "João Pessoa",
+    "cidade universitaria": "João Pessoa", "anatolia": "João Pessoa",
+    "jose americo": "João Pessoa", "planalto": "João Pessoa",
+    "cuia": "João Pessoa", "paratibe": "João Pessoa", "gramame": "João Pessoa",
+    "mussumagro": "João Pessoa", "portal do sol": "João Pessoa",
+    "costa e silva": "João Pessoa", "jose bezerra": "João Pessoa",
+    "mandacaru": "João Pessoa", "san martin": "João Pessoa",
+    "jardim luna": "João Pessoa", "alto do ceu": "João Pessoa",
+    "penha": "João Pessoa", "ilha do bispo": "João Pessoa", "rangel": "João Pessoa",
+    "13 de maio": "João Pessoa", "treze de maio": "João Pessoa",
+    "jardim sao paulo": "João Pessoa", "padre zé": "João Pessoa", "padre ze": "João Pessoa",
+    "conjunto ceará": "João Pessoa", "conjunto ceara": "João Pessoa",
+    "Paulo VI": "João Pessoa", "paulo vi": "João Pessoa",
+    "novo horizonte joao pessoa": "João Pessoa",
+    # Cabedelo
+    "poco": "Cabedelo", "poca": "Cabedelo", "bairro do poco": "Cabedelo",
+    "ponta de mato": "Cabedelo", "renascer": "Cabedelo",
+    "ponta de cabedelo": "Cabedelo", "intermares": "Cabedelo",
+    "jardins cabedelo": "Cabedelo", "camalau": "Cabedelo",
+    "centro cabedelo": "Cabedelo",
+    # Campina Grande
+    "bodocongo": "Campina Grande", "jose pinheiro": "Campina Grande",
+    "dinamarca": "Campina Grande", "liberdade": "Campina Grande",
+    "sandra cavalcante": "Campina Grande", "malvinas": "Campina Grande",
+    "catole": "Campina Grande", "prata": "Campina Grande",
+    "bela vista campina": "Campina Grande", "palmeira campina": "Campina Grande",
+    "universitario campina": "Campina Grande", "miriam coelho": "Campina Grande",
+    "serrotao": "Campina Grande", "monte castelo": "Campina Grande",
+    "centenario": "Campina Grande", "itararé": "Campina Grande", "itarare": "Campina Grande",
+    # Bayeux
+    "bayeux": "Bayeux", "miramar bayeux": "Bayeux",
+    # Santa Rita
+    "santa rita": "Santa Rita", "várzea nova": "Santa Rita", "varzea nova": "Santa Rita",
+    # Conde
+    "jacuma": "Conde", "tabatinga": "Conde", "coqueirinho": "Conde",
+    "barra de camaratuba": "Conde", "jacumã": "Conde",
+    # Lucena
+    "lucena": "Lucena", "fagundes": "Lucena",
+    # Pitimbu
+    "pitimbu": "Pitimbu", "acaua": "Pitimbu", "praia de pitimbu": "Pitimbu",
+    # Alhandra
+    "alhandra": "Alhandra",
+    # Mamanguape
+    "mamanguape": "Mamanguape",
+    # Rio Tinto
+    "rio tinto": "Rio Tinto",
+    # Sapé
+    "sape": "Sapé",
+    # Guarabira
+    "guarabira": "Guarabira",
+    # Patos
+    "patos": "Patos",
+    # Sousa
+    "sousa": "Sousa",
+    # Cajazeiras
+    "cajazeiras": "Cajazeiras",
+}
+
+
 class MercadoiDriver:
     def __init__(self, base_url, profile_path=r"C:\chrome_bot_mercadoi", execution_id: str = ""):
         self.base_url = base_url
@@ -78,11 +151,16 @@ class MercadoiDriver:
         try:
             await page.goto(f"{self.base_url}/create-a-listing/", timeout=30000)
             await page.wait_for_load_state("domcontentloaded", timeout=20000)
+            # Aguarda rede estabilizar para garantir que select2, TinyMCE e AJAX estejam prontos
+            try:
+                await page.wait_for_load_state("networkidle", timeout=15000)
+            except Exception:
+                pass
             try:
                 await page.wait_for_selector('#prop_title', timeout=15000)
             except Exception:
                 logger.warning("Campo #prop_title demorou para aparecer, continuando mesmo assim")
-            await page.wait_for_timeout(1000)
+            await page.wait_for_timeout(1500)
 
             # TITULO
             titulo = dados.get("titulo", "").strip()
@@ -164,11 +242,11 @@ class MercadoiDriver:
 
             # CIDADE
             cidade = dados.get("cidade_extraida", "").strip()
-            cidade_aplicada = await self._selecionar_cidade(page, cidade)
+            bairro = dados.get("bairro_extraido", "").strip()
+            cidade_aplicada = await self._selecionar_cidade(page, cidade, bairro)
             resultado["cidade_aplicada"] = cidade_aplicada
 
             # BAIRRO
-            bairro = dados.get("bairro_extraido", "").strip()
             bairro_aplicado = await self._selecionar_bairro(page, bairro)
             resultado["bairro_aplicado"] = bairro_aplicado
 
@@ -215,16 +293,18 @@ class MercadoiDriver:
 
     def _normalizar_tipo_imovel(self, valor: str) -> str:
         texto = normalizar(valor or "")
+        if "cobertura" in texto:
+            return "Apto. Cobertura"
         if "apart" in texto or "flat" in texto:
             return "Apartamento"
-        if "casa" in texto or "resid" in texto:
+        if "studio" in texto or "kitnet" in texto or "kit net" in texto:
+            return "Apartamento"
+        if "casa" in texto or "resid" in texto or "sobrado" in texto:
             return "Casa"
         if "terreno" in texto or "lote" in texto:
             return "Terreno"
-        if "sala" in texto or "comercial" in texto or "loja" in texto:
+        if "sala" in texto or "comercial" in texto or "loja" in texto or "escritorio" in texto:
             return "Sala Comercial"
-        if "studio" in texto or "kitnet" in texto:
-            return "Apartamento"
         return valor.strip() or "Apartamento"
 
     async def _tirar_screenshot(self, etapa: str) -> str:
@@ -303,6 +383,7 @@ class MercadoiDriver:
             "Casa": "53",
             "Terreno": "103",
             "Sala Comercial": "98",
+            # Apto. Cobertura não tem value fixo — usa matching por texto abaixo
         }
         value = mapa_values.get(tipo_imovel)
         if value:
@@ -445,12 +526,31 @@ class MercadoiDriver:
         except Exception as e:
             logger.warning(f"Erro ao preencher editor: {e}")
 
-    async def _selecionar_cidade(self, page, cidade):
+    def _cidade_por_bairro(self, bairro: str) -> str:
+        b = normalizar(bairro)
+        # Busca exata primeiro, depois substring
+        if b in _BAIRRO_CIDADE_PB:
+            return _BAIRRO_CIDADE_PB[b]
+        for key, cidade in _BAIRRO_CIDADE_PB.items():
+            if key in b or b in key:
+                return cidade
+        return ""
+
+    async def _selecionar_cidade(self, page, cidade, bairro=""):
         if cidade:
             ok = await self._selecionar_por_texto(page, '#city', cidade)
             if ok:
                 await self._aguardar_opcoes_bairro(page)
                 return cidade
+        # Tenta inferir cidade pelo bairro
+        if bairro:
+            cidade_inferida = self._cidade_por_bairro(bairro)
+            if cidade_inferida:
+                ok = await self._selecionar_por_texto(page, '#city', cidade_inferida)
+                if ok:
+                    logger.info(f"Cidade inferida pelo bairro '{bairro}': {cidade_inferida}")
+                    await self._aguardar_opcoes_bairro(page)
+                    return cidade_inferida
         logger.info(f"Cidade '{cidade}' nao encontrada, usando Joao Pessoa")
         await self._selecionar_por_texto(page, '#city', "João Pessoa")
         await self._aguardar_opcoes_bairro(page)
@@ -485,11 +585,52 @@ class MercadoiDriver:
         logger.warning(f"Bairro '{bairro}' nao encontrado no select — campo deixado em branco")
         return ""
 
+    def _validar_arquivos(self, caminhos: list) -> list:
+        """Valida arquivos e converte formatos não suportados antes do upload.
+
+        JPEG e PNG são aceitos diretamente pelo Mercadoi.
+        WEBP, BMP, TIFF, GIF e outros são convertidos para JPEG.
+        """
+        from PIL import Image as _PIL
+        FORMATOS_OK = {"JPEG", "PNG"}
+        EXTENSOES_OK = {".jpg", ".jpeg", ".png"}
+        validos = []
+        for c in caminhos:
+            if not os.path.exists(c) or os.path.getsize(c) == 0:
+                logger.warning(f"Arquivo ausente ou vazio, ignorado: {c}")
+                continue
+            try:
+                with _PIL.open(c) as img:
+                    fmt = img.format
+                    mode = img.mode
+
+                ext = os.path.splitext(c)[1].lower()
+                formato_suportado = fmt in FORMATOS_OK and ext in EXTENSOES_OK
+
+                if formato_suportado:
+                    validos.append(c)
+                else:
+                    # Converte WEBP, BMP, TIFF, GIF, etc. para JPEG
+                    novo = os.path.splitext(c)[0] + "_conv.jpg"
+                    with _PIL.open(c) as img:
+                        if img.mode in ("RGBA", "P", "LA"):
+                            img = img.convert("RGB")
+                        img.save(novo, "JPEG", quality=92, optimize=True)
+                    logger.info(f"Convertido para JPEG: {os.path.basename(c)} (era {fmt}/{mode}) → {os.path.basename(novo)}")
+                    validos.append(novo)
+            except Exception as e:
+                logger.warning(f"Imagem inválida/corrompida, ignorada: {c} — {e}")
+        return validos
+
     async def _anexar_midia(self, page, caminhos):
         """Anexa uma ou mais imagens à galeria via plupload."""
         if isinstance(caminhos, str):
             caminhos = [caminhos]
         if not caminhos:
+            return False
+        caminhos = self._validar_arquivos(caminhos)
+        if not caminhos:
+            logger.error("Nenhum arquivo válido para upload após validação")
             return False
         try:
             esperados = len(caminhos)
@@ -524,21 +665,79 @@ class MercadoiDriver:
                     logger.warning("Campo de upload nao encontrado")
                     return False
 
+            # Aguarda upload iniciar no servidor
+            await page.wait_for_timeout(4000)
+
+            # Detecta erros do plupload exibidos na página
+            erro_plupload = await page.evaluate("""
+                () => {
+                    const errs = document.querySelectorAll(
+                        '.plupload_error, .moxie-shim-error, [class*="error"][class*="upload"], .plupload .error'
+                    );
+                    return Array.from(errs).map(e => e.innerText).filter(t => t).join(' | ');
+                }
+            """)
+            if erro_plupload:
+                logger.warning(f"Erro de upload detectado na página: {erro_plupload}")
+
             ids = []
-            limite = max(esperados * 8, 20)
-            for _ in range(limite):
+            limite = max(esperados * 6, 16)
+            for i in range(limite):
                 await page.wait_for_timeout(1500)
+
+                # Verifica campos ocultos (Mercadoi usa "propperty" com pp duplo, mas também testa variante)
                 ids = await page.evaluate("""
-                    () => Array.from(document.querySelectorAll('input[name="propperty_image_ids[]"]'))
-                        .map(el => el.value).filter(v => v && v !== '0')
+                    () => {
+                        const sels = [
+                            'input[name="propperty_image_ids[]"]',
+                            'input[name="property_image_ids[]"]',
+                            'input[name*="image_ids"]',
+                        ];
+                        for (const s of sels) {
+                            const found = Array.from(document.querySelectorAll(s))
+                                .map(el => el.value).filter(v => v && v !== '0');
+                            if (found.length) return found;
+                        }
+                        return [];
+                    }
                 """)
-                logger.info(f"Uploads concluidos: {len(ids)}/{esperados}")
+
+                # Verifica thumbnails visíveis na galeria como confirmação alternativa
+                thumbs = await page.evaluate("""
+                    () => {
+                        const sels = [
+                            '.fave_property_images .preview-item',
+                            '.fave_property_images img',
+                            '.property-gallery-upload img',
+                            'ul.fave_images_list li',
+                            '[class*="gallery"] .thumbnail',
+                            '[class*="upload"] img[src*="uploads"]',
+                        ];
+                        for (const s of sels) {
+                            const n = document.querySelectorAll(s).length;
+                            if (n > 0) return n;
+                        }
+                        return 0;
+                    }
+                """)
+
+                confirmados = max(len(ids), thumbs if isinstance(thumbs, int) else 0)
+                logger.info(f"Uploads concluidos: {confirmados}/{esperados} (ids={len(ids)}, thumbs={thumbs})")
+
                 if len(ids) >= esperados:
-                    preview = await page.query_selector('.fotorama__img, .moxie-shim img, .thumbnail img, [class*="preview"] img, [class*="gallery"] img, .attachment-thumbnail')
-                    logger.info("Preview de imagem detectado" if preview else "Preview de imagem nao detectado")
+                    logger.info("Todos os arquivos confirmados via IDs")
+                    return True
+                if isinstance(thumbs, int) and thumbs >= esperados:
+                    logger.info(f"Todos os arquivos confirmados via thumbnails ({thumbs})")
                     return True
 
-            logger.error(f"Upload incompleto no Mercadoi: {len(ids)}/{esperados} arquivo(s)")
+            # Aceita parcial se ao menos 1 foi confirmado
+            confirmados_final = max(len(ids), thumbs if isinstance(thumbs, int) else 0)
+            if confirmados_final > 0:
+                logger.warning(f"Upload parcial aceito: {confirmados_final}/{esperados} arquivo(s)")
+                return True
+
+            logger.error(f"Upload falhou: nenhuma imagem confirmada no servidor ({esperados} esperado(s))")
             return False
         except Exception as e:
             logger.error(f"Erro ao anexar midia: {e}")
@@ -617,4 +816,4 @@ class MercadoiDriver:
     def _montar_url_mercadoi(self, property_id) -> str:
         if not property_id:
             return ""
-        return urljoin(self.base_url.rstrip("/") + "/", f"?p={property_id}")
+        return urljoin(self.base_url.rstrip("/") + "/", f"wp-admin/post.php?post={property_id}&action=edit")

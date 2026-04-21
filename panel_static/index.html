@@ -51,7 +51,6 @@
 <!-- ===================== HEADER ===================== -->
 <header class="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
   <div class="max-w-7xl mx-auto px-6 py-0 flex items-center justify-between h-16">
-    <!-- Logo / Brand -->
     <div class="flex items-center gap-3">
       <div class="w-9 h-9 rounded-xl bg-brand-500 flex items-center justify-center shadow-sm">
         <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -65,7 +64,6 @@
       </div>
     </div>
 
-    <!-- Status + Action -->
     <div class="flex items-center gap-4">
       <div class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 text-xs text-slate-500" id="status-pill">
         <span class="w-2 h-2 rounded-full bg-slate-300 shrink-0" id="dot"></span>
@@ -73,17 +71,13 @@
         <span class="text-slate-300">•</span>
         <span id="status-hoje" class="text-slate-400"></span>
       </div>
-      <!-- Chrome status -->
       <div id="chrome-pill" class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-400 cursor-default" title="Status do Chrome do Mercadoi">
         <span id="chrome-dot" class="w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0"></span>
         <span id="chrome-txt">Chrome</span>
       </div>
-      <!-- Version badge -->
       <div id="version-pill" class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-500 cursor-default" title="Versão do bot">
         <span id="version-txt">v—</span>
       </div>
-
-      <!-- Watch mode toggle -->
       <button id="btn-watch" onclick="toggleWatch()"
         class="hidden items-center gap-2 h-9 px-4 border border-slate-200 hover:border-slate-300 text-slate-600 hover:text-slate-800 text-sm font-medium rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -91,8 +85,6 @@
         </svg>
         <span id="watch-txt">Watch Mode</span>
       </button>
-
-      <!-- Processar agora -->
       <button id="btn-processar" onclick="processarAgora()"
         class="flex items-center gap-2 h-9 px-4 bg-brand-500 hover:bg-brand-600 active:bg-brand-700 text-white text-sm font-medium rounded-xl transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
         <svg id="btn-icon" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -112,237 +104,212 @@
   </div>
 </header>
 
-<main class="max-w-7xl mx-auto px-6 py-6 space-y-5">
-
-  <!-- ===================== STATS ===================== -->
-  <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-
-    <div class="stat-card bg-white rounded-2xl border border-slate-100 p-5 flex flex-col gap-3">
-      <div class="flex items-center justify-between">
-        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wide">Total</p>
-        <div class="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
-          <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
-          </svg>
-        </div>
-      </div>
-      <div>
-        <p class="text-3xl font-bold text-slate-800" id="stat-total">—</p>
-        <p class="text-xs text-slate-400 mt-0.5">últimos 7 dias</p>
-      </div>
-    </div>
-
-    <div class="stat-card bg-white rounded-2xl border border-slate-100 p-5 flex flex-col gap-3">
-      <div class="flex items-center justify-between">
-        <p class="text-xs font-semibold text-emerald-500 uppercase tracking-wide">Sucessos</p>
-        <div class="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
-          <svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-          </svg>
-        </div>
-      </div>
-      <div>
-        <p class="text-3xl font-bold text-emerald-600" id="stat-sucesso">—</p>
-        <p class="text-xs text-slate-400 mt-0.5">publicados</p>
-      </div>
-    </div>
-
-    <div class="stat-card bg-white rounded-2xl border border-slate-100 p-5 flex flex-col gap-3">
-      <div class="flex items-center justify-between">
-        <p class="text-xs font-semibold text-red-400 uppercase tracking-wide">Falhas</p>
-        <div class="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center">
-          <svg class="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-          </svg>
-        </div>
-      </div>
-      <div>
-        <p class="text-3xl font-bold text-red-500" id="stat-falha">—</p>
-        <p class="text-xs text-slate-400 mt-0.5">com erro</p>
-      </div>
-    </div>
-
-    <div class="stat-card bg-white rounded-2xl border border-slate-100 p-5 flex flex-col gap-3">
-      <div class="flex items-center justify-between">
-        <p class="text-xs font-semibold text-amber-500 uppercase tracking-wide">Andamento</p>
-        <div class="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
-          <svg class="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-          </svg>
-        </div>
-      </div>
-      <div>
-        <p class="text-3xl font-bold text-amber-500" id="stat-andamento">—</p>
-        <p class="text-xs text-slate-400 mt-0.5">processando</p>
-      </div>
-    </div>
-
-    <div class="stat-card bg-white rounded-2xl border border-brand-100 p-5 flex flex-col gap-3 cursor-pointer"
-         onclick="document.getElementById('textarea-urls').focus()">
-      <div class="flex items-center justify-between">
-        <p class="text-xs font-semibold text-brand-500 uppercase tracking-wide">Na Fila</p>
-        <div class="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center">
-          <svg class="w-4 h-4 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h8"/>
-          </svg>
-        </div>
-      </div>
-      <div>
-        <p class="text-3xl font-bold text-brand-600" id="stat-pendentes">—</p>
-        <p class="text-xs text-slate-400 mt-0.5">pendentes</p>
-      </div>
-    </div>
-  </div>
-
-  <!-- ===================== RESUMO DIÁRIO ===================== -->
-  <div class="bg-white rounded-2xl border border-slate-100 px-6 py-5">
-    <div class="flex items-center justify-between mb-4">
-      <h2 class="text-sm font-semibold text-slate-800">Cadastros por Dia</h2>
-      <span class="text-xs text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full">Últimos 7 dias</span>
-    </div>
-    <div id="resumo-diario" class="grid grid-cols-7 gap-2">
-      <!-- preenchido via JS -->
-    </div>
-  </div>
-
-  <!-- ===================== LOG AO VIVO ===================== -->
-  <div id="log-card" class="hidden bg-slate-900 rounded-2xl border border-slate-700/60 fade-in overflow-hidden">
-    <div class="px-5 py-3 border-b border-slate-700/60 flex items-center gap-2.5">
-      <span class="w-2 h-2 rounded-full bg-emerald-400 pulse-dot shrink-0"></span>
-      <span class="text-sm font-semibold text-slate-200">Log em tempo real</span>
-      <span class="ml-auto text-xs text-slate-500">atualiza a cada 2s</span>
-      <button onclick="document.getElementById('log-card').classList.add('hidden')"
-        class="text-slate-600 hover:text-slate-400 ml-2 transition-colors text-sm leading-none">&times;</button>
-    </div>
-    <div id="log-content" class="p-4 h-52 overflow-y-auto">
-      <p class="log-line text-slate-500">Aguardando saída do bot...</p>
-    </div>
-  </div>
-
-  <!-- ===================== ADICIONAR LINKS ===================== -->
-  <div class="bg-white rounded-2xl border border-slate-100 overflow-hidden">
-    <div class="px-6 py-4 border-b border-slate-100 flex items-center gap-3">
-      <div class="w-7 h-7 rounded-lg bg-brand-50 flex items-center justify-center">
-        <svg class="w-3.5 h-3.5 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
-        </svg>
-      </div>
-      <div>
-        <h2 class="text-sm font-semibold text-slate-800">Adicionar Links à Fila</h2>
-        <p class="text-xs text-slate-400">Cole um ou vários links do Instagram, um por linha</p>
-      </div>
-    </div>
-
-    <div class="p-5 space-y-3">
-
-      <!-- Textarea com numeração de linhas -->
-      <div class="flex rounded-xl border border-slate-200 focus-within:ring-2 focus-within:ring-brand-400 focus-within:border-transparent overflow-hidden transition-shadow">
-        <!-- Numeração -->
-        <div id="line-numbers" class="select-none bg-slate-50 border-r border-slate-200 px-3 py-3 text-right min-w-[2.5rem]">
-          <div class="text-xs text-slate-300 leading-[1.625rem] font-mono">1</div>
-        </div>
-        <!-- Input -->
-        <textarea id="textarea-urls" rows="5"
-          placeholder="https://www.instagram.com/p/ABC123/&#10;https://www.instagram.com/reel/XYZ789/&#10;https://www.instagram.com/p/DEF456/"
-          class="flex-1 px-4 py-3 text-sm text-slate-700 resize-none focus:outline-none placeholder-slate-300 font-mono leading-[1.625rem]"
-          oninput="atualizarContador()"
-          onkeydown="if(event.ctrlKey&&event.key==='Enter') adicionarUrls()"></textarea>
-      </div>
-
-      <!-- Rodapé: contador + botão -->
-      <div class="flex items-center justify-between gap-4">
-        <div class="flex items-center gap-3">
-          <span id="link-counter" class="hidden items-center gap-1.5 px-3 py-1 bg-brand-50 text-brand-600 rounded-full text-xs font-semibold">
-            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
-            </svg>
-            <span id="counter-txt">0 links</span>
-          </span>
-          <p class="text-xs text-slate-400">Atalho: <kbd class="px-1.5 py-0.5 bg-slate-100 rounded text-slate-500 font-mono">Ctrl+Enter</kbd></p>
-        </div>
-        <button onclick="adicionarUrls()" id="btn-adicionar"
-          class="flex items-center gap-2 h-9 px-5 bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
-          </svg>
-          Adicionar à Fila
-        </button>
-      </div>
-
-      <!-- Resultado do envio -->
-      <div id="add-result" class="hidden fade-in rounded-xl border p-4 space-y-3">
-        <div class="flex items-center gap-4 flex-wrap" id="add-summary"></div>
-        <div id="add-details" class="space-y-1 max-h-40 overflow-y-auto"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ===================== TABELA COM ABAS ===================== -->
-  <div class="bg-white rounded-2xl border border-slate-100 overflow-hidden">
-
-    <!-- Abas + controles -->
-    <div class="px-6 py-3 border-b border-slate-100 flex flex-wrap items-center gap-3">
-      <!-- Tabs -->
-      <div class="flex rounded-xl border border-slate-200 p-0.5 gap-0.5">
-        <button id="tab-historico" onclick="setTab('historico')"
-          class="px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors bg-brand-500 text-white">
-          Histórico
-        </button>
-        <button id="tab-fila" onclick="setTab('fila')"
-          class="px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors text-slate-500 hover:text-slate-700">
-          Fila <span id="fila-count" class="ml-1 bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full text-[10px]">—</span>
-        </button>
-      </div>
-
-      <!-- Filtros de status (só no histórico) -->
-      <div id="filtros-status" class="flex gap-1.5">
-        <button onclick="setFiltro('todos')"    id="f-todos"    class="filtro-btn active px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-800 text-white">Todos</button>
-        <button onclick="setFiltro('sucesso')"  id="f-sucesso"  class="filtro-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200">Sucesso</button>
-        <button onclick="setFiltro('falha')"    id="f-falha"    class="filtro-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200">Falha</button>
-        <button onclick="setFiltro('processando')" id="f-processando" class="filtro-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200">Andamento</button>
-      </div>
-
-      <!-- Período (só no histórico) -->
-      <div id="filtros-periodo" class="flex gap-1.5">
-        <button onclick="setPeriodo(1)"  id="p-1"  class="periodo-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200">Hoje</button>
-        <button onclick="setPeriodo(7)"  id="p-7"  class="periodo-btn active px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-800 text-white">Semana</button>
-        <button onclick="setPeriodo(30)" id="p-30" class="periodo-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200">Mês</button>
-        <button onclick="setPeriodo(90)" id="p-90" class="periodo-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200">90d</button>
-      </div>
-
-      <!-- Export CSV -->
-      <button onclick="exportarCSV()" id="btn-export"
-        class="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 hover:text-slate-700 border border-slate-200 hover:border-slate-300 transition-colors">
+<!-- ===================== NAV TABS ===================== -->
+<nav class="bg-white border-b border-slate-100 sticky top-16 z-10">
+  <div class="max-w-7xl mx-auto px-6">
+    <div class="flex items-center -mb-px">
+      <button onclick="setMainTab('dashboard')" id="nav-dashboard"
+        class="nav-tab px-5 py-3.5 text-sm font-semibold border-b-2 border-brand-500 text-brand-600 transition-colors whitespace-nowrap">
+        Dashboard
+      </button>
+      <button onclick="setMainTab('fila')" id="nav-fila"
+        class="nav-tab px-5 py-3.5 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition-colors whitespace-nowrap flex items-center gap-2">
+        Fila
+        <span id="fila-count" class="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full text-[10px] font-semibold">—</span>
+      </button>
+      <button onclick="setMainTab('historico')" id="nav-historico"
+        class="nav-tab px-5 py-3.5 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition-colors whitespace-nowrap">
+        Histórico
+      </button>
+      <button onclick="setMainTab('config')" id="nav-config"
+        class="nav-tab hidden px-5 py-3.5 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition-colors whitespace-nowrap items-center gap-2">
         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
         </svg>
-        Exportar CSV
+        Configurações
       </button>
     </div>
+  </div>
+</nav>
 
-    <!-- ABA: HISTÓRICO -->
-    <div id="pane-historico">
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm">
-          <thead>
-            <tr class="bg-slate-50/70 border-b border-slate-100">
-              <th class="text-left px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">ID</th>
-              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Data / Hora</th>
-              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Imóvel</th>
-              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Localização</th>
-              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Status</th>
-              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Ações</th>
-            </tr>
-          </thead>
-          <tbody id="tabela-body">
-            <tr><td colspan="6" class="text-center py-16 text-slate-400 text-sm">Carregando...</td></tr>
-          </tbody>
-        </table>
+<main class="max-w-7xl mx-auto px-6 py-6">
+
+  <!-- ===================== SEÇÃO: DASHBOARD ===================== -->
+  <div id="section-dashboard" class="space-y-5">
+
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+
+      <div class="stat-card bg-white rounded-2xl border border-slate-100 p-5 flex flex-col gap-3">
+        <div class="flex items-center justify-between">
+          <p class="text-xs font-semibold text-slate-400 uppercase tracking-wide">Total</p>
+          <div class="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
+            <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+            </svg>
+          </div>
+        </div>
+        <div>
+          <p class="text-3xl font-bold text-slate-800" id="stat-total">—</p>
+          <p class="text-xs text-slate-400 mt-0.5">últimos 7 dias</p>
+        </div>
+      </div>
+
+      <div class="stat-card bg-white rounded-2xl border border-slate-100 p-5 flex flex-col gap-3">
+        <div class="flex items-center justify-between">
+          <p class="text-xs font-semibold text-emerald-500 uppercase tracking-wide">Sucessos</p>
+          <div class="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
+            <svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+          </div>
+        </div>
+        <div>
+          <p class="text-3xl font-bold text-emerald-600" id="stat-sucesso">—</p>
+          <p class="text-xs text-slate-400 mt-0.5">publicados</p>
+        </div>
+      </div>
+
+      <div class="stat-card bg-white rounded-2xl border border-slate-100 p-5 flex flex-col gap-3">
+        <div class="flex items-center justify-between">
+          <p class="text-xs font-semibold text-red-400 uppercase tracking-wide">Falhas</p>
+          <div class="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center">
+            <svg class="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+          </div>
+        </div>
+        <div>
+          <p class="text-3xl font-bold text-red-500" id="stat-falha">—</p>
+          <p class="text-xs text-slate-400 mt-0.5">com erro</p>
+        </div>
+      </div>
+
+      <div class="stat-card bg-white rounded-2xl border border-slate-100 p-5 flex flex-col gap-3">
+        <div class="flex items-center justify-between">
+          <p class="text-xs font-semibold text-amber-500 uppercase tracking-wide">Andamento</p>
+          <div class="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
+            <svg class="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+          </div>
+        </div>
+        <div>
+          <p class="text-3xl font-bold text-amber-500" id="stat-andamento">—</p>
+          <p class="text-xs text-slate-400 mt-0.5">processando</p>
+        </div>
+      </div>
+
+      <div class="stat-card bg-white rounded-2xl border border-brand-100 p-5 flex flex-col gap-3 cursor-pointer"
+           onclick="setMainTab('fila')">
+        <div class="flex items-center justify-between">
+          <p class="text-xs font-semibold text-brand-500 uppercase tracking-wide">Na Fila</p>
+          <div class="w-8 h-8 rounded-lg bg-brand-50 flex items-center justify-center">
+            <svg class="w-4 h-4 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h8"/>
+            </svg>
+          </div>
+        </div>
+        <div>
+          <p class="text-3xl font-bold text-brand-600" id="stat-pendentes">—</p>
+          <p class="text-xs text-slate-400 mt-0.5">pendentes</p>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Resumo Diário -->
+    <div class="bg-white rounded-2xl border border-slate-100 px-6 py-5">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-sm font-semibold text-slate-800">Cadastros por Dia</h2>
+        <span class="text-xs text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full">Últimos 7 dias</span>
+      </div>
+      <div id="resumo-diario" class="grid grid-cols-7 gap-2"></div>
+    </div>
+
+    <!-- Log ao vivo -->
+    <div id="log-card" class="hidden bg-slate-900 rounded-2xl border border-slate-700/60 fade-in overflow-hidden">
+      <div class="px-5 py-3 border-b border-slate-700/60 flex items-center gap-2.5">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 pulse-dot shrink-0"></span>
+        <span class="text-sm font-semibold text-slate-200">Log em tempo real</span>
+        <span class="ml-auto text-xs text-slate-500">atualiza a cada 2s</span>
+        <button onclick="document.getElementById('log-card').classList.add('hidden')"
+          class="text-slate-600 hover:text-slate-400 ml-2 transition-colors text-sm leading-none">&times;</button>
+      </div>
+      <div id="log-content" class="p-4 h-52 overflow-y-auto">
+        <p class="log-line text-slate-500">Aguardando saída do bot...</p>
       </div>
     </div>
 
-    <!-- ABA: FILA -->
-    <div id="pane-fila" class="hidden">
+  </div>
+
+  <!-- ===================== SEÇÃO: FILA ===================== -->
+  <div id="section-fila" class="hidden space-y-5">
+
+    <!-- Adicionar Links -->
+    <div class="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+      <div class="px-6 py-4 border-b border-slate-100 flex items-center gap-3">
+        <div class="w-7 h-7 rounded-lg bg-brand-50 flex items-center justify-center">
+          <svg class="w-3.5 h-3.5 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+          </svg>
+        </div>
+        <div>
+          <h2 class="text-sm font-semibold text-slate-800">Adicionar Links à Fila</h2>
+          <p class="text-xs text-slate-400">Cole um ou vários links do Instagram, um por linha</p>
+        </div>
+      </div>
+
+      <div class="p-5 space-y-3">
+        <div class="flex rounded-xl border border-slate-200 focus-within:ring-2 focus-within:ring-brand-400 focus-within:border-transparent overflow-hidden transition-shadow">
+          <div id="line-numbers" class="select-none bg-slate-50 border-r border-slate-200 px-3 py-3 text-right min-w-[2.5rem]">
+            <div class="text-xs text-slate-300 leading-[1.625rem] font-mono">1</div>
+          </div>
+          <textarea id="textarea-urls" rows="5"
+            placeholder="https://www.instagram.com/p/ABC123/&#10;https://www.instagram.com/reel/XYZ789/&#10;https://www.instagram.com/p/DEF456/"
+            class="flex-1 px-4 py-3 text-sm text-slate-700 resize-none focus:outline-none placeholder-slate-300 font-mono leading-[1.625rem]"
+            oninput="atualizarContador()"
+            onkeydown="if(event.ctrlKey&&event.key==='Enter') adicionarUrls()"></textarea>
+        </div>
+
+        <div class="flex items-center justify-between gap-4">
+          <div class="flex items-center gap-3">
+            <span id="link-counter" class="hidden items-center gap-1.5 px-3 py-1 bg-brand-50 text-brand-600 rounded-full text-xs font-semibold">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+              </svg>
+              <span id="counter-txt">0 links</span>
+            </span>
+            <p class="text-xs text-slate-400">Atalho: <kbd class="px-1.5 py-0.5 bg-slate-100 rounded text-slate-500 font-mono">Ctrl+Enter</kbd></p>
+          </div>
+          <button onclick="adicionarUrls()" id="btn-adicionar"
+            class="flex items-center gap-2 h-9 px-5 bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+            </svg>
+            Adicionar à Fila
+          </button>
+        </div>
+
+        <div id="add-result" class="hidden fade-in rounded-xl border p-4 space-y-3">
+          <div class="flex items-center gap-4 flex-wrap" id="add-summary"></div>
+          <div id="add-details" class="space-y-1 max-h-40 overflow-y-auto"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabela da Fila -->
+    <div class="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+      <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+        <div>
+          <h2 class="text-sm font-semibold text-slate-800">Itens na Fila</h2>
+          <p class="text-xs text-slate-400">Pendentes e com erro aguardando processamento</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <span id="fila-item-count" class="text-xs text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full">0 itens</span>
+          <button onclick="limparPendentes()" class="text-xs text-red-500 hover:text-red-700 font-medium px-2.5 py-1 rounded-lg border border-red-100 hover:bg-red-50 transition-colors">Limpar pendentes</button>
+        </div>
+      </div>
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
@@ -364,8 +331,57 @@
 
   </div>
 
-  <!-- ===================== CONFIGURAÇÕES (somente admin) ===================== -->
-  <div id="config-section" class="hidden bg-white rounded-2xl border border-slate-100 overflow-hidden">
+  <!-- ===================== SEÇÃO: HISTÓRICO ===================== -->
+  <div id="section-historico" class="hidden">
+    <div class="bg-white rounded-2xl border border-slate-100 overflow-hidden">
+
+      <div class="px-6 py-3 border-b border-slate-100 flex flex-wrap items-center gap-3">
+        <div class="flex gap-1.5">
+          <button onclick="setFiltro('todos')"       id="f-todos"       class="filtro-btn active px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-800 text-white">Todos</button>
+          <button onclick="setFiltro('sucesso')"     id="f-sucesso"     class="filtro-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200">Sucesso</button>
+          <button onclick="setFiltro('falha')"       id="f-falha"       class="filtro-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200">Falha</button>
+          <button onclick="setFiltro('processando')" id="f-processando" class="filtro-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200">Andamento</button>
+        </div>
+
+        <div class="flex gap-1.5">
+          <button onclick="setPeriodo(1)"  id="p-1"  class="periodo-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200">Hoje</button>
+          <button onclick="setPeriodo(7)"  id="p-7"  class="periodo-btn active px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-800 text-white">Semana</button>
+          <button onclick="setPeriodo(30)" id="p-30" class="periodo-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200">Mês</button>
+          <button onclick="setPeriodo(90)" id="p-90" class="periodo-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200">90d</button>
+        </div>
+
+        <button onclick="exportarCSV()" id="btn-export"
+          class="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 hover:text-slate-700 border border-slate-200 hover:border-slate-300 transition-colors">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+          </svg>
+          Exportar CSV
+        </button>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="bg-slate-50/70 border-b border-slate-100">
+              <th class="text-left px-6 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">ID</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Data / Hora</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Imóvel</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Localização</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Status</th>
+              <th class="text-left px-4 py-3 text-xs font-semibold text-slate-400 uppercase tracking-wide">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="tabela-body">
+            <tr><td colspan="6" class="text-center py-16 text-slate-400 text-sm">Carregando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SEÇÃO: CONFIGURAÇÕES ===================== -->
+  <div id="section-config" class="hidden bg-white rounded-2xl border border-slate-100 overflow-hidden">
+
     <div class="px-6 py-4 border-b border-slate-100 flex items-center gap-3">
       <div class="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center">
         <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -402,12 +418,17 @@
         <p class="text-xs text-slate-400">Deixe vazio para licença permanente.</p>
       </div>
 
-      <!-- Senha do Cliente -->
+      <!-- Credenciais do Cliente -->
       <div class="space-y-2">
-        <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide">Senha do Cliente</label>
+        <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide">Acesso do Cliente</label>
+        <div class="flex items-center gap-2">
+          <input type="text" id="cfg-usuario" autocomplete="off" spellcheck="false"
+            placeholder="Usuário do cliente..."
+            class="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent" />
+        </div>
         <div class="flex items-center gap-2">
           <input type="password" id="cfg-senha" autocomplete="new-password"
-            placeholder="Nova senha do cliente..."
+            placeholder="Senha do cliente..."
             class="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent" />
           <button onclick="salvarSenha()"
             class="h-9 px-3 bg-brand-500 hover:bg-brand-600 text-white text-xs font-semibold rounded-lg transition-colors whitespace-nowrap">
@@ -419,15 +440,20 @@
             <span class="w-1.5 h-1.5 rounded-full bg-slate-300"></span> Verificando...
           </span>
         </div>
-        <p class="text-xs text-slate-400">Senha que você entrega ao cliente. Deixe vazio para desativar.</p>
+        <p class="text-xs text-slate-400">Usuário e senha que você entrega ao cliente. Deixe vazio para desativar.</p>
       </div>
 
-      <!-- Senha Admin -->
+      <!-- Credenciais Admin -->
       <div class="space-y-2">
-        <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide">Senha Admin (sua)</label>
+        <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide">Acesso Admin (seu)</label>
+        <div class="flex items-center gap-2">
+          <input type="text" id="cfg-admin-usuario" autocomplete="off" spellcheck="false"
+            placeholder="Usuário admin..."
+            class="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent" />
+        </div>
         <div class="flex items-center gap-2">
           <input type="password" id="cfg-admin-senha" autocomplete="new-password"
-            placeholder="Nova senha admin..."
+            placeholder="Senha admin..."
             class="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent" />
           <button onclick="salvarAdminSenha()"
             class="h-9 px-3 bg-slate-700 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg transition-colors whitespace-nowrap">
@@ -670,6 +696,34 @@ let _execucoesVisiveis = [];
 let _botRodando = false;
 let _watchAtivo = false;
 let _toastTimer = null;
+let _mainTab = 'dashboard';
+
+// ---------------------------------------------------------------------------
+// Navegação principal
+// ---------------------------------------------------------------------------
+function setMainTab(tab) {
+  _mainTab = tab;
+  const tabs = ['dashboard', 'fila', 'historico', 'config'];
+  const activeClass  = 'nav-tab px-5 py-3.5 text-sm font-semibold border-b-2 border-brand-500 text-brand-600 transition-colors whitespace-nowrap';
+  const inactiveClass = 'nav-tab px-5 py-3.5 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition-colors whitespace-nowrap';
+  const activeClassFlex  = 'nav-tab px-5 py-3.5 text-sm font-semibold border-b-2 border-brand-500 text-brand-600 transition-colors whitespace-nowrap flex items-center gap-2';
+  const inactiveClassFlex = 'nav-tab px-5 py-3.5 text-sm font-semibold border-b-2 border-transparent text-slate-500 hover:text-slate-700 transition-colors whitespace-nowrap flex items-center gap-2';
+
+  tabs.forEach(t => {
+    const btn     = document.getElementById(`nav-${t}`);
+    const section = document.getElementById(`section-${t}`);
+    if (btn && !btn.classList.contains('hidden')) {
+      const isFlex = btn.classList.contains('flex') || t === 'fila' || t === 'config';
+      btn.className = (t === tab)
+        ? (isFlex ? activeClassFlex : activeClass)
+        : (isFlex ? inactiveClassFlex : inactiveClass);
+      if (isFlex) { btn.classList.add('flex'); }
+    }
+    if (section) section.classList.toggle('hidden', t !== tab);
+  });
+
+  if (tab === 'fila') carregarFila();
+}
 
 // ---------------------------------------------------------------------------
 // Utilitários
@@ -728,7 +782,6 @@ function renderResumoDiario(execs) {
     return d.toISOString().slice(0, 10);
   });
 
-  // Conta sucessos e falhas por dia
   const porDia = {};
   dias.forEach(d => { porDia[d] = { suc: 0, fal: 0, total: 0 }; });
   execs.forEach(ex => {
@@ -740,12 +793,11 @@ function renderResumoDiario(execs) {
   });
 
   const maxSuc = Math.max(1, ...dias.map(d => porDia[d].suc));
-
   const nomeDia = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
   const container = document.getElementById('resumo-diario');
 
   container.innerHTML = dias.map(d => {
-    const { suc, fal, total } = porDia[d];
+    const { suc, fal } = porDia[d];
     const pct = Math.round((suc / maxSuc) * 100);
     const isHoje = d === hoje.toISOString().slice(0, 10);
     const partes = d.split('-');
@@ -754,14 +806,12 @@ function renderResumoDiario(execs) {
 
     return `
       <div class="flex flex-col items-center gap-1.5 group">
-        <!-- Barra -->
         <div class="w-full flex flex-col items-center justify-end h-20 gap-0.5">
           <span class="text-xs font-bold ${suc > 0 ? 'text-brand-600' : 'text-slate-300'} leading-none">${suc > 0 ? suc : ''}</span>
           <div class="w-full rounded-t-lg transition-all duration-500 ${isHoje ? 'bg-brand-500' : 'bg-brand-200'} ${suc === 0 ? 'opacity-30' : ''}"
                style="height:${suc === 0 ? 4 : Math.max(8, pct * 0.6)}px"></div>
           ${fal > 0 ? `<div class="w-full rounded-none bg-red-200" style="height:${Math.max(4, fal * 4)}px" title="${fal} falha(s)"></div>` : ''}
         </div>
-        <!-- Label -->
         <div class="text-center">
           <p class="text-[10px] font-semibold ${isHoje ? 'text-brand-600' : 'text-slate-400'} leading-tight">${diaSemana}</p>
           <p class="text-[10px] text-slate-300 leading-tight">${label}</p>
@@ -997,15 +1047,17 @@ async function atualizarStatus() {
 
     hoje.textContent = d.hoje || '';
 
-    // Seção de configurações só para admin
-    const cfgSection = document.getElementById('config-section');
+    // Tab Configurações visível só para admin
+    const navConfig = document.getElementById('nav-config');
     if (d.nivel === 'admin') {
-      cfgSection.classList.remove('hidden');
+      navConfig.classList.remove('hidden');
+      navConfig.classList.add('flex');
     } else {
-      cfgSection.classList.add('hidden');
+      navConfig.classList.add('hidden');
+      navConfig.classList.remove('flex');
+      if (_mainTab === 'config') setMainTab('dashboard');
     }
 
-    // Botão Watch Mode
     btnWatch.classList.remove('hidden');
     btnWatch.classList.add('flex');
     if (_watchAtivo) {
@@ -1090,7 +1142,6 @@ async function adicionarUrls() {
       return;
     }
 
-    // Summary tags
     const tags = [];
     if (d.adicionadas)  tags.push(`<span class="result-tag bg-emerald-100 text-emerald-700">✓ ${d.adicionadas} adicionada${d.adicionadas>1?'s':''}</span>`);
     if (d.duplicadas)   tags.push(`<span class="result-tag bg-slate-100 text-slate-500">= ${d.duplicadas} duplicada${d.duplicadas>1?'s':''}</span>`);
@@ -1098,7 +1149,6 @@ async function adicionarUrls() {
     if (d.erros)        tags.push(`<span class="result-tag bg-red-100 text-red-600">! ${d.erros} erro${d.erros>1?'s':''}</span>`);
     summary.innerHTML = tags.join('');
 
-    // Per-URL details
     const statusIcons = {
       adicionada: '<span class="text-emerald-500 mr-1.5">✓</span>',
       duplicada:  '<span class="text-slate-400 mr-1.5">=</span>',
@@ -1113,7 +1163,6 @@ async function adicionarUrls() {
       </div>
     `).join('');
 
-    // Border color
     result.className = result.className.replace(/border-\S+/, '');
     if (d.adicionadas && !d.invalidas && !d.erros) {
       result.classList.add('border-emerald-200', 'bg-emerald-50/50');
@@ -1147,7 +1196,6 @@ function atualizarContador() {
   const linhas = textarea.value.split('\n').map(l => l.trim()).filter(Boolean);
   const count = linhas.length;
 
-  // Contador de links
   const counter = document.getElementById('link-counter');
   const counterTxt = document.getElementById('counter-txt');
   if (count > 0) {
@@ -1159,30 +1207,11 @@ function atualizarContador() {
     counter.classList.remove('inline-flex');
   }
 
-  // Numeração de linhas
   const totalLinhas = textarea.value.split('\n').length;
   const nums = document.getElementById('line-numbers');
   nums.innerHTML = Array.from({ length: totalLinhas }, (_, i) =>
     `<div class="text-xs leading-[1.625rem] font-mono ${i < totalLinhas - 1 || textarea.value.endsWith('\n') ? 'text-slate-400' : 'text-slate-300'}">${i + 1}</div>`
   ).join('');
-}
-
-// ---------------------------------------------------------------------------
-// Abas
-// ---------------------------------------------------------------------------
-let _abaAtiva = 'historico';
-
-function setTab(aba) {
-  _abaAtiva = aba;
-  const isHist = aba === 'historico';
-  document.getElementById('tab-historico').className  = `px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${isHist ? 'bg-brand-500 text-white' : 'text-slate-500 hover:text-slate-700'}`;
-  document.getElementById('tab-fila').className       = `px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${!isHist ? 'bg-brand-500 text-white' : 'text-slate-500 hover:text-slate-700'}`;
-  document.getElementById('pane-historico').classList.toggle('hidden', !isHist);
-  document.getElementById('pane-fila').classList.toggle('hidden', isHist);
-  document.getElementById('filtros-status').classList.toggle('hidden', !isHist);
-  document.getElementById('filtros-periodo').classList.toggle('hidden', !isHist);
-  document.getElementById('btn-export').classList.toggle('hidden', !isHist);
-  if (!isHist) carregarFila();
 }
 
 // ---------------------------------------------------------------------------
@@ -1237,7 +1266,7 @@ function exportarCSV() {
       (ex.erros || []).join(' | ').replace(/;/g,','),
     ].map(v => `"${v}"`).join(';'));
   });
-  const blob = new Blob(['\uFEFF' + linhas.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+  const blob = new Blob(['﻿' + linhas.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `mercadoi_historico_${new Date().toISOString().slice(0,10)}.csv`;
@@ -1254,7 +1283,10 @@ async function carregarFila() {
     const r = await fetch('/api/fila');
     const d = await r.json();
     _filaItems = d.items || [];
-    document.getElementById('fila-count').textContent = _filaItems.length || '0';
+    const count = _filaItems.length;
+    document.getElementById('fila-count').textContent = count || '0';
+    const itemCount = document.getElementById('fila-item-count');
+    if (itemCount) itemCount.textContent = `${count} ${count === 1 ? 'item' : 'itens'}`;
     renderFila(_filaItems);
   } catch {}
 }
@@ -1340,6 +1372,21 @@ async function reprocessar(url) {
   } catch { toast('Erro de conexão', 'erro'); }
 }
 
+async function limparPendentes() {
+  if (!confirm('Remover todos os itens pendentes da fila? Esta ação não pode ser desfeita.')) return;
+  try {
+    const r = await fetch('/api/limpar-pendentes', { method: 'POST' });
+    if (r.status === 401) { window.location.href = '/login'; return; }
+    const d = await r.json();
+    if (d.ok) {
+      toast(d.msg || 'Pendentes removidos');
+      await carregarFila();
+    } else {
+      toast(d.msg || 'Erro ao limpar pendentes', 'erro');
+    }
+  } catch { toast('Erro de conexão', 'erro'); }
+}
+
 async function logout() {
   await fetch('/api/logout', { method: 'POST' });
   window.location.href = '/login';
@@ -1354,11 +1401,11 @@ async function carregarConfig() {
 
     if (d.watch_intervalo_minutos) document.getElementById('cfg-intervalo').value = d.watch_intervalo_minutos;
 
-    // Campos Telegram
+    if (d.panel_usuario      !== undefined) document.getElementById('cfg-usuario').value       = d.panel_usuario;
+    if (d.admin_usuario      !== undefined) document.getElementById('cfg-admin-usuario').value = d.admin_usuario;
     if (d.telegram_bot_token !== undefined) document.getElementById('cfg-tg-token').value = d.telegram_bot_token;
     if (d.telegram_chat_id   !== undefined) document.getElementById('cfg-tg-chat').value  = d.telegram_chat_id;
 
-    // Badge Telegram
     const tgBadge = document.getElementById('telegram-badge');
     if (d.telegram_configurado) {
       tgBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-100 text-emerald-700';
@@ -1368,7 +1415,6 @@ async function carregarConfig() {
       tgBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-slate-300"></span> Não configurado';
     }
 
-    // Badge senha cliente
     const snBadge = document.getElementById('senha-badge');
     if (d.senha_configurada) {
       snBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-100 text-emerald-700';
@@ -1378,7 +1424,6 @@ async function carregarConfig() {
       snBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span> Sem senha';
     }
 
-    // Badge senha admin
     const adBadge = document.getElementById('admin-senha-badge');
     if (d.admin_senha_configurada) {
       adBadge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-100 text-emerald-700';
@@ -1388,7 +1433,6 @@ async function carregarConfig() {
       adBadge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-red-400"></span> Não configurada';
     }
 
-    // Licença
     if (d.licenca_expira) document.getElementById('cfg-expira').value = d.licenca_expira;
     const licDiv = document.getElementById('licenca-status');
     const dias = d.licenca_dias_restantes;
@@ -1411,7 +1455,6 @@ async function carregarConfig() {
       document.getElementById('btn-logout').classList.add('flex');
     }
 
-    // Campos avançados
     const set = (id, val) => { const el = document.getElementById(id); if (el && val !== undefined) el.value = val; };
     const setChk = (id, val) => { const el = document.getElementById(id); if (el && val !== undefined) el.checked = !!val; };
     set('adv-mercadoi-url',    d.mercadoi_url);
@@ -1441,20 +1484,21 @@ async function salvarIntervalo() {
 }
 
 async function salvarSenha() {
-  const val = document.getElementById('cfg-senha').value;
+  const usuario = document.getElementById('cfg-usuario').value.trim();
+  const senha   = document.getElementById('cfg-senha').value;
   try {
     const r = await fetch('/api/config/senha', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nova_senha: val }),
+      body: JSON.stringify({ novo_usuario: usuario, nova_senha: senha }),
     });
     const d = await r.json();
     if (d.ok) {
-      toast(val.trim() ? 'Senha salva — painel protegido' : 'Senha removida — login desativado');
+      toast(senha.trim() ? 'Acesso do cliente salvo' : 'Acesso do cliente removido');
       document.getElementById('cfg-senha').value = '';
       await carregarConfig();
     } else {
-      toast(d.msg || 'Erro ao salvar senha', 'erro');
+      toast(d.msg || 'Erro ao salvar', 'erro');
     }
   } catch { toast('Erro de conexão', 'erro'); }
 }
@@ -1475,20 +1519,18 @@ async function salvarTelegram() {
 }
 
 async function salvarAdminSenha() {
-  const val = document.getElementById('cfg-admin-senha').value;
-  if (!val.trim()) {
-    toast('A senha admin não pode ser vazia', 'erro');
-    return;
-  }
+  const usuario = document.getElementById('cfg-admin-usuario').value.trim();
+  const senha   = document.getElementById('cfg-admin-senha').value;
+  if (!senha.trim()) { toast('A senha admin não pode ser vazia', 'erro'); return; }
   try {
     const r = await fetch('/api/config/admin-senha', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nova_senha: val }),
+      body: JSON.stringify({ novo_usuario: usuario, nova_senha: senha }),
     });
     const d = await r.json();
     if (d.ok) {
-      toast('Senha admin salva');
+      toast('Acesso admin salvo');
       document.getElementById('cfg-admin-senha').value = '';
       await carregarConfig();
     } else {
@@ -1555,8 +1597,6 @@ async function salvarAvancada() {
     usar_tunnel:           document.getElementById('adv-usar-tunnel').checked,
     usar_deepseek_api:     document.getElementById('adv-usar-deepseek').checked,
   };
-  // Remove campos vazios para não sobrescrever com string vazia inadvertidamente
-  // (booleans sempre enviados)
   Object.keys(payload).forEach(k => {
     if (typeof payload[k] === 'string' && payload[k].trim() === '') delete payload[k];
   });
@@ -1577,8 +1617,8 @@ async function verificarTunnel() {
     if (r.status !== 200) return;
     const d = await r.json();
 
-    const badge   = document.getElementById('tunnel-badge');
-    const urlBox  = document.getElementById('tunnel-url-box');
+    const badge    = document.getElementById('tunnel-badge');
+    const urlBox   = document.getElementById('tunnel-url-box');
     const urlInput = document.getElementById('tunnel-url-input');
     const btnBaixar = document.getElementById('btn-tunnel-baixar');
 
@@ -1652,9 +1692,9 @@ async function verificarAtualizacao() {
       badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span> v${d.versao_atual} instalada`;
     }
 
-    const updateBadge = document.getElementById('update-badge');
+    const updateBadge  = document.getElementById('update-badge');
     const btnAtualizar = document.getElementById('btn-atualizar');
-    const updateInfo  = document.getElementById('update-info');
+    const updateInfo   = document.getElementById('update-info');
 
     if (d.versao_remota) {
       if (d.has_update) {
@@ -1708,7 +1748,7 @@ async function init() {
     await atualizarChromeStatus();
     if (!_botRodando) {
       await carregarExecucoes();
-      if (_abaAtiva === 'fila') await carregarFila();
+      if (_mainTab === 'fila') await carregarFila();
     }
   }, 8000);
 

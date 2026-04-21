@@ -35,8 +35,14 @@
         <p class="text-sm font-semibold text-slate-700 mb-5 text-center">Digite a senha para acessar</p>
         <form method="POST" action="/login" class="space-y-4">
           <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1.5">Usuário</label>
+            <input type="text" name="usuario" autofocus autocomplete="username"
+              class="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent transition-shadow"
+              placeholder="seu usuário" required />
+          </div>
+          <div>
             <label class="block text-xs font-medium text-slate-500 mb-1.5">Senha</label>
-            <input type="password" name="senha" autofocus autocomplete="current-password"
+            <input type="password" name="senha" autocomplete="current-password"
               class="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent transition-shadow"
               placeholder="••••••••" required />
           </div>

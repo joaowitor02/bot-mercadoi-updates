@@ -7,6 +7,7 @@ import asyncio
 import hashlib
 import hmac as _hmac_mod
 import json
+import logging
 import os
 import re
 import secrets
@@ -15,6 +16,8 @@ import sys
 import threading
 from datetime import date, timedelta
 from pathlib import Path
+
+_logger = logging.getLogger("panel")
 
 from version import VERSION
 
@@ -38,8 +41,10 @@ SCREENSHOTS_DIR = LOGS_DIR / "screenshots"
 # Auth
 # ---------------------------------------------------------------------------
 
+_USUARIO: str = ""        # username do cliente
 _SENHA: str = ""          # senha do cliente
-_ADMIN_SENHA: str = ""   # senha do administrador (você)
+_ADMIN_USUARIO: str = ""  # username do administrador
+_ADMIN_SENHA: str = ""    # senha do administrador
 _LICENCA_EXPIRA: str = ""  # "YYYY-MM-DD" ou "" para sem expiração
 _SESSION_TOKENS: dict[str, str] = {}  # token -> "admin" | "user"
 
@@ -86,7 +91,7 @@ def _verificar_senha(raw: str, stored: str) -> bool:
         return False
     if _is_hash(stored):
         return _hmac_mod.compare_digest(_sha256(raw), stored)
-    return _hmac_mod.compare_digest(raw, stored)
+    return _hmac_mod.compare_digest(raw.encode("utf-8"), stored.encode("utf-8"))
 
 
 def _assinar_licenca(data_str: str) -> str:
@@ -112,26 +117,10 @@ async def _baixar_cloudflared() -> bool:
             if r.status_code == 200:
                 CLOUDFLARED_EXE.write_bytes(r.content)
                 return True
-    except Exception:
-        pass
+    except Exception as e:
+        _logger.warning(f"Falha ao baixar cloudflared: {e}")
     return False
 
-
-def _notificar_tunnel_url(url: str):
-    import asyncio
-    try:
-        cfg = _load_config()
-        loop = asyncio.new_event_loop()
-        from modules.notificador import notificar
-        loop.run_until_complete(
-            notificar(cfg,
-                f"🔑 <b>Painel online</b>\n"
-                f"<a href='{url}'>{url}</a>\n\n"
-                f"Acesse com sua senha admin.")
-        )
-        loop.close()
-    except Exception:
-        pass
 
 
 def _tunnel_worker():
@@ -152,14 +141,10 @@ def _tunnel_worker():
             m = _url_re.search(linha)
             if m and not _TUNNEL_URL:
                 _TUNNEL_URL = m.group(0)
-                threading.Thread(
-                    target=_notificar_tunnel_url,
-                    args=(_TUNNEL_URL,),
-                    daemon=True,
-                ).start()
+                _logger.info(f"Tunnel ativo: {_TUNNEL_URL}")
         proc.wait()
-    except Exception:
-        pass
+    except Exception as e:
+        _logger.warning(f"Tunnel worker encerrado com erro: {e}")
     finally:
         _TUNNEL_URL = ""
         _TUNNEL_PROCESSO = None
@@ -179,10 +164,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
         path = request.url.path
 
         if path in _PUBLIC_PATHS:
-            return await call_next(request)
-
-        # Sem senhas configuradas: acesso livre
-        if not _SENHA and not _ADMIN_SENHA:
             return await call_next(request)
 
         token = request.cookies.get("mercadoi_session", "")
@@ -215,14 +196,16 @@ app.add_middleware(AuthMiddleware)
 
 @app.on_event("startup")
 async def _startup():
-    global _SENHA, _ADMIN_SENHA, _LICENCA_EXPIRA
+    global _USUARIO, _SENHA, _ADMIN_USUARIO, _ADMIN_SENHA, _LICENCA_EXPIRA
     try:
         path = BASE_DIR / "config.json"
         cfg = json.loads(path.read_text(encoding="utf-8"))
         dirty = False
 
-        panel_senha = cfg.get("panel_senha", "").strip()
-        admin_senha = cfg.get("admin_senha", "").strip()
+        panel_usuario = cfg.get("panel_usuario", "").strip()
+        panel_senha   = cfg.get("panel_senha",   "").strip()
+        admin_usuario = cfg.get("admin_usuario", "").strip()
+        admin_senha   = cfg.get("admin_senha",   "").strip()
 
         # Auto-migrar senhas plaintext → SHA-256
         if panel_senha and not _is_hash(panel_senha):
@@ -234,8 +217,10 @@ async def _startup():
             cfg["admin_senha"] = admin_senha
             dirty = True
 
-        _SENHA       = panel_senha
-        _ADMIN_SENHA = admin_senha
+        _USUARIO      = panel_usuario
+        _SENHA        = panel_senha
+        _ADMIN_USUARIO = admin_usuario
+        _ADMIN_SENHA  = admin_senha
 
         # Validar assinatura da licença (impede edição manual do config.json)
         expira = cfg.get("licenca_expira", "").strip()
@@ -257,8 +242,8 @@ async def _startup():
             ok = await _baixar_cloudflared()
             if ok:
                 threading.Thread(target=_tunnel_worker, daemon=True).start()
-    except Exception:
-        pass
+    except Exception as e:
+        _logger.error(f"Erro crítico na inicialização do painel: {e}", exc_info=True)
 
 
 @app.get("/licenca-expirada", response_class=HTMLResponse)
@@ -278,28 +263,44 @@ async def login_page(erro: str = ""):
     content = html.read_text(encoding="utf-8")
     if erro:
         content = content.replace("<!--ERRO-->",
-            '<p class="text-sm text-red-500 text-center mt-1">Senha incorreta. Tente novamente.</p>')
+            '<p class="text-sm text-red-500 text-center mt-1">Usuário ou senha incorretos.</p>')
     return HTMLResponse(content)
 
 
 @app.post("/login")
-async def fazer_login(senha: str = Form(...)):
+async def fazer_login(usuario: str = Form(...), senha: str = Form(...)):
+    u = usuario.strip().lower()
+
     # Admin tem prioridade (ignora expiração de licença)
-    if _ADMIN_SENHA and _verificar_senha(senha, _ADMIN_SENHA):
-        token = secrets.token_hex(32)
-        _SESSION_TOKENS[token] = "admin"
-        resp = RedirectResponse("/", status_code=303)
-        resp.set_cookie("mercadoi_session", token, httponly=True, samesite="strict")
-        return resp
+    if _ADMIN_SENHA:
+        usuario_ok = (not _ADMIN_USUARIO) or _hmac_mod.compare_digest(u.encode("utf-8"), _ADMIN_USUARIO.lower().encode("utf-8"))
+        if usuario_ok and _verificar_senha(senha, _ADMIN_SENHA):
+            token = secrets.token_hex(32)
+            _SESSION_TOKENS[token] = "admin"
+            resp = RedirectResponse("/", status_code=303)
+            resp.set_cookie("mercadoi_session", token, httponly=True, samesite="strict")
+            return resp
+
     # Usuário comum é bloqueado se licença expirou
-    if _SENHA and _verificar_senha(senha, _SENHA):
-        if _licenca_expirada():
-            return RedirectResponse("/licenca-expirada", status_code=303)
+    if _SENHA:
+        usuario_ok = (not _USUARIO) or _hmac_mod.compare_digest(u.encode("utf-8"), _USUARIO.lower().encode("utf-8"))
+        if usuario_ok and _verificar_senha(senha, _SENHA):
+            if _licenca_expirada():
+                return RedirectResponse("/licenca-expirada", status_code=303)
+            token = secrets.token_hex(32)
+            _SESSION_TOKENS[token] = "user"
+            resp = RedirectResponse("/", status_code=303)
+            resp.set_cookie("mercadoi_session", token, httponly=True, samesite="strict")
+            return resp
+
+    # Sem credenciais configuradas: qualquer entrada concede acesso de usuário
+    if not _SENHA and not _ADMIN_SENHA:
         token = secrets.token_hex(32)
         _SESSION_TOKENS[token] = "user"
         resp = RedirectResponse("/", status_code=303)
         resp.set_cookie("mercadoi_session", token, httponly=True, samesite="strict")
         return resp
+
     return RedirectResponse("/login?erro=1", status_code=303)
 
 
@@ -645,7 +646,26 @@ async def abrir_chrome():
         chrome_exe = next((p for p in _CHROME_PATHS if os.path.exists(p)), "")
     if not chrome_exe:
         return JSONResponse({"ok": False, "msg": "Chrome não encontrado. Instale o Google Chrome."}, status_code=404)
+
     profile_path = config.get("mercadoi_profile_path", r"C:\chrome_bot_mercadoi")
+    mercadoi_url = config.get("mercadoi_url", "https://mercadoi.com.br")
+
+    # Encerra instâncias do Chrome que já estejam usando este perfil para evitar conflito
+    try:
+        import psutil
+        for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+            try:
+                if proc.info["name"] and "chrome" in proc.info["name"].lower():
+                    cmdline = " ".join(proc.info["cmdline"] or [])
+                    if profile_path.lower() in cmdline.lower() or "9222" in cmdline:
+                        proc.kill()
+                        _logger.info(f"Chrome anterior encerrado (pid {proc.info['pid']})")
+            except Exception:
+                pass
+        await asyncio.sleep(1)
+    except ImportError:
+        pass  # psutil não instalado — tenta abrir mesmo assim
+
     try:
         subprocess.Popen(
             [
@@ -654,13 +674,26 @@ async def abrir_chrome():
                 f"--user-data-dir={profile_path}",
                 "--no-first-run",
                 "--no-default-browser-check",
+                mercadoi_url,
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
         )
-        return JSONResponse({"ok": True, "msg": "Chrome iniciado"})
+
+        # Aguarda Chrome ficar acessível (até 10s)
+        async with httpx.AsyncClient(timeout=2) as client:
+            for _ in range(10):
+                await asyncio.sleep(1)
+                try:
+                    r = await client.get("http://localhost:9222/json/version")
+                    if r.status_code == 200:
+                        return JSONResponse({"ok": True, "msg": "Chrome iniciado e pronto!"})
+                except Exception:
+                    pass
+
+        return JSONResponse({"ok": True, "msg": "Chrome iniciado — aguarde alguns segundos para ele carregar."})
     except Exception as e:
         return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
 
@@ -672,7 +705,11 @@ async def logs_live(ultimas: int = 80):
 
 @app.get("/screenshots/{filename}")
 async def servir_screenshot(filename: str):
-    path = SCREENSHOTS_DIR / filename
+    if not re.match(r"^[\w\-]+\.[a-zA-Z]{2,5}$", filename):
+        raise HTTPException(400, "Filename inválido")
+    path = (SCREENSHOTS_DIR / filename).resolve()
+    if not str(path).startswith(str(SCREENSHOTS_DIR.resolve())):
+        raise HTTPException(403, "Acesso negado")
     if not path.exists():
         raise HTTPException(404, "Screenshot não encontrado")
     return FileResponse(path)
@@ -803,7 +840,9 @@ async def get_config():
             "telegram_configurado":     bool(token and chat_id),
             "telegram_bot_token":       token,
             "telegram_chat_id":         chat_id,
+            "panel_usuario":            cfg.get("panel_usuario", ""),
             "senha_configurada":        bool(cfg.get("panel_senha", "").strip()),
+            "admin_usuario":            cfg.get("admin_usuario", ""),
             "admin_senha_configurada":  bool(cfg.get("admin_senha", "").strip()),
             "licenca_expira":           expira,
             "licenca_dias_restantes":   dias_restantes,
@@ -843,21 +882,25 @@ async def update_config(body: ConfigRequest):
 
 
 class SenhaRequest(BaseModel):
-    nova_senha: str
+    novo_usuario: str = ""
+    nova_senha: str = ""
 
 
 @app.post("/api/config/senha")
 async def salvar_senha(body: SenhaRequest):
-    global _SENHA
+    global _USUARIO, _SENHA
     try:
         cfg = _load_config()
-        nova = body.nova_senha.strip()
-        hashed = _sha256(nova) if nova else ""
+        novo_usuario = body.novo_usuario.strip().lower()
+        nova_senha   = body.nova_senha.strip()
+        cfg["panel_usuario"] = novo_usuario
+        hashed = _sha256(nova_senha) if nova_senha else ""
         cfg["panel_senha"] = hashed
         (BASE_DIR / "config.json").write_text(
             json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8"
         )
-        _SENHA = hashed
+        _USUARIO = novo_usuario
+        _SENHA   = hashed
         return JSONResponse({"ok": True})
     except Exception as e:
         return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
@@ -883,21 +926,25 @@ async def salvar_telegram(body: TelegramRequest):
 
 
 class AdminSenhaRequest(BaseModel):
-    nova_senha: str
+    novo_usuario: str = ""
+    nova_senha: str = ""
 
 
 @app.post("/api/config/admin-senha")
 async def salvar_admin_senha(body: AdminSenhaRequest):
-    global _ADMIN_SENHA
+    global _ADMIN_USUARIO, _ADMIN_SENHA
     try:
         cfg = _load_config()
-        nova = body.nova_senha.strip()
-        hashed = _sha256(nova) if nova else ""
+        novo_usuario = body.novo_usuario.strip().lower()
+        nova_senha   = body.nova_senha.strip()
+        cfg["admin_usuario"] = novo_usuario
+        hashed = _sha256(nova_senha) if nova_senha else ""
         cfg["admin_senha"] = hashed
         (BASE_DIR / "config.json").write_text(
             json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8"
         )
-        _ADMIN_SENHA = hashed
+        _ADMIN_USUARIO = novo_usuario
+        _ADMIN_SENHA   = hashed
         return JSONResponse({"ok": True})
     except Exception as e:
         return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
@@ -988,6 +1035,18 @@ async def remover_item(body: RemoverRequest):
         if cur.rowcount:
             return JSONResponse({"ok": True})
         return JSONResponse({"ok": False, "msg": "Item não encontrado"}, status_code=404)
+    except Exception as e:
+        return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
+
+
+@app.post("/api/limpar-pendentes")
+async def limpar_pendentes():
+    if _bot_rodando:
+        return JSONResponse({"ok": False, "msg": "Aguarde o bot terminar"}, status_code=409)
+    try:
+        db = _db_manager()
+        count = db.limpar_pendentes()
+        return JSONResponse({"ok": True, "msg": f"{count} item(ns) removido(s)"})
     except Exception as e:
         return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
 
