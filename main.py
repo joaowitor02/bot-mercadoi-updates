@@ -21,7 +21,6 @@ from modules.mercadoi_driver import MercadoiDriver
 from modules.status_writer import StatusWriter
 from modules.logger import Logger
 from modules.notificador import notificar
-from modules.licensing import validar_licenca
 
 logger = Logger("main")
 
@@ -329,21 +328,6 @@ async def _verificar_chrome() -> bool:
 
 async def executar_ciclo(config: dict):
     """Lê pendentes e processa. Retorna o número de itens processados."""
-    licenca = await validar_licenca(config, app_version="3.1")
-    if not licenca.ok:
-        logger.error(f"Licenca bloqueada: {licenca.message}")
-        await notificar(
-            config,
-            f"🔒 <b>Bot Mercadoi</b> — licença bloqueada.\n{licenca.message}\nMáquina: <code>{licenca.machine_id[:12]}</code>",
-        )
-        return 0
-    if licenca.origem != "disabled":
-        logger.info(
-            f"Licenca OK ({licenca.origem})"
-            + (f" | cliente: {licenca.cliente}" if licenca.cliente else "")
-            + (f" | expira: {licenca.expires_at}" if licenca.expires_at else "")
-        )
-
     base_dir = os.path.dirname(os.path.abspath(__file__))
     db_path = config.get("db_path", os.path.join(base_dir, "botmercadoi.db"))
     db = DatabaseManager(db_path)
