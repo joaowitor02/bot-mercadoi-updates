@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bot Mercadoi — Primeiro Acesso</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config = { theme: { extend: { colors: { brand: { 500:'#f97316', 600:'#ea580c' } } } } }</script>
+  <style>
+    body { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; }
+    .fade-in { animation: fadeIn .3s ease; }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-50 flex items-center justify-center px-4">
+
+  <div class="w-full max-w-sm fade-in">
+    <div class="bg-white rounded-2xl shadow-lg border border-slate-100 overflow-hidden">
+
+      <!-- Header -->
+      <div class="bg-gradient-to-br from-brand-500 to-brand-600 px-8 py-8 text-center">
+        <div class="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
+          <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+          </svg>
+        </div>
+        <h1 class="text-xl font-bold text-white">Bem-vindo!</h1>
+        <p class="text-white/70 text-sm mt-1">Configure seu acesso ao painel</p>
+      </div>
+
+      <!-- Form -->
+      <div class="px-8 py-7">
+        <p class="text-sm text-slate-500 mb-5 text-center">
+          Este é o primeiro acesso. Crie um usuário e senha para proteger o painel.
+        </p>
+        <form method="POST" action="/primeiro-acesso" class="space-y-4" id="form">
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1.5">Usuário</label>
+            <input type="text" name="usuario" autofocus autocomplete="username"
+              class="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent transition-shadow"
+              placeholder="ex: joao" required />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1.5">Senha</label>
+            <input type="password" name="senha" id="senha" autocomplete="new-password"
+              class="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent transition-shadow"
+              placeholder="mínimo 6 caracteres" required minlength="6" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1.5">Confirmar senha</label>
+            <input type="password" name="confirmar" id="confirmar" autocomplete="new-password"
+              class="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent transition-shadow"
+              placeholder="repita a senha" required minlength="6" />
+          </div>
+          <!--ERRO-->
+          <button type="submit"
+            class="w-full h-10 bg-brand-500 hover:bg-brand-600 active:bg-brand-700 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm mt-1">
+            Criar acesso
+          </button>
+        </form>
+      </div>
+    </div>
+    <p class="text-center text-xs text-slate-400 mt-4">Bot Mercadoi v<!--VER--></p>
+  </div>
+
+  <script>
+    document.getElementById('form').addEventListener('submit', function(e) {
+      var s = document.getElementById('senha').value;
+      var c = document.getElementById('confirmar').value;
+      if (s !== c) {
+        e.preventDefault();
+        alert('As senhas não coincidem.');
+      }
+    });
+  </script>
+</body>
+</html>

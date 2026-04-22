@@ -49,7 +49,7 @@ _LICENCA_EXPIRA: str = ""  # "YYYY-MM-DD" ou "" para sem expiração
 _SESSION_TOKENS: dict[str, str] = {}  # token -> "admin" | "user"
 
 # Rotas públicas (sem auth)
-_PUBLIC_PATHS = {"/login", "/favicon.ico", "/licenca-expirada", "/api/health"}
+_PUBLIC_PATHS = {"/login", "/favicon.ico", "/licenca-expirada", "/api/health", "/primeiro-acesso"}
 
 # Rotas exclusivas do administrador
 _ADMIN_API_PATHS = frozenset({
@@ -166,6 +166,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if path in _PUBLIC_PATHS:
             return await call_next(request)
 
+        # Sem senhas configuradas → obriga setup inicial
+        if not _SENHA and not _ADMIN_SENHA:
+            if path.startswith("/api/") or path.startswith("/screenshots/"):
+                return JSONResponse({"error": "Configure o acesso inicial primeiro"}, status_code=503)
+            return RedirectResponse("/primeiro-acesso", status_code=302)
+
         token = request.cookies.get("mercadoi_session", "")
         nivel = _SESSION_TOKENS.get(token, "")
 
@@ -259,6 +265,8 @@ async def licenca_expirada_page():
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(erro: str = ""):
+    if not _SENHA and not _ADMIN_SENHA:
+        return RedirectResponse("/primeiro-acesso", status_code=302)
     html = BASE_DIR / "panel_static" / "login.html"
     content = html.read_text(encoding="utf-8")
     if erro:
@@ -293,15 +301,58 @@ async def fazer_login(usuario: str = Form(...), senha: str = Form(...)):
             resp.set_cookie("mercadoi_session", token, httponly=True, samesite="strict")
             return resp
 
-    # Sem credenciais configuradas: qualquer entrada concede acesso de usuário
+    # Sem credenciais configuradas: redireciona para setup inicial
     if not _SENHA and not _ADMIN_SENHA:
-        token = secrets.token_hex(32)
-        _SESSION_TOKENS[token] = "user"
-        resp = RedirectResponse("/", status_code=303)
-        resp.set_cookie("mercadoi_session", token, httponly=True, samesite="strict")
-        return resp
+        return RedirectResponse("/primeiro-acesso", status_code=303)
 
     return RedirectResponse("/login?erro=1", status_code=303)
+
+
+@app.get("/primeiro-acesso", response_class=HTMLResponse)
+async def primeiro_acesso_page(erro: str = ""):
+    if _SENHA or _ADMIN_SENHA:
+        return RedirectResponse("/login", status_code=302)
+    html = BASE_DIR / "panel_static" / "primeiro_acesso.html"
+    content = html.read_text(encoding="utf-8")
+    msgs = {
+        "senhas": "As senhas não coincidem.",
+        "curta":  "A senha deve ter pelo menos 6 caracteres.",
+        "vazio":  "Preencha todos os campos.",
+    }
+    msg = msgs.get(erro, "")
+    if msg:
+        content = content.replace("<!--ERRO-->",
+            f'<p class="text-sm text-red-500 text-center mt-1">{msg}</p>')
+    from version import VERSION
+    content = content.replace("<!--VER-->", VERSION)
+    return HTMLResponse(content)
+
+
+@app.post("/primeiro-acesso")
+async def fazer_primeiro_acesso(
+    usuario: str = Form(...), senha: str = Form(...), confirmar: str = Form(...)
+):
+    global _USUARIO, _SENHA
+    if not usuario.strip() or not senha:
+        return RedirectResponse("/primeiro-acesso?erro=vazio", status_code=303)
+    if len(senha) < 6:
+        return RedirectResponse("/primeiro-acesso?erro=curta", status_code=303)
+    if senha != confirmar:
+        return RedirectResponse("/primeiro-acesso?erro=senhas", status_code=303)
+
+    hashed = _sha256(senha)
+    path = BASE_DIR / "config.json"
+    try:
+        cfg = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        cfg = {}
+    cfg["panel_usuario"] = usuario.strip()
+    cfg["panel_senha"]   = hashed
+    path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    _USUARIO = usuario.strip()
+    _SENHA   = hashed
+    return RedirectResponse("/login", status_code=303)
 
 
 @app.post("/api/logout")
