@@ -56,7 +56,7 @@ _ADMIN_API_PATHS = frozenset({
     "/api/config", "/api/config/senha", "/api/config/telegram",
     "/api/config/admin-senha", "/api/config/licenca", "/api/testar-telegram",
     "/api/tunnel/baixar", "/api/config/avancada",
-    # NOTA: /api/atualizar é intencional fora aqui — cliente precisa atualizar
+    # /api/atualizar é intencional fora daqui — cliente precisa poder atualizar
 })
 
 # ---------------------------------------------------------------------------
@@ -1229,7 +1229,6 @@ _PRESERVAR_PASTAS = frozenset({"logs", ".git", ".claude", "__pycache__"})
 @app.post("/api/atualizar")
 async def atualizar_bot():
     """Baixa o zip da nova versão e extrai sobre os arquivos atuais."""
-    print("[ATUALIZAR] endpoint chamado", flush=True)
     try:
         cfg = _load_config()
         zip_url = cfg.get("update_zip_url", "").strip()
@@ -1238,58 +1237,65 @@ async def atualizar_bot():
                 {"ok": False, "msg": "update_zip_url não configurado em Config Avançada."},
                 status_code=400,
             )
-        import httpx as _httpx
-        import zipfile as _zipfile
-        import tempfile as _tempfile
-        import shutil as _shutil
 
-        print(f"[ATUALIZAR] Baixando {zip_url}", flush=True)
+        import httpx as _httpx
+        import zipfile
+        import tempfile
+        import shutil
+
         async with _httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
             r = await client.get(zip_url)
             if r.status_code != 200:
                 return JSONResponse(
-                    {"ok": False, "msg": f"Falha ao baixar (HTTP {r.status_code})."},
+                    {"ok": False, "msg": f"Falha ao baixar atualização (HTTP {r.status_code})."},
                     status_code=500,
                 )
-        zip_bytes = r.content
-        print(f"[ATUALIZAR] {len(zip_bytes)//1024}KB baixados. Aplicando...", flush=True)
 
-        def _aplicar() -> int:
-            with _tempfile.TemporaryDirectory() as tmp:
-                zp = os.path.join(tmp, "u.zip")
-                with open(zp, "wb") as f:
-                    f.write(zip_bytes)
-                with _zipfile.ZipFile(zp, "r") as z:
-                    for item in z.infolist():
-                        nome = os.path.basename(item.filename)
-                        if nome and nome in _PRESERVAR_ARQUIVOS:
-                            continue  # pula cloudflared.exe, config.json, etc.
-                        z.extract(item, tmp)
-                n = 0
-                for root, dirs, files in os.walk(tmp):
-                    dirs[:] = [d for d in dirs if d not in _PRESERVAR_PASTAS]
-                    rel = os.path.relpath(root, tmp)
-                    for fname in files:
-                        if fname in _PRESERVAR_ARQUIVOS or fname == "u.zip":
-                            continue
-                        dst = BASE_DIR if rel == "." else BASE_DIR / rel
-                        dst.mkdir(parents=True, exist_ok=True)
-                        _shutil.copy2(os.path.join(root, fname), dst / fname)
-                        n += 1
-            flag = BASE_DIR / ".installed"
-            if flag.exists():
-                flag.unlink()
-            return n
+        with tempfile.TemporaryDirectory() as tmp:
+            zip_path = os.path.join(tmp, "update.zip")
+            with open(zip_path, "wb") as f:
+                f.write(r.content)
 
-        copiados = await asyncio.get_event_loop().run_in_executor(None, _aplicar)
-        print(f"[ATUALIZAR] Concluído: {copiados} arquivos copiados", flush=True)
+            with zipfile.ZipFile(zip_path, "r") as z:
+                z.extractall(tmp)
+
+            # GitHub cria subpasta REPO-main/ ao exportar zip
+            subdirs = [
+                d for d in os.listdir(tmp)
+                if os.path.isdir(os.path.join(tmp, d)) and d != "__MACOSX"
+            ]
+            src_dir = os.path.join(tmp, subdirs[0]) if subdirs else tmp
+
+            copiados = 0
+            for root, dirs, files in os.walk(src_dir):
+                dirs[:] = [d for d in dirs if d not in _PRESERVAR_PASTAS]
+                rel_root = os.path.relpath(root, src_dir)
+                for fname in files:
+                    if fname in _PRESERVAR_ARQUIVOS:
+                        continue
+                    src = os.path.join(root, fname)
+                    if rel_root == ".":
+                        dst_dir = BASE_DIR
+                    else:
+                        dst_dir = BASE_DIR / rel_root
+                    dst_dir.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src, dst_dir / fname)
+                    copiados += 1
+
+        # Apaga flag .installed para forçar reinstalação das dependências
+        flag = BASE_DIR / ".installed"
+        if flag.exists():
+            flag.unlink()
+
+        _logger.info(f"Atualização aplicada: {copiados} arquivo(s) substituído(s)")
         return JSONResponse({
             "ok":  True,
-            "msg": f"Atualização aplicada ({copiados} arquivos). Feche e abra novamente o painel para concluir.",
+            "msg": f"✅ Atualização aplicada ({copiados} arquivos).\n\nFeche e abra novamente o painel (Abrir Painel.vbs) para concluir.",
         })
 
+    except zipfile.BadZipFile:
+        return JSONResponse({"ok": False, "msg": "Arquivo baixado não é um zip válido."}, status_code=500)
     except Exception as e:
-        print(f"[ATUALIZAR] Erro: {e}", flush=True)
         return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
 
 
