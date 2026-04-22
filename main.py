@@ -256,7 +256,7 @@ async def processar_link(row: dict, sheet, config: dict):
 
     # --- ETAPA 2: Mídia ---
     logger.info(f"[{execution_id}] Resolvendo mídia...")
-    media = MediaResolver(config["downloads_path"])
+    media = MediaResolver(config["downloads_path"], config.get("chrome_path", ""))
     tipo_midia, arquivo_midia = await media.resolver(url)
     sheet.atualizar_campo(row_index, "tipo_midia", tipo_midia)
     sheet.atualizar_campo(

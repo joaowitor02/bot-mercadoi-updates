@@ -18,11 +18,16 @@ logger = Logger("media_resolver")
 register_heif_opener()
 
 FASTDL_URL = "https://fastdl.app/pt/"
+CHROME_CANDIDATES = [
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+]
 
 
 class MediaResolver:
-    def __init__(self, downloads_path: str):
+    def __init__(self, downloads_path: str, chrome_path: str = ""):
         self.downloads_path = downloads_path
+        self.chrome_path = chrome_path
 
     async def resolver(self, url_instagram: str, max_tentativas: int = 2) -> tuple[str, list[str]]:
         """
@@ -45,7 +50,11 @@ class MediaResolver:
         browser = None
         try:
             async with async_playwright() as p:
-                browser = await p.chromium.launch(headless=False)
+                launch_kwargs = {"headless": False}
+                chrome_path = self._chrome_path()
+                if chrome_path:
+                    launch_kwargs["executable_path"] = chrome_path
+                browser = await p.chromium.launch(**launch_kwargs)
                 context = await browser.new_context(accept_downloads=True)
                 page = await context.new_page()
 
@@ -97,6 +106,14 @@ class MediaResolver:
                     await browser.close()
                 except Exception:
                     pass
+
+    def _chrome_path(self) -> str:
+        if self.chrome_path and os.path.exists(self.chrome_path):
+            return self.chrome_path
+        for path in CHROME_CANDIDATES:
+            if os.path.exists(path):
+                return path
+        return ""
 
     async def _baixar_video(self, page, context) -> str | None:
         """Baixa o arquivo de video da pagina de resultados."""

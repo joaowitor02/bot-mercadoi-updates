@@ -5,7 +5,13 @@
 No PowerShell, dentro da pasta do projeto:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\build_exe.ps1 -Clean
+powershell -ExecutionPolicy Bypass -File .\build_exe_clean.ps1 -Clean
+```
+
+Use `-RecreateVenv` quando quiser recriar o ambiente limpo do zero:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build_exe_clean.ps1 -RecreateVenv -Clean
 ```
 
 Saida principal:
@@ -38,6 +44,17 @@ Abrir Painel EXE.vbs
 ```
 
 O launcher aguarda ate 120 segundos porque o executavel onefile precisa extrair dependencias antes de subir o painel.
+
+## Assinar digitalmente
+
+Assinatura real exige certificado de code signing (`.pfx`) emitido por uma autoridade certificadora.
+Com o certificado em maos:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\sign_exe.ps1 -CertPath "C:\caminho\certificado.pfx" -CertPassword "SENHA"
+```
+
+Sem certificado, nao ha como fazer uma assinatura confiavel para clientes. Certificado autoassinado so serve para teste interno e ainda gera alerta no Windows.
 
 ## O que entregar ao cliente
 
