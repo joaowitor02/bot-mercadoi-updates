@@ -34,9 +34,8 @@ Thumbs.db
 
 # Build artifacts
 cloudflared.exe
-build/
 dist/
-*.spec.bak
+build/
 
 # Arquivos de saída acidental do pip
 =*

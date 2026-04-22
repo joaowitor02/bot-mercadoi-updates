@@ -29,12 +29,6 @@ MAX_TENTATIVAS_MERCADOI = 3
 ESPERA_ENTRE_TENTATIVAS = 10  # segundos
 
 
-def _base_dir() -> str:
-    if getattr(sys, "frozen", False):
-        return os.path.dirname(os.path.abspath(sys.executable))
-    return os.path.dirname(os.path.abspath(__file__))
-
-
 # ---------------------------------------------------------------------------
 # Validação dos dados extraídos pela IA
 # ---------------------------------------------------------------------------
@@ -350,7 +344,7 @@ async def executar_ciclo(config: dict):
             + (f" | expira: {licenca.expires_at}" if licenca.expires_at else "")
         )
 
-    base_dir = _base_dir()
+    base_dir = os.path.dirname(os.path.abspath(__file__))
     db_path = config.get("db_path", os.path.join(base_dir, "botmercadoi.db"))
     db = DatabaseManager(db_path)
 
@@ -415,7 +409,7 @@ async def executar_ciclo(config: dict):
 
 
 async def main(watch: bool = False, intervalo: int = 5):
-    base_dir = _base_dir()
+    base_dir = os.path.dirname(os.path.abspath(__file__))
     config_path = os.path.join(base_dir, "config.json")
     if not os.path.exists(config_path):
         logger.error(f"config.json não encontrado em {config_path}")
