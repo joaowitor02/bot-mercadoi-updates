@@ -33,7 +33,9 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 app = FastAPI(title="Bot Mercadoi — Painel")
 
-BASE_DIR = Path(__file__).parent
+IS_FROZEN = bool(getattr(sys, "frozen", False))
+BASE_DIR = Path(sys.executable).resolve().parent if IS_FROZEN else Path(__file__).parent
+RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", BASE_DIR)) if IS_FROZEN else BASE_DIR
 LOGS_DIR = BASE_DIR / "logs"
 SCREENSHOTS_DIR = LOGS_DIR / "screenshots"
 
@@ -249,7 +251,7 @@ async def _startup():
 
 @app.get("/licenca-expirada", response_class=HTMLResponse)
 async def licenca_expirada_page():
-    html = BASE_DIR / "panel_static" / "licenca_expirada.html"
+    html = RESOURCE_DIR / "panel_static" / "licenca_expirada.html"
     if html.exists():
         return HTMLResponse(html.read_text(encoding="utf-8"))
     return HTMLResponse(
@@ -260,7 +262,7 @@ async def licenca_expirada_page():
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(erro: str = ""):
-    html = BASE_DIR / "panel_static" / "login.html"
+    html = RESOURCE_DIR / "panel_static" / "login.html"
     content = html.read_text(encoding="utf-8")
     if erro:
         content = content.replace("<!--ERRO-->",
@@ -490,7 +492,7 @@ async def _rodar_bot(watch: bool = False, intervalo: int = 5):
     _watch_ativo = watch
     _ultimo_log  = []
     try:
-        args = [sys.executable, "main.py"]
+        args = [sys.executable, "--bot-main"] if IS_FROZEN else [sys.executable, "main.py"]
         if watch:
             args += ["--watch", str(intervalo)]
         proc = subprocess.Popen(
@@ -548,7 +550,7 @@ def _db_manager():
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard():
-    html = BASE_DIR / "panel_static" / "index.html"
+    html = RESOURCE_DIR / "panel_static" / "index.html"
     return HTMLResponse(html.read_text(encoding="utf-8"))
 
 
@@ -1273,6 +1275,19 @@ async def atualizar_bot():
 
 
 if __name__ == "__main__":
+    if "--bot-main" in sys.argv:
+        import main as bot_main
+
+        watch = "--watch" in sys.argv
+        intervalo = 5
+        if watch:
+            try:
+                intervalo = int(sys.argv[sys.argv.index("--watch") + 1])
+            except Exception:
+                intervalo = 5
+        asyncio.run(bot_main.main(watch=watch, intervalo=intervalo))
+        sys.exit(0)
+
     import uvicorn
     print("=" * 50)
     print("  Bot Mercadoi — Painel")

@@ -14,6 +14,7 @@ import os
 import platform
 import socket
 import subprocess
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -98,6 +99,8 @@ def _cache_path(config: dict) -> Path:
     explicit = str(config.get("licenca_cache_path", "")).strip()
     if explicit:
         return Path(explicit)
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent / "license_cache.json"
     return Path(__file__).resolve().parent.parent / "license_cache.json"
 
 
