@@ -1797,13 +1797,18 @@ function _extrairChangelog(texto, versao) {
 
 async function atualizarBot() {
   const btn = document.getElementById('btn-atualizar');
-  if (btn) { btn.disabled = true; btn.textContent = 'Atualizando...'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Baixando atualização...'; }
+  toast('Baixando atualização, aguarde...');
   try {
     const r = await fetch('/api/atualizar', { method: 'POST' });
     const d = await r.json();
-    d.ok ? toast(d.msg || 'Atualizado. Reinicie o painel.') : toast(d.msg || 'Erro ao atualizar', 'erro');
-    if (d.ok) await verificarAtualizacao();
-  } catch { toast('Erro de conexão', 'erro'); }
+    if (d.ok) {
+      toast(d.msg || 'Atualizado! Feche e abra o painel novamente.', 'ok');
+      await verificarAtualizacao();
+    } else {
+      toast(d.msg || d.error || 'Erro ao atualizar', 'erro');
+    }
+  } catch { toast('Erro de conexão ao atualizar', 'erro'); }
   finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Atualizar agora'; }
   }

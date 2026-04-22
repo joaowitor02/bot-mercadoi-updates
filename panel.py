@@ -55,7 +55,7 @@ _PUBLIC_PATHS = {"/login", "/favicon.ico", "/licenca-expirada", "/api/health", "
 _ADMIN_API_PATHS = frozenset({
     "/api/config", "/api/config/senha", "/api/config/telegram",
     "/api/config/admin-senha", "/api/config/licenca", "/api/testar-telegram",
-    "/api/atualizar", "/api/tunnel/baixar", "/api/config/avancada",
+    "/api/tunnel/baixar", "/api/config/avancada",
 })
 
 # ---------------------------------------------------------------------------
@@ -1255,22 +1255,24 @@ async def atualizar_bot():
             with open(zip_path, "wb") as f:
                 f.write(r.content)
 
+            # Extrai apenas arquivos que não estão na lista de preservação
+            # (evita extrair arquivos grandes como cloudflared.exe desnecessariamente)
             with zipfile.ZipFile(zip_path, "r") as z:
-                z.extractall(tmp)
+                for item in z.infolist():
+                    nome = os.path.basename(item.filename)
+                    if nome and nome in _PRESERVAR_ARQUIVOS:
+                        continue
+                    z.extract(item, tmp)
 
-            # GitHub cria subpasta REPO-main/ ao exportar zip
-            subdirs = [
-                d for d in os.listdir(tmp)
-                if os.path.isdir(os.path.join(tmp, d)) and d != "__MACOSX"
-            ]
-            src_dir = os.path.join(tmp, subdirs[0]) if subdirs else tmp
+            # Nosso ZIP é flat (sem subpasta wrapper) — usa tmp direto como raiz
+            src_dir = tmp
 
             copiados = 0
             for root, dirs, files in os.walk(src_dir):
                 dirs[:] = [d for d in dirs if d not in _PRESERVAR_PASTAS]
                 rel_root = os.path.relpath(root, src_dir)
                 for fname in files:
-                    if fname in _PRESERVAR_ARQUIVOS:
+                    if fname in _PRESERVAR_ARQUIVOS or fname == "update.zip":
                         continue
                     src = os.path.join(root, fname)
                     if rel_root == ".":
@@ -1289,12 +1291,13 @@ async def atualizar_bot():
         _logger.info(f"Atualização aplicada: {copiados} arquivo(s) substituído(s)")
         return JSONResponse({
             "ok":  True,
-            "msg": f"✅ Atualização aplicada ({copiados} arquivos).\n\nFeche e abra novamente o painel (Abrir Painel.vbs) para concluir.",
+            "msg": f"Atualização aplicada ({copiados} arquivos). Feche e abra novamente o painel para concluir.",
         })
 
     except zipfile.BadZipFile:
         return JSONResponse({"ok": False, "msg": "Arquivo baixado não é um zip válido."}, status_code=500)
     except Exception as e:
+        _logger.error(f"Erro ao atualizar: {e}", exc_info=True)
         return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
 
 
