@@ -133,6 +133,38 @@
   </div>
 </nav>
 
+<!-- ===================== BANNER DE ATUALIZAÇÃO (visível a todos) ===================== -->
+<div id="update-banner" class="hidden bg-amber-50 border-b border-amber-200">
+  <div class="max-w-7xl mx-auto px-6 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+    <div class="flex items-center gap-3 flex-1 min-w-0">
+      <div class="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
+        <svg class="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+        </svg>
+      </div>
+      <div class="min-w-0">
+        <p class="text-sm font-semibold text-amber-800">Nova versão disponível: <span id="banner-versao-nova"></span></p>
+        <p class="text-xs text-amber-600 truncate" id="banner-changelog-resumo"></p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2 shrink-0">
+      <button id="banner-btn-changelog" onclick="toggleBannerChangelog()"
+        class="h-8 px-3 border border-amber-300 text-amber-700 hover:bg-amber-100 text-xs font-semibold rounded-lg transition-colors">
+        Ver novidades
+      </button>
+      <button id="banner-btn-atualizar" onclick="atualizarBot()"
+        class="h-8 px-4 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white text-xs font-semibold rounded-lg transition-colors shadow-sm">
+        Atualizar agora
+      </button>
+    </div>
+  </div>
+  <div id="banner-changelog-box" class="hidden border-t border-amber-200 bg-amber-50/80">
+    <div class="max-w-7xl mx-auto px-6 py-3">
+      <pre id="banner-changelog-content" class="text-xs text-slate-600 whitespace-pre-wrap font-mono max-h-48 overflow-y-auto leading-relaxed"></pre>
+    </div>
+  </div>
+</div>
+
 <main class="max-w-7xl mx-auto px-6 py-6">
 
   <!-- ===================== SEÇÃO: DASHBOARD ===================== -->
@@ -1755,26 +1787,56 @@ async function verificarAtualizacao() {
     const btnAtualizar = document.getElementById('btn-atualizar');
     const updateInfo   = document.getElementById('update-info');
 
+    const banner = document.getElementById('update-banner');
+
     if (d.versao_remota) {
       if (d.has_update) {
+        // Badge e botão na aba Configurações (admin)
         if (updateBadge) { updateBadge.classList.remove('hidden'); updateBadge.classList.add('inline-flex'); }
         if (btnAtualizar) { btnAtualizar.classList.remove('hidden'); btnAtualizar.disabled = false; btnAtualizar.textContent = 'Atualizar agora'; }
         if (updateInfo)   updateInfo.textContent = `Nova versão disponível: v${d.versao_remota} (atual: v${d.versao_atual})`;
         if (pill) pill.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 cursor-default';
-        // Exibe changelog
+
+        // Changelog na aba Configurações (admin)
         const box = document.getElementById('changelog-box');
         const content = document.getElementById('changelog-content');
-        if (box && content && d.changelog) {
-          content.textContent = _extrairChangelog(d.changelog, d.versao_remota);
+        const cl = _extrairChangelog(d.changelog, d.versao_remota);
+        if (box && content && cl) {
+          content.textContent = cl;
           box.classList.remove('hidden');
+        }
+
+        // Banner visível para TODOS os usuários
+        if (banner) {
+          const bv = document.getElementById('banner-versao-nova');
+          const br = document.getElementById('banner-changelog-resumo');
+          const bc = document.getElementById('banner-changelog-content');
+          if (bv) bv.textContent = `v${d.versao_remota}`;
+          if (cl) {
+            // Resumo: primeira linha não vazia do changelog
+            const resumo = cl.split('\n').find(l => l.trim() && !l.startsWith('##'));
+            if (br) br.textContent = resumo ? resumo.replace(/^[-*•]\s*/, '') : '';
+            if (bc) bc.textContent = cl;
+          }
+          banner.classList.remove('hidden');
         }
       } else {
         if (updateInfo) updateInfo.textContent = `✓ Versão v${d.versao_atual} — atualizada`;
+        if (banner) banner.classList.add('hidden');
       }
     } else {
       if (updateInfo) updateInfo.textContent = 'Configure version_check_url em Config Avançada para habilitar atualizações.';
+      if (banner) banner.classList.add('hidden');
     }
   } catch {}
+}
+
+function toggleBannerChangelog() {
+  const box = document.getElementById('banner-changelog-box');
+  const btn = document.getElementById('banner-btn-changelog');
+  if (!box) return;
+  const hidden = box.classList.toggle('hidden');
+  if (btn) btn.textContent = hidden ? 'Ver novidades' : 'Ocultar';
 }
 
 function _extrairChangelog(texto, versao) {
@@ -1796,22 +1858,61 @@ function _extrairChangelog(texto, versao) {
 }
 
 async function atualizarBot() {
-  const btn = document.getElementById('btn-atualizar');
-  if (btn) { btn.disabled = true; btn.textContent = 'Baixando atualização...'; }
+  const btn       = document.getElementById('btn-atualizar');
+  const bannerBtn = document.getElementById('banner-btn-atualizar');
+  const setBusy = (v) => {
+    const txt = v ? 'Atualizando...' : 'Atualizar agora';
+    if (btn)       { btn.disabled = v;       btn.textContent = txt; }
+    if (bannerBtn) { bannerBtn.disabled = v;  bannerBtn.textContent = txt; }
+  };
+  setBusy(true);
   toast('Baixando atualização, aguarde...');
   try {
     const r = await fetch('/api/atualizar', { method: 'POST' });
     const d = await r.json();
     if (d.ok) {
-      toast(d.msg || 'Atualizado! Feche e abra o painel novamente.', 'ok');
-      await verificarAtualizacao();
+      if (d.reiniciando) {
+        _mostrarReiniciando();
+      } else {
+        toast(d.msg || 'Atualizado.', 'ok');
+        await verificarAtualizacao();
+        setBusy(false);
+      }
     } else {
-      toast(d.msg || d.error || 'Erro ao atualizar', 'erro');
+      toast(d.msg || 'Erro ao atualizar', 'erro');
+      setBusy(false);
     }
-  } catch { toast('Erro de conexão ao atualizar', 'erro'); }
-  finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Atualizar agora'; }
-  }
+  } catch { toast('Erro de conexão', 'erro'); setBusy(false); }
+}
+
+function _mostrarReiniciando() {
+  // Sobreposição de "reiniciando"
+  const overlay = document.createElement('div');
+  overlay.id = 'reiniciando-overlay';
+  overlay.className = 'fixed inset-0 z-50 flex flex-col items-center justify-center bg-white/90 backdrop-blur-sm';
+  overlay.innerHTML = `
+    <div class="flex flex-col items-center gap-4 p-8 text-center">
+      <svg class="w-10 h-10 text-brand-500 spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+      </svg>
+      <p class="text-lg font-semibold text-slate-800">Atualização aplicada!</p>
+      <p class="text-sm text-slate-500">O painel está reiniciando, aguarde...</p>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  // Aguarda painel voltar e recarrega
+  (async () => {
+    await new Promise(r => setTimeout(r, 3000));
+    for (let i = 0; i < 25; i++) {
+      await new Promise(r => setTimeout(r, 1500));
+      try {
+        const r = await fetch('/api/health');
+        if (r.ok) { window.location.reload(); return; }
+      } catch {}
+    }
+    // Timeout — pede para atualizar manualmente
+    overlay.querySelector('p:last-child').textContent = 'Painel reiniciado. Atualize a página (F5).';
+  })();
 }
 
 // Intercepta respostas 401 globalmente
