@@ -1225,9 +1225,51 @@ _PRESERVAR_ARQUIVOS = frozenset({
 _PRESERVAR_PASTAS = frozenset({"logs", ".git", ".claude", "__pycache__"})
 
 
+def _aplicar_zip(zip_content: bytes) -> dict:
+    """Extrai e copia arquivos do ZIP. Roda em thread separada (não bloqueia o event loop)."""
+    import zipfile
+    import tempfile
+    import shutil
+
+    with tempfile.TemporaryDirectory() as tmp:
+        zip_path = os.path.join(tmp, "update.zip")
+        with open(zip_path, "wb") as f:
+            f.write(zip_content)
+
+        # Extrai apenas o que não está na lista de preservação (pula cloudflared.exe, etc.)
+        with zipfile.ZipFile(zip_path, "r") as z:
+            for item in z.infolist():
+                nome = os.path.basename(item.filename)
+                if nome and nome in _PRESERVAR_ARQUIVOS:
+                    continue
+                z.extract(item, tmp)
+
+        # Nosso ZIP é flat (sem subpasta wrapper) — usa tmp diretamente como raiz
+        copiados = 0
+        for root, dirs, files in os.walk(tmp):
+            dirs[:] = [d for d in dirs if d not in _PRESERVAR_PASTAS]
+            rel_root = os.path.relpath(root, tmp)
+            for fname in files:
+                if fname in _PRESERVAR_ARQUIVOS or fname == "update.zip":
+                    continue
+                src = os.path.join(root, fname)
+                dst_dir = BASE_DIR if rel_root == "." else BASE_DIR / rel_root
+                dst_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dst_dir / fname)
+                copiados += 1
+
+    flag = BASE_DIR / ".installed"
+    if flag.exists():
+        flag.unlink()
+
+    return {"ok": True, "copiados": copiados}
+
+
 @app.post("/api/atualizar")
 async def atualizar_bot():
     """Baixa o zip da nova versão e extrai sobre os arquivos atuais."""
+    import httpx as _httpx
+
     try:
         cfg = _load_config()
         zip_url = cfg.get("update_zip_url", "").strip()
@@ -1237,65 +1279,29 @@ async def atualizar_bot():
                 status_code=400,
             )
 
-        import httpx as _httpx
-        import zipfile
-        import tempfile
-        import shutil
-
+        _logger.info(f"Iniciando download da atualização: {zip_url}")
         async with _httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
             r = await client.get(zip_url)
-            if r.status_code != 200:
-                return JSONResponse(
-                    {"ok": False, "msg": f"Falha ao baixar atualização (HTTP {r.status_code})."},
-                    status_code=500,
-                )
 
-        with tempfile.TemporaryDirectory() as tmp:
-            zip_path = os.path.join(tmp, "update.zip")
-            with open(zip_path, "wb") as f:
-                f.write(r.content)
+        if r.status_code != 200:
+            return JSONResponse(
+                {"ok": False, "msg": f"Falha ao baixar atualização (HTTP {r.status_code})."},
+                status_code=500,
+            )
 
-            # Extrai apenas arquivos que não estão na lista de preservação
-            # (evita extrair arquivos grandes como cloudflared.exe desnecessariamente)
-            with zipfile.ZipFile(zip_path, "r") as z:
-                for item in z.infolist():
-                    nome = os.path.basename(item.filename)
-                    if nome and nome in _PRESERVAR_ARQUIVOS:
-                        continue
-                    z.extract(item, tmp)
+        _logger.info(f"ZIP baixado ({len(r.content)//1024}KB). Aplicando...")
 
-            # Nosso ZIP é flat (sem subpasta wrapper) — usa tmp direto como raiz
-            src_dir = tmp
+        # Operações de arquivo rodam em thread para não bloquear o event loop
+        loop = asyncio.get_event_loop()
+        resultado = await loop.run_in_executor(None, _aplicar_zip, r.content)
 
-            copiados = 0
-            for root, dirs, files in os.walk(src_dir):
-                dirs[:] = [d for d in dirs if d not in _PRESERVAR_PASTAS]
-                rel_root = os.path.relpath(root, src_dir)
-                for fname in files:
-                    if fname in _PRESERVAR_ARQUIVOS or fname == "update.zip":
-                        continue
-                    src = os.path.join(root, fname)
-                    if rel_root == ".":
-                        dst_dir = BASE_DIR
-                    else:
-                        dst_dir = BASE_DIR / rel_root
-                    dst_dir.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(src, dst_dir / fname)
-                    copiados += 1
-
-        # Apaga flag .installed para forçar reinstalação das dependências
-        flag = BASE_DIR / ".installed"
-        if flag.exists():
-            flag.unlink()
-
+        copiados = resultado["copiados"]
         _logger.info(f"Atualização aplicada: {copiados} arquivo(s) substituído(s)")
         return JSONResponse({
             "ok":  True,
             "msg": f"Atualização aplicada ({copiados} arquivos). Feche e abra novamente o painel para concluir.",
         })
 
-    except zipfile.BadZipFile:
-        return JSONResponse({"ok": False, "msg": "Arquivo baixado não é um zip válido."}, status_code=500)
     except Exception as e:
         _logger.error(f"Erro ao atualizar: {e}", exc_info=True)
         return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
