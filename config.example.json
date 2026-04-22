@@ -15,8 +15,8 @@
   "licenca_assinatura": "",
   "telegram_bot_token": "",
   "telegram_chat_id": "",
-  "version_check_url": "",
-  "update_zip_url": "",
+  "version_check_url": "https://raw.githubusercontent.com/joaowitor02/auto-update_bot-mercadoi/main/version.py",
+  "update_zip_url": "https://github.com/joaowitor02/auto-update_bot-mercadoi/releases/latest/download/bot_mercadoi_cliente.zip",
   "usar_tunnel": false,
   "whatsapp_default": "https://wa.me/+5583999999999"
 }
