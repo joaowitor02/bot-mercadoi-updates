@@ -49,7 +49,7 @@ _LICENCA_EXPIRA: str = ""  # "YYYY-MM-DD" ou "" para sem expiração
 _SESSION_TOKENS: dict[str, str] = {}  # token -> "admin" | "user"
 
 # Rotas públicas (sem auth)
-_PUBLIC_PATHS = {"/login", "/favicon.ico", "/licenca-expirada"}
+_PUBLIC_PATHS = {"/login", "/favicon.ico", "/licenca-expirada", "/api/health"}
 
 # Rotas exclusivas do administrador
 _ADMIN_API_PATHS = frozenset({
@@ -567,6 +567,11 @@ async def execucoes_do_dia(data: str):
         return JSONResponse([e for e in _execucoes_db(365) if e.get("data") == data])
     except Exception:
         return JSONResponse(_parse_logs_dia(data))
+
+
+@app.get("/api/health")
+async def health():
+    return JSONResponse({"ok": True})
 
 
 @app.get("/api/status")

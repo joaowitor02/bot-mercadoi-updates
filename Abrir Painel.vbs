@@ -89,7 +89,7 @@ Function PainelRodando()
     Dim obj
     On Error Resume Next
     Set obj = CreateObject("MSXML2.XMLHTTP")
-    obj.open "GET", "http://localhost:8000/api/status", False
+    obj.open "GET", "http://localhost:8000/api/health", False
     obj.send
     PainelRodando = (Err.Number = 0 And obj.status = 200)
     On Error GoTo 0
