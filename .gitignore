@@ -20,7 +20,6 @@ __pycache__/
 
 # Ambientes locais
 .venv/
-.build_venv/
 venv/
 env/
 

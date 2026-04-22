@@ -3,44 +3,6 @@
 Este arquivo serve como registro para humanos e outras IAs que mexerem no codigo.
 Sempre que houver alteracao, adicione uma nova entrada no topo ou logo abaixo desta nota.
 
-## 2026-04-21 - Build limpo e preparo para assinatura digital
-
-### Mudancas feitas
-
-Arquivos alterados/criados:
-
-- `build_exe_clean.ps1`
-- `sign_exe.ps1`
-- `modules/media_resolver.py`
-- `main.py`
-- `.gitignore`
-- `DISTRIBUICAO_EXE.md`
-- `RELATORIO_MUDANCAS.md`
-
-Resumo:
-
-- Criado build em ambiente virtual limpo (`.build_venv`) para evitar que bibliotecas desnecessarias do Python global entrem no executavel.
-- O executavel limpo passou de aproximadamente `338 MB` para cerca de `111 MB`.
-- `media_resolver.py` agora tenta usar o Google Chrome instalado no Windows antes de depender do Chromium interno do Playwright.
-- `main.py` passa `chrome_path` da configuracao para o resolvedor de midia.
-- Criado `sign_exe.ps1` para assinar `dist\BotMercadoi.exe` quando houver certificado `.pfx` de code signing.
-- `.gitignore` passou a ignorar `.build_venv`.
-- Documentacao de distribuicao atualizada para usar `build_exe_clean.ps1` e explicar assinatura digital.
-
-### Validacoes
-
-- `python -B -m py_compile .\main.py .\modules\media_resolver.py .\panel.py .\modules\licensing.py`
-- `powershell -ExecutionPolicy Bypass -File .\build_exe_clean.ps1 -RecreateVenv -Clean`
-- `powershell -ExecutionPolicy Bypass -File .\build_exe_clean.ps1 -Clean`
-- `dist\BotMercadoi.exe --bot-main`
-- Inicializacao real de `dist\BotMercadoi.exe` e validacao de resposta em `http://127.0.0.1:8000/login`.
-
-### Problemas/riscos encontrados no codigo
-
-- Nao foi feita assinatura digital real porque ela exige certificado de code signing emitido para o dono/produto.
-- Certificado autoassinado nao resolve distribuicao comercial, pois o Windows ainda alerta o cliente.
-- O executavel ainda pode ser reduzido mais no futuro trocando OpenCV por uma extracao de frames baseada em FFmpeg ou MoviePy, mas isso exige nova bateria de testes de video.
-
 ## 2026-04-21 - Empacotamento em executavel Windows
 
 ### Mudancas feitas
