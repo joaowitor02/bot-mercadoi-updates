@@ -19,6 +19,20 @@ logger = Logger("ocr_preco")
 # Tenta importar pytesseract — se não disponível, OCR é desabilitado
 try:
     import pytesseract
+    # Caminhos padrão do Tesseract no Windows
+    _TESSERACT_PATHS = [
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+        r"C:\Users\Public\Tesseract-OCR\tesseract.exe",
+    ]
+    import os as _os
+    for _p in _TESSERACT_PATHS:
+        if _os.path.exists(_p):
+            pytesseract.pytesseract.tesseract_cmd = _p
+            break
+    # Usa português se disponível, senão inglês (suficiente para números e R$)
+    _langs = pytesseract.get_languages(config="")
+    _OCR_LANG = "por+eng" if "por" in _langs else "eng"
     _OCR_OK = True
 except ImportError:
     _OCR_OK = False
@@ -59,7 +73,7 @@ def _ocr_imagem(caminho: str) -> str:
 
         # Pré-processamento em múltiplas versões para maximizar leitura
         candidatos = _preprocessar(img)
-        config = "--psm 11 --oem 3 -l por+eng"
+        config = f"--psm 11 --oem 3 -l {_OCR_LANG}"
 
         for versao in candidatos:
             texto = pytesseract.image_to_string(versao, config=config)
