@@ -214,11 +214,36 @@ class DeepSeekParser:
     def _normalizar_preco(self, valor):
         if not valor:
             return ""
-        # Formato BR: 5.199.000,00 → remover decimais antes de tirar pontos de milhar
-        valor = re.sub(r",\d+$", "", valor.strip())   # remove ,XX decimal BR
-        valor = re.sub(r"\.\d{2}$", "", valor)        # remove .XX decimal US
-        apenas_digitos = re.sub(r"[^\d]", "", valor)
-        return apenas_digitos if apenas_digitos and apenas_digitos != "0" else ""
+        # Remove prefixo R$ e espaços
+        valor = re.sub(r'^R\$\s*', '', valor.strip(), flags=re.IGNORECASE).strip()
+
+        # "350 mil", "3,5 mil", "1.5k" → multiplica por 1000
+        mil = re.match(r'^([\d.,]+)\s*(?:mil|k)\b', valor, re.IGNORECASE)
+        if mil:
+            num = mil.group(1).replace(',', '.')
+            partes = num.split('.')
+            if len(partes) > 1 and len(partes[-1]) == 3:
+                num = ''.join(partes)  # "1.500 mil" → usa "1500"
+            try:
+                return str(int(float(num) * 1000))
+            except Exception:
+                pass
+
+        # Remove decimal: tudo após vírgula (formato BR) independente de quantos dígitos
+        valor = re.sub(r',\d+$', '', valor)
+        # Remove decimal US .XX com exatamente 2 dígitos no final
+        valor = re.sub(r'\.\d{2}$', '', valor)
+
+        apenas_digitos = re.sub(r'[^\d]', '', valor)
+
+        # Sanidade: preço imobiliário BR entre 4 e 8 dígitos (R$1.000 a R$99.999.999)
+        if apenas_digitos and apenas_digitos != '0':
+            if len(apenas_digitos) > 8:
+                return apenas_digitos[:8]
+            if len(apenas_digitos) >= 4:
+                return apenas_digitos
+
+        return ""
 
     def _normalizar_area(self, valor):
         if not valor:

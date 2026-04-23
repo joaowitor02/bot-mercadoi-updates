@@ -160,7 +160,7 @@ class MercadoiDriver:
                 await page.wait_for_selector('#prop_title', timeout=15000)
             except Exception:
                 logger.warning("Campo #prop_title demorou para aparecer, continuando mesmo assim")
-            await page.wait_for_timeout(1500)
+            await page.wait_for_timeout(300)  # pequena margem para select2/TinyMCE iniciarem
 
             # TITULO
             titulo = dados.get("titulo", "").strip()
@@ -295,10 +295,16 @@ class MercadoiDriver:
         texto = normalizar(valor or "")
         if "cobertura" in texto:
             return "Apto. Cobertura"
-        if "apart" in texto or "flat" in texto:
+        if "flat" in texto:
+            return "Flat"
+        if "apart" in texto or "studio" in texto or "kitnet" in texto or "kit net" in texto:
             return "Apartamento"
-        if "studio" in texto or "kitnet" in texto or "kit net" in texto:
-            return "Apartamento"
+        if "chacara" in texto:
+            return "Chácara"
+        if "fazenda" in texto:
+            return "Fazenda"
+        if "sitio" in texto:
+            return "Sítio"
         if "casa" in texto or "resid" in texto or "sobrado" in texto:
             return "Casa"
         if "terreno" in texto or "lote" in texto:
@@ -383,7 +389,7 @@ class MercadoiDriver:
             "Casa": "53",
             "Terreno": "103",
             "Sala Comercial": "98",
-            # Apto. Cobertura não tem value fixo — usa matching por texto abaixo
+            # Flat, Apto. Cobertura, Chácara, Fazenda, Sítio — usa matching por texto abaixo
         }
         value = mapa_values.get(tipo_imovel)
         if value:
@@ -681,7 +687,7 @@ class MercadoiDriver:
                     return False
 
             # Aguarda upload iniciar no servidor
-            await page.wait_for_timeout(4000)
+            await page.wait_for_timeout(1500)
 
             # Detecta erros do plupload exibidos na página
             erro_plupload = await page.evaluate("""
@@ -696,9 +702,9 @@ class MercadoiDriver:
                 logger.warning(f"Erro de upload detectado na página: {erro_plupload}")
 
             ids = []
-            limite = max(esperados * 6, 16)
+            limite = max(esperados * 8, 20)  # mais iterações, mas cada uma mais curta
             for i in range(limite):
-                await page.wait_for_timeout(1500)
+                await page.wait_for_timeout(800)
 
                 # Verifica campos ocultos (Mercadoi usa "propperty" com pp duplo, mas também testa variante)
                 ids = await page.evaluate("""
