@@ -21,6 +21,7 @@ from modules.mercadoi_driver import MercadoiDriver
 from modules.status_writer import StatusWriter
 from modules.logger import Logger
 from modules.notificador import notificar
+from modules.ocr_preco import extrair_preco_de_imagens
 
 logger = Logger("main")
 
@@ -256,6 +257,13 @@ async def processar_link(row: dict, sheet, config: dict):
         row_index, "arquivo_midia",
         f"{len(arquivo_midia)} arquivo(s)" if arquivo_midia else ""
     )
+
+    # --- ETAPA 2.5: OCR de preço nas imagens (se não veio no texto) ---
+    if not dados.get("preco") and arquivo_midia:
+        preco_ocr = extrair_preco_de_imagens(arquivo_midia)
+        if preco_ocr:
+            dados["preco"] = preco_ocr
+            logger.info(f"[{execution_id}] Preço obtido via OCR: {preco_ocr}")
 
     # --- ETAPA 3: Publicação no Mercadoi com retry ---
     if not arquivo_midia:
