@@ -176,10 +176,66 @@ async def _via_browser(url: str, config: dict) -> tuple[dict | None, str]:
 
 
 # ---------------------------------------------------------------------------
+# Extração + download em paralelo (usado pelo pipeline)
+# ---------------------------------------------------------------------------
+
+async def _extrair_e_baixar(url: str, config: dict) -> tuple:
+    """
+    Roda extração Deepseek E download de mídia simultaneamente.
+    Retorna (dados, tipo_midia, arquivo_midia, motivo_falha).
+    """
+    usar_api = bool(config.get("usar_deepseek_api")) and bool(config.get("deepseek_api_key", "").strip())
+    media = MediaResolver(config["downloads_path"])
+
+    if usar_api:
+        # Dispara download de mídia ao mesmo tempo que a extração API
+        med_task = asyncio.create_task(media.resolver(url))
+        dados, motivo = await _via_api(url, config)
+
+        if not dados and motivo in _MOTIVOS_DEFINITIVOS:
+            # URL inválida/não encontrada — cancela download
+            med_task.cancel()
+            try:
+                await med_task
+            except asyncio.CancelledError:
+                pass
+            return None, None, None, motivo
+
+        if not dados:
+            # API falhou por motivo transitório — tenta browser
+            # (mídia continua baixando em paralelo)
+            dados, motivo = await _via_browser(url, config)
+
+        try:
+            tipo_midia, arquivo_midia = await med_task
+        except asyncio.CancelledError:
+            tipo_midia, arquivo_midia = None, []
+
+        if not dados:
+            for f in (arquivo_midia or []):
+                try:
+                    os.remove(f)
+                except Exception:
+                    pass
+            return None, None, None, motivo
+
+        return dados, tipo_midia, arquivo_midia, ""
+
+    else:
+        # Modo browser — sequencial para não conflitar Chrome com Mercadoi
+        dados, motivo = await _via_browser(url, config)
+        if not dados:
+            return None, None, None, motivo
+        tipo_midia, arquivo_midia = await media.resolver(url)
+        return dados, tipo_midia, arquivo_midia, ""
+
+
+# ---------------------------------------------------------------------------
 # Processamento de um link
 # ---------------------------------------------------------------------------
 
-async def processar_link(row: dict, sheet, config: dict):
+async def processar_link(row: dict, sheet, config: dict,
+                         prefetch_task: asyncio.Task | None = None):
     url = row["url_instagram"]
     row_index = row["_row_index"]
     execution_id = str(uuid.uuid4())[:8].upper()
@@ -190,34 +246,16 @@ async def processar_link(row: dict, sheet, config: dict):
 
     status = StatusWriter(sheet, row_index)
 
-    # --- ETAPA 1: Extração de dados ---
-    dados = None
-    motivo_falha = ""
-    usar_api = bool(config.get("usar_deepseek_api", False))
-    tem_api_key = usar_api and bool(config.get("deepseek_api_key", "").strip())
-
-    if tem_api_key:
-        logger.info(f"[{execution_id}] Extraindo via API DeepSeek...")
-        dados, motivo_falha = await _via_api(url, config)
-        if dados:
-            logger.info(f"[{execution_id}] Dados obtidos via API")
-        else:
-            msg_motivo = _MOTIVO_MSGS.get(motivo_falha, motivo_falha)
-            if motivo_falha in _MOTIVOS_DEFINITIVOS:
-                logger.error(f"[{execution_id}] Extração falhou definitivamente: {msg_motivo}")
-                status.erro("erro_extracao", msg_motivo)
-                return
-            logger.warning(f"[{execution_id}] API falhou ({msg_motivo}) — tentando fallback browser")
-
-    if not dados:
-        logger.info(f"[{execution_id}] Extraindo via DeepSeek browser...")
-        dados, motivo_browser = await _via_browser(url, config)
-        if not dados and motivo_browser:
-            motivo_falha = motivo_browser
+    # --- ETAPA 1+2: Extração e mídia (paralelas via prefetch ou direto) ---
+    if prefetch_task is not None:
+        logger.info(f"[{execution_id}] Usando dados pré-buscados (pipeline)...")
+        dados, tipo_midia, arquivo_midia, motivo_falha = await prefetch_task
+    else:
+        dados, tipo_midia, arquivo_midia, motivo_falha = await _extrair_e_baixar(url, config)
 
     if not dados or not dados.get("titulo"):
         msg_final = _MOTIVO_MSGS.get(motivo_falha, "Não foi possível extrair dados do imóvel")
-        logger.error(f"[{execution_id}] Extração falhou em todos os métodos: {msg_final}")
+        logger.error(f"[{execution_id}] Extração falhou: {msg_final}")
         status.erro("erro_extracao", msg_final)
         return
 
@@ -225,40 +263,29 @@ async def processar_link(row: dict, sheet, config: dict):
     dados = _validar_dados(dados)
     motivo_invalido = _dados_invalidos(dados)
     if motivo_invalido:
-        logger.error(f"[{execution_id}] Dados extraidos rejeitados: {motivo_invalido}")
+        logger.error(f"[{execution_id}] Dados rejeitados: {motivo_invalido}")
         status.erro("erro_extracao", motivo_invalido)
         return
 
-    # Garante links de contato sempre presentes quando disponíveis.
-    # url_publicacao: sempre o link do post do Instagram (sempre conhecido).
     if not dados.get("url_publicacao"):
         dados["url_publicacao"] = url
-        logger.info(f"[{execution_id}] url_publicacao definida a partir da URL do post")
-
-    if not dados.get("whatsapp_url"):
-        logger.debug(f"[{execution_id}] whatsapp_url não encontrado no post — ícone de contato omitido")
-    if not dados.get("instagram_url"):
-        logger.debug(f"[{execution_id}] instagram_url não encontrado no post — ícone do Instagram omitido")
 
     sheet.atualizar_campo(row_index, "titulo_gerado", dados.get("titulo", ""))
     logger.info(f"[{execution_id}] Título: {dados.get('titulo', '')[:70]}")
 
-    for campo in ["tipo_imovel", "operacao", "preco", "quartos", "suites", "banheiros", "cidade_extraida", "bairro_extraido"]:
+    for campo in ["tipo_imovel", "operacao", "preco", "quartos", "suites",
+                  "banheiros", "cidade_extraida", "bairro_extraido"]:
         val = dados.get(campo, "")
         if val:
             logger.info(f"[{execution_id}]   {campo}: {val}")
 
-    # --- ETAPA 2: Mídia ---
-    logger.info(f"[{execution_id}] Resolvendo mídia...")
-    media = MediaResolver(config["downloads_path"])
-    tipo_midia, arquivo_midia = await media.resolver(url)
-    sheet.atualizar_campo(row_index, "tipo_midia", tipo_midia)
+    sheet.atualizar_campo(row_index, "tipo_midia", tipo_midia or "")
     sheet.atualizar_campo(
         row_index, "arquivo_midia",
         f"{len(arquivo_midia)} arquivo(s)" if arquivo_midia else ""
     )
 
-    # --- ETAPA 2.5: OCR de preço nas imagens (se não veio no texto) ---
+    # --- OCR de preço nas imagens (se não veio no texto) ---
     if not dados.get("preco") and arquivo_midia:
         preco_ocr = extrair_preco_de_imagens(arquivo_midia)
         if preco_ocr:
@@ -353,10 +380,30 @@ async def executar_ciclo(config: dict):
 
     urls_processadas = {row["url_instagram"].strip() for row in pendentes}
 
-    for row in pendentes:
+    # Pipeline: pré-busca extração+download do próximo link enquanto publica o atual
+    prefetch: dict[str, asyncio.Task] = {}
+
+    def _iniciar_prefetch(row):
+        url = row["url_instagram"]
+        if url not in prefetch:
+            prefetch[url] = asyncio.create_task(_extrair_e_baixar(url, config))
+
+    if pendentes:
+        _iniciar_prefetch(pendentes[0])
+
+    for i, row in enumerate(pendentes):
+        url = row["url_instagram"]
+
+        # Dispara prefetch do próximo link AGORA — corre em paralelo com a publicação atual
+        if i + 1 < len(pendentes):
+            _iniciar_prefetch(pendentes[i + 1])
+
+        task = prefetch.pop(url, None)
         try:
-            await processar_link(row, db, config)
+            await processar_link(row, db, config, prefetch_task=task)
         except Exception as e:
+            if task and not task.done():
+                task.cancel()
             logger.error(f"Erro inesperado: {e}")
             try:
                 db.atualizar_status(row["_row_index"], "erro_preenchimento")

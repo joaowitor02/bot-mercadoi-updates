@@ -160,7 +160,7 @@ class MercadoiDriver:
                 await page.wait_for_selector('#prop_title', timeout=15000)
             except Exception:
                 logger.warning("Campo #prop_title demorou para aparecer, continuando mesmo assim")
-            await page.wait_for_timeout(1500)
+            await page.wait_for_timeout(300)  # pequena margem para select2/TinyMCE iniciarem
 
             # TITULO
             titulo = dados.get("titulo", "").strip()
@@ -687,7 +687,7 @@ class MercadoiDriver:
                     return False
 
             # Aguarda upload iniciar no servidor
-            await page.wait_for_timeout(4000)
+            await page.wait_for_timeout(1500)
 
             # Detecta erros do plupload exibidos na página
             erro_plupload = await page.evaluate("""
@@ -702,9 +702,9 @@ class MercadoiDriver:
                 logger.warning(f"Erro de upload detectado na página: {erro_plupload}")
 
             ids = []
-            limite = max(esperados * 6, 16)
+            limite = max(esperados * 8, 20)  # mais iterações, mas cada uma mais curta
             for i in range(limite):
-                await page.wait_for_timeout(1500)
+                await page.wait_for_timeout(800)
 
                 # Verifica campos ocultos (Mercadoi usa "propperty" com pp duplo, mas também testa variante)
                 ids = await page.evaluate("""
