@@ -452,6 +452,26 @@
         </div>
         <div id="licenca-status" class="text-xs text-slate-400">Verificando...</div>
         <p class="text-xs text-slate-400">Deixe vazio para licença permanente.</p>
+
+        <!-- Gerar licença para enviar ao cliente -->
+        <div class="pt-2 border-t border-slate-200 space-y-2">
+          <p class="text-xs font-semibold text-slate-500">Gerar licença para novo cliente</p>
+          <div class="flex items-center gap-2">
+            <input type="date" id="lic-gerar-data"
+              class="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent bg-white" />
+            <button onclick="gerarLicenca()"
+              class="h-9 px-3 bg-slate-700 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg transition-colors whitespace-nowrap">
+              Gerar
+            </button>
+          </div>
+          <div id="lic-gerada-box" class="hidden space-y-1">
+            <p class="text-xs text-slate-500">Cole no <code class="bg-slate-200 px-1 rounded">config.json</code> do cliente:</p>
+            <div class="relative">
+              <pre id="lic-gerada-txt" class="text-xs bg-white border border-slate-200 rounded-lg p-2 pr-16 font-mono text-slate-700 whitespace-pre-wrap break-all"></pre>
+              <button onclick="copiarLicenca()" class="absolute top-2 right-2 text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-0.5 rounded transition-colors">Copiar</button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Credenciais do Cliente -->
@@ -695,6 +715,22 @@
       </div>
 
     </div>
+
+    <!-- Distribuição -->
+    <div class="px-6 py-5 border-t border-slate-100 bg-slate-50/50">
+      <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Distribuição para novos clientes</p>
+      <div class="flex items-center gap-3 bg-white border border-slate-200 rounded-xl px-4 py-3">
+        <svg class="w-4 h-4 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+        </svg>
+        <span id="dist-link" class="flex-1 text-xs text-slate-600 font-mono truncate">Carregando...</span>
+        <button onclick="copiarLinkDistribuicao()" class="shrink-0 text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-1.5 rounded-lg transition-colors font-medium">
+          Copiar link
+        </button>
+      </div>
+      <p class="text-xs text-slate-400 mt-2">Envie este link ao cliente para baixar e instalar o bot pela primeira vez.</p>
+    </div>
+
   </div>
 
 </main>
@@ -1555,6 +1591,10 @@ async function carregarConfig() {
     set('adv-whatsapp-default',   d.whatsapp_default);
     setChk('adv-usar-tunnel',     d.usar_tunnel);
     setChk('adv-usar-deepseek',   d.usar_deepseek_api);
+
+    // Link de distribuição: usa update_zip_url configurado ou placeholder
+    const distEl = document.getElementById('dist-link');
+    if (distEl) distEl.textContent = d.update_zip_url || 'Configure update_zip_url em Config Avançada';
   } catch {}
 }
 
@@ -1644,6 +1684,29 @@ async function salvarLicenca() {
       toast(d.msg || 'Erro ao salvar', 'erro');
     }
   } catch { toast('Erro de conexão', 'erro'); }
+}
+
+async function gerarLicenca() {
+  const data = document.getElementById('lic-gerar-data').value;
+  if (!data) { toast('Escolha uma data de expiração', 'erro'); return; }
+  try {
+    const r = await fetch(`/api/gerar-licenca?data=${data}`);
+    const d = await r.json();
+    if (!d.ok) { toast(d.msg || 'Erro ao gerar', 'erro'); return; }
+    const snippet = `"licenca_expira": "${d.licenca_expira}",\n"licenca_assinatura": "${d.licenca_assinatura}"`;
+    document.getElementById('lic-gerada-txt').textContent = snippet;
+    document.getElementById('lic-gerada-box').classList.remove('hidden');
+  } catch { toast('Erro de conexão', 'erro'); }
+}
+
+function copiarLicenca() {
+  const txt = document.getElementById('lic-gerada-txt').textContent;
+  navigator.clipboard.writeText(txt).then(() => toast('Copiado!')).catch(() => toast('Erro ao copiar', 'erro'));
+}
+
+function copiarLinkDistribuicao() {
+  const link = document.getElementById('dist-link').textContent;
+  navigator.clipboard.writeText(link).then(() => toast('Link copiado!')).catch(() => toast('Erro ao copiar', 'erro'));
 }
 
 async function testarTelegram() {

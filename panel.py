@@ -55,7 +55,7 @@ _PUBLIC_PATHS = {"/login", "/favicon.ico", "/licenca-expirada", "/api/health", "
 _ADMIN_API_PATHS = frozenset({
     "/api/config", "/api/config/senha", "/api/config/telegram",
     "/api/config/admin-senha", "/api/config/licenca", "/api/testar-telegram",
-    "/api/tunnel/baixar", "/api/config/avancada",
+    "/api/tunnel/baixar", "/api/config/avancada", "/api/gerar-licenca",
     # /api/atualizar é intencional fora daqui — cliente precisa poder atualizar
 })
 
@@ -1039,6 +1039,23 @@ async def salvar_licenca(body: LicencaRequest):
         return JSONResponse({"ok": False, "msg": "Data inválida. Use AAAA-MM-DD"}, status_code=400)
     except Exception as e:
         return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
+
+
+@app.get("/api/gerar-licenca")
+async def gerar_licenca(data: str = ""):
+    """Gera os valores assinados de licença para enviar ao cliente (sem salvar localmente)."""
+    try:
+        expira = data.strip()
+        if expira:
+            date.fromisoformat(expira)
+        sig = _assinar_licenca(expira) if expira else ""
+        return JSONResponse({
+            "ok": True,
+            "licenca_expira": expira,
+            "licenca_assinatura": sig,
+        })
+    except ValueError:
+        return JSONResponse({"ok": False, "msg": "Data inválida."}, status_code=400)
 
 
 class ConfigAvancadaRequest(BaseModel):
