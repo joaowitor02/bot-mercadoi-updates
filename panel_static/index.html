@@ -273,6 +273,29 @@
       </div>
     </div>
 
+    <!-- Renovar licença (visível ao cliente quando expirada ou próxima) -->
+    <div id="renovar-licenca-card" class="hidden bg-white rounded-2xl border border-amber-200 p-5 space-y-3">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
+          <svg class="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+        </div>
+        <div>
+          <p class="text-sm font-semibold text-amber-800" id="renovar-licenca-titulo">Licença expirando em breve</p>
+          <p class="text-xs text-amber-600">Cole abaixo a chave de renovação enviada pelo suporte.</p>
+        </div>
+      </div>
+      <div class="flex gap-2">
+        <input type="text" id="renovar-chave-input" placeholder="YYYY-MM-DD:chave..."
+          class="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm font-mono text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent" />
+        <button onclick="renovarLicenca()"
+          class="h-10 px-4 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-xl transition-colors whitespace-nowrap">
+          Renovar
+        </button>
+      </div>
+    </div>
+
   </div>
 
   <!-- ===================== SEÇÃO: FILA ===================== -->
@@ -1573,6 +1596,16 @@ async function carregarConfig() {
       licDiv.innerHTML = `<span class="text-emerald-600 font-medium">${dias} dias restantes</span>`;
     }
 
+    // Mostra card de renovação para o cliente quando expirada ou <= 7 dias
+    const renovarCard = document.getElementById('renovar-licenca-card');
+    const renovarTitulo = document.getElementById('renovar-licenca-titulo');
+    if (renovarCard && d.licenca_expira && dias !== null && dias !== undefined && dias <= 7) {
+      if (dias < 0) renovarTitulo.textContent = `Licença expirada há ${Math.abs(dias)} dia(s)`;
+      else if (dias === 0) renovarTitulo.textContent = 'Licença expira hoje!';
+      else renovarTitulo.textContent = `Licença expira em ${dias} dia(s)`;
+      renovarCard.classList.remove('hidden');
+    }
+
     if (d.senha_configurada || d.admin_senha_configurada) {
       document.getElementById('btn-logout').classList.remove('hidden');
       document.getElementById('btn-logout').classList.add('flex');
@@ -1693,20 +1726,41 @@ async function gerarLicenca() {
     const r = await fetch(`/api/gerar-licenca?data=${data}`);
     const d = await r.json();
     if (!d.ok) { toast(d.msg || 'Erro ao gerar', 'erro'); return; }
-    const snippet = `"licenca_expira": "${d.licenca_expira}",\n"licenca_assinatura": "${d.licenca_assinatura}"`;
-    document.getElementById('lic-gerada-txt').textContent = snippet;
+    // Chave compacta para enviar ao cliente: "YYYY-MM-DD:HMAC"
+    const chave = `${d.licenca_expira}:${d.licenca_assinatura}`;
+    document.getElementById('lic-gerada-txt').textContent = chave;
     document.getElementById('lic-gerada-box').classList.remove('hidden');
   } catch { toast('Erro de conexão', 'erro'); }
 }
 
 function copiarLicenca() {
   const txt = document.getElementById('lic-gerada-txt').textContent;
-  navigator.clipboard.writeText(txt).then(() => toast('Copiado!')).catch(() => toast('Erro ao copiar', 'erro'));
+  navigator.clipboard.writeText(txt).then(() => toast('Chave copiada! Envie ao cliente.')).catch(() => toast('Erro ao copiar', 'erro'));
 }
 
 function copiarLinkDistribuicao() {
   const link = document.getElementById('dist-link').textContent;
   navigator.clipboard.writeText(link).then(() => toast('Link copiado!')).catch(() => toast('Erro ao copiar', 'erro'));
+}
+
+async function renovarLicenca() {
+  const chave = document.getElementById('renovar-chave-input').value.trim();
+  if (!chave) { toast('Cole a chave de renovação', 'erro'); return; }
+  try {
+    const r = await fetch('/api/renovar-licenca', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chave }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      toast(d.msg, 'ok');
+      document.getElementById('renovar-licenca-card').classList.add('hidden');
+      document.getElementById('renovar-chave-input').value = '';
+    } else {
+      toast(d.msg || 'Chave inválida', 'erro');
+    }
+  } catch { toast('Erro de conexão', 'erro'); }
 }
 
 async function testarTelegram() {

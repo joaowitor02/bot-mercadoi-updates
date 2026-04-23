@@ -264,6 +264,38 @@ async def licenca_expirada_page():
     )
 
 
+class RenovarLicencaRequest(BaseModel):
+    chave: str  # formato: "YYYY-MM-DD:HMAC_HEX"
+
+
+@app.post("/api/renovar-licenca")
+async def renovar_licenca(body: RenovarLicencaRequest):
+    """Permite ao cliente renovar a licença colando a chave enviada pelo admin."""
+    global _LICENCA_EXPIRA
+    try:
+        chave = body.chave.strip()
+        partes = chave.split(":")
+        if len(partes) != 2:
+            return JSONResponse({"ok": False, "msg": "Chave inválida."}, status_code=400)
+        expira, sig = partes[0].strip(), partes[1].strip()
+        date.fromisoformat(expira)
+        if not _licenca_assinatura_valida(expira, sig):
+            return JSONResponse({"ok": False, "msg": "Chave inválida ou adulterada."}, status_code=400)
+        cfg = _load_config()
+        cfg["licenca_expira"]     = expira
+        cfg["licenca_assinatura"] = sig
+        (BASE_DIR / "config.json").write_text(
+            json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        _LICENCA_EXPIRA = expira
+        dias = (date.fromisoformat(expira) - date.today()).days
+        return JSONResponse({"ok": True, "msg": f"Licença renovada até {expira} ({dias} dias)."})
+    except ValueError:
+        return JSONResponse({"ok": False, "msg": "Data inválida na chave."}, status_code=400)
+    except Exception as e:
+        return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
+
+
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(erro: str = ""):
     if not _SENHA and not _ADMIN_SENHA:
