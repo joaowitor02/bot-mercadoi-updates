@@ -1,5 +1,17 @@
 # Changelog — Bot Mercadoi
 
+## [3.4] - 2026-04-24
+### Novas funcionalidades
+- Publicação automática: imóveis com imagem, preço e tipo preenchidos são publicados diretamente (sem rascunho)
+- Status "publicado" exibido na fila e nos contadores do painel
+- Fallback inteligente: se AJAX falhar, bot tenta clicar no botão de publicar da página
+
+### Correções
+- Pipeline entre links removido — causava conflitos de navegadores e muitos erros
+- pip upgrade removido da instalação inicial (travava em redes lentas)
+- Janela de espera exibe log de inicialização e fecha automaticamente
+- Timeout de inicialização aumentado de 25 s para 90 s (máquinas lentas / Python 3.14)
+
 ## [3.3] - 2026-04-23
 ### Melhorias de velocidade
 - Bot ~70% mais rápido: extração Deepseek e download de mídia rodando em paralelo
