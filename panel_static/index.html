@@ -1263,9 +1263,10 @@ async function adicionarUrls(forcar = false, urlsParaForcar = null) {
 
     // Se há duplicatas e não estamos no modo forcar, mostra modal
     if (!forcar && d.duplicadas > 0) {
-      const duplicatasForcaveis = d.results.filter(r => r.status === 'duplicada' && r.forcavel);
+      const duplicatas = d.results.filter(r => r.status === 'duplicada');
+      const duplicatasForcaveis = duplicatas.filter(r => r.forcavel);
       _urlsDuplicatasPendentes = duplicatasForcaveis.map(r => r.url);
-      if (duplicatasForcaveis.length) _mostrarModalDuplicatas(duplicatasForcaveis, d.adicionadas);
+      _mostrarModalDuplicatas(duplicatas, d.adicionadas, duplicatasForcaveis.length);
 
       // Exibe o resultado parcial (os que foram adicionados normalmente)
       _exibirResultado(d, result, summary, details);
@@ -1334,14 +1335,16 @@ function _exibirResultado(d, result, summary, details) {
   result.classList.remove('hidden');
 }
 
-function _mostrarModalDuplicatas(duplicatas, jaAdicionadas) {
+function _mostrarModalDuplicatas(duplicatas, jaAdicionadas, qtdForcaveis = 0) {
   const n = duplicatas.length;
   document.getElementById('dup-titulo').textContent =
     `${n} link${n>1?'s':''} duplicado${n>1?'s':''} encontrado${n>1?'s':''}`;
   document.getElementById('dup-subtitulo').textContent =
-    jaAdicionadas
-      ? `${jaAdicionadas} link${jaAdicionadas>1?'s':''} já adicionado${jaAdicionadas>1?'s':''}. O que fazer com os duplicados?`
-      : 'O que fazer com esses links?';
+    qtdForcaveis
+      ? (jaAdicionadas
+          ? `${jaAdicionadas} link${jaAdicionadas>1?'s':''} já adicionado${jaAdicionadas>1?'s':''}. O que fazer com os duplicados?`
+          : 'O que fazer com esses links?')
+      : 'Esses links já estão na fila ou em processamento e não podem ser inseridos agora.';
 
   const statusLabel = {
     publicado: 'Já publicado',
@@ -1354,6 +1357,11 @@ function _mostrarModalDuplicatas(duplicatas, jaAdicionadas) {
       <span class="text-xs text-slate-400 shrink-0 bg-slate-100 px-2 py-0.5 rounded-full">${esc(statusLabel[d.status_existente] || d.msg || '')}</span>
     </div>
   `).join('');
+
+  const btnInserir = document.getElementById('btn-inserir-dup');
+  btnInserir.disabled = !qtdForcaveis;
+  btnInserir.classList.toggle('opacity-50', !qtdForcaveis);
+  btnInserir.classList.toggle('cursor-not-allowed', !qtdForcaveis);
 
   document.getElementById('modal-duplicatas').classList.remove('hidden');
 }
