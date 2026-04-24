@@ -198,7 +198,7 @@ class MercadoiDriver:
                 ('select[name="estagio-da-obra-imc3b3vel[]"]', dados.get("estagio_imovel","").strip()),
                 ('select[name="no-tc3a9rreo[]"]',              dados.get("andar",         "").strip()),
                 ('select[name="tem-elevador"]',                dados.get("elevador",      "").strip()),
-                ('select[name="faz-parcerc3ada"]',             "A combinar"),
+                ('select[name*="parcer"]',                     "A combinar"),
             ])
 
             # CIDADE
