@@ -1226,7 +1226,10 @@ async function processarAgora() {
   } catch { toast('Erro ao iniciar o bot', 'erro'); }
 }
 
-async function adicionarUrls() {
+// Estado das duplicatas pendentes de decisão
+let _urlsDuplicatasPendentes = [];
+
+async function adicionarUrls(forcar = false, urlsParaForcar = null) {
   const textarea = document.getElementById('textarea-urls');
   const btn      = document.getElementById('btn-adicionar');
   const result   = document.getElementById('add-result');
@@ -1234,19 +1237,22 @@ async function adicionarUrls() {
   const details  = document.getElementById('add-details');
 
   const raw  = textarea.value;
-  const urls = raw.split('\n').map(u => u.trim()).filter(Boolean);
+  const urlsDoTextarea = raw.split('\n').map(u => u.trim()).filter(Boolean);
+  const urls = urlsParaForcar ?? urlsDoTextarea;
   if (!urls.length) return;
 
-  btn.disabled = true;
-  btn.innerHTML = `<svg class="w-4 h-4 spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-  </svg> Adicionando...`;
+  if (!forcar) {
+    btn.disabled = true;
+    btn.innerHTML = `<svg class="w-4 h-4 spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+    </svg> Adicionando...`;
+  }
 
   try {
     const r = await fetch('/api/adicionar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ urls }),
+      body: JSON.stringify({ urls, forcar }),
     });
     const d = await r.json();
 
@@ -1255,50 +1261,132 @@ async function adicionarUrls() {
       return;
     }
 
-    const tags = [];
-    if (d.adicionadas)  tags.push(`<span class="result-tag bg-emerald-100 text-emerald-700">✓ ${d.adicionadas} adicionada${d.adicionadas>1?'s':''}</span>`);
-    if (d.duplicadas)   tags.push(`<span class="result-tag bg-slate-100 text-slate-500">= ${d.duplicadas} duplicada${d.duplicadas>1?'s':''}</span>`);
-    if (d.invalidas)    tags.push(`<span class="result-tag bg-red-100 text-red-600">✗ ${d.invalidas} inválida${d.invalidas>1?'s':''}</span>`);
-    if (d.erros)        tags.push(`<span class="result-tag bg-red-100 text-red-600">! ${d.erros} erro${d.erros>1?'s':''}</span>`);
-    summary.innerHTML = tags.join('');
+    // Se há duplicatas forçáveis e não estamos no modo forcar, mostra modal
+    if (!forcar && d.tem_forcaveis && d.duplicadas > 0) {
+      const duplicatasForcaveis = d.results.filter(r => r.status === 'duplicada');
+      _urlsDuplicatasPendentes = duplicatasForcaveis.map(r => r.url);
+      _mostrarModalDuplicatas(duplicatasForcaveis, d.adicionadas);
 
-    const statusIcons = {
-      adicionada: '<span class="text-emerald-500 mr-1.5">✓</span>',
-      duplicada:  '<span class="text-slate-400 mr-1.5">=</span>',
-      invalida:   '<span class="text-red-500 mr-1.5">✗</span>',
-      erro:       '<span class="text-red-500 mr-1.5">!</span>',
-    };
-    details.innerHTML = d.results.map(item => `
-      <div class="flex items-start gap-1 text-xs">
-        ${statusIcons[item.status] || ''}
-        <span class="font-mono text-slate-500 truncate flex-1">${esc(item.url)}</span>
-        <span class="text-slate-400 shrink-0 ml-2">${esc(item.msg || '')}</span>
-      </div>
-    `).join('');
-
-    result.className = result.className.replace(/border-\S+/, '');
-    if (d.adicionadas && !d.invalidas && !d.erros) {
-      result.classList.add('border-emerald-200', 'bg-emerald-50/50');
-    } else if (d.invalidas || d.erros) {
-      result.classList.add('border-amber-200', 'bg-amber-50/50');
-    } else {
-      result.classList.add('border-slate-200', 'bg-slate-50');
+      // Exibe o resultado parcial (os que foram adicionados normalmente)
+      _exibirResultado(d, result, summary, details);
+      if (d.adicionadas) {
+        atualizarContador();
+        await carregarPendentes();
+      }
+      return;
     }
-    result.classList.remove('hidden');
+
+    _exibirResultado(d, result, summary, details);
 
     if (d.adicionadas) {
-      textarea.value = '';
+      if (!forcar) textarea.value = '';
+      else {
+        // Remove do textarea apenas as URLs que foram forçadas com sucesso
+        const adicionadas = new Set(d.results.filter(r => r.status === 'adicionada').map(r => r.url));
+        const linhasRestantes = textarea.value.split('\n').filter(l => !adicionadas.has(l.trim()));
+        textarea.value = linhasRestantes.join('\n');
+      }
       atualizarContador();
       await carregarPendentes();
       toast(`${d.adicionadas} link${d.adicionadas>1?'s':''} adicionado${d.adicionadas>1?'s':''}!`);
     }
   } catch { toast('Erro de conexão', 'erro'); }
   finally {
-    btn.disabled = false;
-    btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
-    </svg> Adicionar à Fila`;
+    if (!forcar) {
+      btn.disabled = false;
+      btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+      </svg> Adicionar à Fila`;
+    }
   }
+}
+
+function _exibirResultado(d, result, summary, details) {
+  const tags = [];
+  if (d.adicionadas)  tags.push(`<span class="result-tag bg-emerald-100 text-emerald-700">✓ ${d.adicionadas} adicionada${d.adicionadas>1?'s':''}</span>`);
+  if (d.duplicadas)   tags.push(`<span class="result-tag bg-amber-100 text-amber-600">⚠ ${d.duplicadas} duplicada${d.duplicadas>1?'s':''}</span>`);
+  if (d.invalidas)    tags.push(`<span class="result-tag bg-red-100 text-red-600">✗ ${d.invalidas} inválida${d.invalidas>1?'s':''}</span>`);
+  if (d.erros)        tags.push(`<span class="result-tag bg-red-100 text-red-600">! ${d.erros} erro${d.erros>1?'s':''}</span>`);
+  summary.innerHTML = tags.join('');
+
+  const statusIcons = {
+    adicionada: '<span class="text-emerald-500 mr-1.5">✓</span>',
+    duplicada:  '<span class="text-amber-500 mr-1.5">⚠</span>',
+    invalida:   '<span class="text-red-500 mr-1.5">✗</span>',
+    erro:       '<span class="text-red-500 mr-1.5">!</span>',
+  };
+  details.innerHTML = d.results.map(item => `
+    <div class="flex items-start gap-1 text-xs">
+      ${statusIcons[item.status] || ''}
+      <span class="font-mono text-slate-500 truncate flex-1">${esc(item.url)}</span>
+      <span class="text-slate-400 shrink-0 ml-2">${esc(item.msg || '')}</span>
+    </div>
+  `).join('');
+
+  result.className = result.className.replace(/border-\S+/g, '');
+  if (d.adicionadas && !d.invalidas && !d.erros && !d.duplicadas) {
+    result.classList.add('border-emerald-200', 'bg-emerald-50/50');
+  } else if (d.invalidas || d.erros) {
+    result.classList.add('border-amber-200', 'bg-amber-50/50');
+  } else {
+    result.classList.add('border-slate-200', 'bg-slate-50');
+  }
+  result.classList.remove('hidden');
+}
+
+function _mostrarModalDuplicatas(duplicatas, jaAdicionadas) {
+  const n = duplicatas.length;
+  document.getElementById('dup-titulo').textContent =
+    `${n} link${n>1?'s':''} duplicado${n>1?'s':''} encontrado${n>1?'s':''}`;
+  document.getElementById('dup-subtitulo').textContent =
+    jaAdicionadas
+      ? `${jaAdicionadas} link${jaAdicionadas>1?'s':''} já adicionado${jaAdicionadas>1?'s':''}. O que fazer com os duplicados?`
+      : 'O que fazer com esses links?';
+
+  const statusLabel = {
+    publicado: 'Já publicado',
+    pendente:  'Já na fila',
+  };
+  document.getElementById('dup-lista').innerHTML = duplicatas.map(d => `
+    <div class="flex items-center gap-2 py-1.5 border-b border-slate-50 last:border-0">
+      <div class="w-2 h-2 rounded-full bg-amber-400 shrink-0"></div>
+      <span class="font-mono text-xs text-slate-600 truncate flex-1">${esc(d.url)}</span>
+      <span class="text-xs text-slate-400 shrink-0 bg-slate-100 px-2 py-0.5 rounded-full">${esc(statusLabel[d.status_existente] || d.msg || '')}</span>
+    </div>
+  `).join('');
+
+  document.getElementById('modal-duplicatas').classList.remove('hidden');
+}
+
+function fecharModalDuplicatas() {
+  document.getElementById('modal-duplicatas').classList.add('hidden');
+  _urlsDuplicatasPendentes = [];
+}
+
+async function inserirDuplicadas() {
+  const btn = document.getElementById('btn-inserir-dup');
+  btn.disabled = true;
+  btn.innerHTML = `<svg class="w-4 h-4 spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+  </svg> Inserindo...`;
+
+  fecharModalDuplicatas();
+  await adicionarUrls(true, _urlsDuplicatasPendentes);
+
+  btn.disabled = false;
+  btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+  </svg> Inserir mesmo assim`;
+}
+
+function retirarDuplicadas() {
+  const textarea = document.getElementById('textarea-urls');
+  const paraRemover = new Set(_urlsDuplicatasPendentes);
+  const linhasRestantes = textarea.value.split('\n').filter(l => !paraRemover.has(l.trim()));
+  textarea.value = linhasRestantes.join('\n');
+  atualizarContador();
+  fecharModalDuplicatas();
+  toast('Duplicatas removidas da lista');
 }
 
 // ---------------------------------------------------------------------------
@@ -2083,8 +2171,53 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     document.getElementById('modal').classList.add('hidden');
     document.getElementById('modal-det').classList.add('hidden');
+    document.getElementById('modal-duplicatas').classList.add('hidden');
   }
 });
 </script>
+
+<!-- Modal de duplicatas -->
+<div id="modal-duplicatas" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onclick="if(event.target===this)fecharModalDuplicatas()">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center">
+          <svg class="w-4 h-4 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+          </svg>
+        </div>
+        <div>
+          <h3 class="text-sm font-bold text-slate-800" id="dup-titulo">Links duplicados encontrados</h3>
+          <p class="text-xs text-slate-500" id="dup-subtitulo"></p>
+        </div>
+      </div>
+      <button onclick="fecharModalDuplicatas()" class="text-slate-400 hover:text-slate-600 transition-colors">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="px-6 py-4 space-y-2 max-h-64 overflow-y-auto" id="dup-lista"></div>
+
+    <div class="px-6 py-4 bg-slate-50 border-t border-slate-100 flex flex-col sm:flex-row gap-2">
+      <button onclick="inserirDuplicadas()" id="btn-inserir-dup"
+        class="flex-1 flex items-center justify-center gap-2 h-9 px-4 bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold rounded-xl transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
+        </svg>
+        Inserir mesmo assim
+      </button>
+      <button onclick="retirarDuplicadas()"
+        class="flex-1 flex items-center justify-center gap-2 h-9 px-4 bg-white hover:bg-slate-100 text-slate-700 text-sm font-semibold rounded-xl border border-slate-200 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+        </svg>
+        Retirar da lista
+      </button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

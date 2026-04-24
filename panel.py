@@ -831,6 +831,7 @@ _INSTAGRAM_RE = re.compile(
 
 class AdicionarRequest(BaseModel):
     urls: list[str]
+    forcar: bool = False
 
 
 @app.post("/api/adicionar")
@@ -852,6 +853,8 @@ async def adicionar_url(body: AdicionarRequest):
     results = []
     adicionadas_agora: set[str] = set()
 
+    _STATUS_PUBLICADO = {"rascunho_salvo", "rascunho_salvo_sem_midia_video", "publicado"}
+
     def _pode_reativar(status: str) -> bool:
         return "erro" in status.lower() or status == "processando"
 
@@ -864,22 +867,25 @@ async def adicionar_url(body: AdicionarRequest):
             continue
         if url in existentes:
             status_existente = existentes[url]
-            if _pode_reativar(status_existente):
+            if _pode_reativar(status_existente) or body.forcar:
                 try:
                     sheet.resetar_url(url)
                     adicionadas_agora.add(url)
-                    results.append({"url": url, "status": "adicionada", "msg": "Reativada para reprocessamento"})
+                    msg_reativ = "Forçada para reprocessamento" if body.forcar else "Reativada para reprocessamento"
+                    results.append({"url": url, "status": "adicionada", "msg": msg_reativ})
                 except Exception as e:
                     results.append({"url": url, "status": "erro", "msg": str(e)})
             else:
-                _STATUS_PUBLICADO = {"rascunho_salvo", "rascunho_salvo_sem_midia_video", "publicado"}
                 if status_existente in _STATUS_PUBLICADO:
                     msg_dup = "Já publicado com sucesso"
+                    status_dup = "publicado"
                 elif status_existente == "pendente":
                     msg_dup = "Já está na fila aguardando processamento"
+                    status_dup = "pendente"
                 else:
                     msg_dup = "Já existe na fila"
-                results.append({"url": url, "status": "duplicada", "msg": msg_dup})
+                    status_dup = status_existente
+                results.append({"url": url, "status": "duplicada", "msg": msg_dup, "status_existente": status_dup})
             continue
         try:
             linha = sheet.adicionar_pendente(url)
@@ -888,6 +894,8 @@ async def adicionar_url(body: AdicionarRequest):
         except Exception as e:
             results.append({"url": url, "status": "erro", "msg": str(e)})
 
+    duplicadas_forcaveis = [r for r in results if r["status"] == "duplicada" and r.get("status_existente") != "duplicada"]
+
     return JSONResponse({
         "ok": True,
         "results": results,
@@ -895,6 +903,7 @@ async def adicionar_url(body: AdicionarRequest):
         "duplicadas":  sum(1 for r in results if r["status"] == "duplicada"),
         "invalidas":   sum(1 for r in results if r["status"] == "invalida"),
         "erros":       sum(1 for r in results if r["status"] == "erro"),
+        "tem_forcaveis": len(duplicadas_forcaveis) > 0,
     })
 
 
