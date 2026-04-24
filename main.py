@@ -234,8 +234,7 @@ async def _extrair_e_baixar(url: str, config: dict) -> tuple:
 # Processamento de um link
 # ---------------------------------------------------------------------------
 
-async def processar_link(row: dict, sheet, config: dict,
-                         prefetch_task: asyncio.Task | None = None):
+async def processar_link(row: dict, sheet, config: dict):
     url = row["url_instagram"]
     row_index = row["_row_index"]
     execution_id = str(uuid.uuid4())[:8].upper()
@@ -246,12 +245,8 @@ async def processar_link(row: dict, sheet, config: dict,
 
     status = StatusWriter(sheet, row_index)
 
-    # --- ETAPA 1+2: Extração e mídia (paralelas via prefetch ou direto) ---
-    if prefetch_task is not None:
-        logger.info(f"[{execution_id}] Usando dados pré-buscados (pipeline)...")
-        dados, tipo_midia, arquivo_midia, motivo_falha = await prefetch_task
-    else:
-        dados, tipo_midia, arquivo_midia, motivo_falha = await _extrair_e_baixar(url, config)
+    # --- ETAPA 1+2: Extração (API) e download de mídia em paralelo ---
+    dados, tipo_midia, arquivo_midia, motivo_falha = await _extrair_e_baixar(url, config)
 
     if not dados or not dados.get("titulo"):
         msg_final = _MOTIVO_MSGS.get(motivo_falha, "Não foi possível extrair dados do imóvel")
@@ -380,30 +375,12 @@ async def executar_ciclo(config: dict):
 
     urls_processadas = {row["url_instagram"].strip() for row in pendentes}
 
-    # Pipeline: pré-busca extração+download do próximo link enquanto publica o atual
-    prefetch: dict[str, asyncio.Task] = {}
-
-    def _iniciar_prefetch(row):
-        url = row["url_instagram"]
-        if url not in prefetch:
-            prefetch[url] = asyncio.create_task(_extrair_e_baixar(url, config))
-
-    if pendentes:
-        _iniciar_prefetch(pendentes[0])
-
-    for i, row in enumerate(pendentes):
-        url = row["url_instagram"]
-
-        # Dispara prefetch do próximo link AGORA — corre em paralelo com a publicação atual
-        if i + 1 < len(pendentes):
-            _iniciar_prefetch(pendentes[i + 1])
-
-        task = prefetch.pop(url, None)
+    # Processa links sequencialmente — o paralelismo ocorre DENTRO de cada link
+    # (API Deepseek + download de mídia em paralelo via _extrair_e_baixar)
+    for row in pendentes:
         try:
-            await processar_link(row, db, config, prefetch_task=task)
+            await processar_link(row, db, config)
         except Exception as e:
-            if task and not task.done():
-                task.cancel()
             logger.error(f"Erro inesperado: {e}")
             try:
                 db.atualizar_status(row["_row_index"], "erro_preenchimento")
