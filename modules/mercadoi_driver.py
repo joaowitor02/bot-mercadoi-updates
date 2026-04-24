@@ -943,6 +943,9 @@ class MercadoiDriver:
         """Fallback: clica no botão de submit do formulário para publicar."""
         try:
             seletores = [
+                'button:has-text("Enviar imóvel")',
+                'button:has-text("Enviar imovel")',
+                'input[type="submit"][value*="Enviar"]',
                 'button[type="submit"][id*="submit"]',
                 'input[type="submit"][id*="submit"]',
                 '#submit-property',
@@ -953,6 +956,7 @@ class MercadoiDriver:
             for sel in seletores:
                 btn = await page.query_selector(sel)
                 if btn:
+                    await btn.scroll_into_view_if_needed()
                     await btn.click()
                     await page.wait_for_load_state("domcontentloaded", timeout=15000)
                     logger.info(f"Publicado via clique no botão: {sel}")

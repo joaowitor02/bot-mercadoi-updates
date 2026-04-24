@@ -94,6 +94,13 @@
         </svg>
         <span id="btn-txt">Processar Agora</span>
       </button>
+      <button id="btn-pausar" onclick="pausarBot()" style="display:none"
+        class="flex items-center gap-2 h-9 px-4 bg-red-500 hover:bg-red-600 active:bg-red-700 text-white text-sm font-medium rounded-xl transition-colors shadow-sm">
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        Pausar Bot
+      </button>
       <button id="btn-logout" onclick="logout()" title="Sair"
         class="hidden h-9 w-9 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 flex items-center justify-center text-slate-400 hover:text-slate-600 transition-colors">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1182,11 +1189,13 @@ async function atualizarStatus() {
     }
     btnWatch.disabled = _botRodando && !_watchAtivo;
 
+    const btnPausar = document.getElementById('btn-pausar');
     if (_botRodando) {
       dot.className   = 'w-2 h-2 rounded-full bg-emerald-500 pulse-dot shrink-0';
       txt.textContent = _watchAtivo ? 'Watch ativo' : 'Rodando';
       btn.disabled    = true;
       btnTxt.textContent = 'Em execução...';
+      btnPausar.style.display = 'flex';
       logCard.classList.remove('hidden');
       await atualizarLogs();
     } else {
@@ -1194,8 +1203,31 @@ async function atualizarStatus() {
       txt.textContent = 'Aguardando';
       btn.disabled    = false;
       btnTxt.textContent = 'Processar Agora';
+      btnPausar.style.display = 'none';
     }
   } catch {}
+}
+
+async function pausarBot() {
+  const btn = document.getElementById('btn-pausar');
+  btn.disabled = true;
+  btn.textContent = 'Pausando...';
+  try {
+    const r = await fetch('/api/parar', { method: 'POST' });
+    const d = await r.json();
+    if (d.ok) {
+      toast('Bot pausado com sucesso');
+      await atualizarStatus();
+    } else {
+      toast(d.msg || 'Erro ao pausar', 'erro');
+    }
+  } catch { toast('Erro de conexão', 'erro'); }
+  finally {
+    btn.disabled = false;
+    btn.innerHTML = `<svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg> Pausar Bot`;
+  }
 }
 
 async function atualizarLogs() {

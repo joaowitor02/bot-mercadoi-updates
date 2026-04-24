@@ -579,6 +579,8 @@ async def _rodar_bot(watch: bool = False, intervalo: int = 5):
         args = [sys.executable, "main.py"]
         if watch:
             args += ["--watch", str(intervalo)]
+        env = os.environ.copy()
+        env["NODE_NO_WARNINGS"] = "1"
         proc = subprocess.Popen(
             args,
             cwd=str(BASE_DIR),
@@ -588,6 +590,7 @@ async def _rodar_bot(watch: bool = False, intervalo: int = 5):
             encoding="utf-8",
             errors="replace",
             bufsize=1,
+            env=env,
         )
         _bot_processo = proc
 
@@ -707,6 +710,18 @@ async def parar_watch():
         except Exception as e:
             return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
     return JSONResponse({"ok": False, "msg": "Watch mode não está ativo"}, status_code=409)
+
+
+@app.post("/api/parar")
+async def parar_bot():
+    global _bot_processo
+    if _bot_processo and _bot_rodando:
+        try:
+            _bot_processo.terminate()
+            return JSONResponse({"ok": True, "msg": "Bot encerrado"})
+        except Exception as e:
+            return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
+    return JSONResponse({"ok": False, "msg": "Bot não está rodando"}, status_code=409)
 
 
 @app.get("/api/chrome-status")
