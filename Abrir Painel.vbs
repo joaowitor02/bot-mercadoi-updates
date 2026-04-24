@@ -42,14 +42,49 @@ If strPython = "" Then strPython = "py"
 ' === 3. Cria pasta de logs ====================================================
 If Not objFSO.FolderExists(strLogs) Then objFSO.CreateFolder strLogs
 
-' === 4. Primeira execucao: instala dependencias ===============================
+' === 4. Primeira execucao: instala dependencias com janela de progresso ========
 If Not objFSO.FileExists(strFlag) Then
-    ' Instala pacotes Python usando o mesmo executavel capturado acima
-    Executar """" & strPython & """ -m pip install --upgrade pip -q"
-    Executar """" & strPython & """ -m pip install -r """ & strDir & "\requirements.txt"" -q"
 
-    ' Instala o browser Chromium do Playwright
-    Executar """" & strPython & """ -m playwright install chromium"
+    ' Cria batch de instalacao com progresso visivel para o cliente
+    Dim strBatch
+    strBatch = strLogs & "\_instalar.bat"
+    Dim fBat : Set fBat = objFSO.CreateTextFile(strBatch, True)
+    fBat.WriteLine "@echo off"
+    fBat.WriteLine "title Bot Mercadoi - Configuracao inicial"
+    fBat.WriteLine "color 0A"
+    fBat.WriteLine "echo."
+    fBat.WriteLine "echo  ======================================================"
+    fBat.WriteLine "echo    Bot Mercadoi - Configuracao do sistema"
+    fBat.WriteLine "echo  ======================================================"
+    fBat.WriteLine "echo."
+    fBat.WriteLine "echo  Bem-vindo! Esta e a primeira vez que o bot e iniciado."
+    fBat.WriteLine "echo  As dependencias serao instaladas automaticamente."
+    fBat.WriteLine "echo."
+    fBat.WriteLine "echo  NAO feche esta janela - isso pode levar alguns minutos."
+    fBat.WriteLine "echo."
+    fBat.WriteLine "echo  [1/3] Atualizando instalador Python..."
+    fBat.WriteLine """" & strPython & """ -m pip install --upgrade pip -q >> """ & strLogs & "\setup.log"" 2>&1"
+    fBat.WriteLine "if errorlevel 1 (echo  AVISO: falha ao atualizar pip, continuando...) else (echo  [1/3] OK)"
+    fBat.WriteLine "echo."
+    fBat.WriteLine "echo  [2/3] Instalando dependencias do bot..."
+    fBat.WriteLine """" & strPython & """ -m pip install -r """ & strDir & "\requirements.txt"" -q >> """ & strLogs & "\setup.log"" 2>&1"
+    fBat.WriteLine "if errorlevel 1 (echo  ERRO: falha ao instalar dependencias. Veja logs\setup.log) else (echo  [2/3] OK)"
+    fBat.WriteLine "echo."
+    fBat.WriteLine "echo  [3/3] Baixando navegador interno (pode demorar 2-3 minutos)..."
+    fBat.WriteLine """" & strPython & """ -m playwright install chromium >> """ & strLogs & "\setup.log"" 2>&1"
+    fBat.WriteLine "if errorlevel 1 (echo  AVISO: falha ao instalar navegador) else (echo  [3/3] OK)"
+    fBat.WriteLine "echo."
+    fBat.WriteLine "echo  ======================================================"
+    fBat.WriteLine "echo    Configuracao concluida! Abrindo o painel..."
+    fBat.WriteLine "echo  ======================================================"
+    fBat.WriteLine "timeout /t 3 /nobreak > nul"
+    fBat.Close
+
+    ' Roda o batch em janela visivel e aguarda terminar
+    objShell.Run "cmd /c """ & strBatch & """", 1, True
+
+    ' Remove o batch temporario
+    If objFSO.FileExists(strBatch) Then objFSO.DeleteFile strBatch
 
     ' Marca como instalado
     Dim f : Set f = objFSO.CreateTextFile(strFlag, True)
