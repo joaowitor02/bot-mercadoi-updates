@@ -320,7 +320,10 @@ async def processar_link(row: dict, sheet, config: dict):
         sheet.atualizar_campo(row_index, "bairro_aplicado", resultado.get("bairro_aplicado", ""))
         mercadoi_url = resultado.get("mercadoi_url", "")
         sheet.atualizar_campo(row_index, "mercadoi_url", mercadoi_url)
-        status.sucesso("rascunho_salvo", resultado.get("mensagem", "Rascunho salvo com sucesso"))
+        # Define status: publicado diretamente ou rascunho
+        msg = resultado.get("mensagem", "")
+        status_final = "publicado" if "Publicado" in msg else "rascunho_salvo"
+        status.sucesso(status_final, msg)
         logger.info(f"[{execution_id}] Sucesso!")
         for arq in arquivo_midia:
             try:
@@ -393,11 +396,12 @@ async def executar_ciclo(config: dict):
     # Contabiliza apenas os itens deste ciclo para a notificação
     _, rows_after = db._todas_as_linhas()
     processadas = [r for r in rows_after if r.get("url_instagram", "").strip() in urls_processadas]
-    sucessos     = sum(1 for r in processadas if r.get("status", "") in ("rascunho_salvo", "rascunho_salvo_sem_midia_video"))
+    _STATUS_SUCESSO = ("rascunho_salvo", "rascunho_salvo_sem_midia_video", "publicado")
+    sucessos     = sum(1 for r in processadas if r.get("status", "") in _STATUS_SUCESSO)
     falhas_list  = [r for r in processadas if "erro" in r.get("status", "").lower()]
 
     if total:
-        sucessos_list = [r for r in processadas if r.get("status", "") in ("rascunho_salvo", "rascunho_salvo_sem_midia_video")]
+        sucessos_list = [r for r in processadas if r.get("status", "") in _STATUS_SUCESSO]
         linhas = []
         for r in sucessos_list[:10]:
             titulo = (r.get("titulo_gerado") or "")[:50] or r.get("url_instagram", "")[:50]

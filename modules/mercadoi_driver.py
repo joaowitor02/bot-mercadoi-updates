@@ -233,16 +233,37 @@ class MercadoiDriver:
             # NAO EXIBIR CONTATO
             await self._marcar_nao_exibir_contato(page)
 
-            # SALVAR COMO RASCUNHO
-            salvamento = await self._salvar_rascunho(page)
+            # DECIDE: publicar direto ou salvar rascunho
+            publicar_direto = (
+                tipo_midia == "imagem"
+                and bool(dados.get("preco", "").strip())
+                and bool(dados.get("tipo_imovel", "").strip())
+            )
+
+            if publicar_direto:
+                logger.info("Criterios atendidos — publicando diretamente")
+                salvamento = await self._publicar(page)
+                modo = "Publicado"
+            else:
+                motivos = []
+                if tipo_midia != "imagem":
+                    motivos.append(f"midia={tipo_midia}")
+                if not dados.get("preco", "").strip():
+                    motivos.append("sem preco")
+                if not dados.get("tipo_imovel", "").strip():
+                    motivos.append("sem tipo")
+                logger.info(f"Salvando como rascunho ({', '.join(motivos)})")
+                salvamento = await self._salvar_rascunho(page)
+                modo = "Rascunho salvo"
+
             if not salvamento.get("ok"):
                 resultado["status_erro"] = "erro_salvamento"
-                resultado["mensagem"] = "Falha ao salvar rascunho"
+                resultado["mensagem"] = f"Falha ao {'publicar' if publicar_direto else 'salvar rascunho'}"
                 resultado["screenshot_path"] = await self._tirar_screenshot("erro_salvamento")
                 return resultado
 
             resultado["sucesso"] = True
-            resultado["mensagem"] = "Rascunho salvo com sucesso"
+            resultado["mensagem"] = f"{modo} com sucesso"
             resultado["mercadoi_url"] = salvamento.get("url", "")
             return resultado
 
@@ -857,6 +878,91 @@ class MercadoiDriver:
 
         except Exception as e:
             logger.error(f"Erro ao salvar rascunho: {e}")
+            return {"ok": False}
+
+    async def _publicar(self, page):
+        """Publica o imóvel diretamente (sem rascunho) via AJAX submit_property."""
+        try:
+            try:
+                await page.wait_for_selector('#save_as_draft', timeout=10000)
+            except Exception:
+                logger.warning("Timeout aguardando form, tentando publicar mesmo assim")
+
+            resultado = await page.evaluate("""
+                () => new Promise((resolve) => {
+                    const $form = jQuery('#submit_property_form');
+                    if (!$form.length) { resolve({ok: false, erro: 'form nao encontrado'}); return; }
+                    const ed = window.tinymce || window.tinyMCE;
+                    const editor = ed && ed.get('prop_des');
+                    const description = editor
+                        ? editor.getContent()
+                        : (window._botDescricao || (document.querySelector('#prop_des') || {}).value || '');
+                    const ajaxUrl = window.ajax_url || window.ajaxurl || '/wp-admin/admin-ajax.php';
+                    jQuery.ajax({
+                        type: 'post',
+                        url: ajaxUrl,
+                        dataType: 'json',
+                        data: $form.serialize() + '&action=submit_property&description=' + encodeURIComponent(description),
+                        success: function(response) { resolve({ok: true, response: JSON.stringify(response)}); },
+                        error: function(xhr, status, error) {
+                            resolve({ok: false, erro: error, status: status, resp: xhr.responseText.substring(0, 300)});
+                        }
+                    });
+                })
+            """)
+
+            logger.info(f"Resultado AJAX submit_property: {resultado}")
+
+            if not resultado or not resultado.get('ok'):
+                # Fallback: tenta clicar no botão de submit do formulário
+                logger.warning("AJAX submit_property falhou, tentando clique no botão")
+                return await self._publicar_via_botao(page)
+
+            try:
+                resp = json.loads(resultado.get('response', '{}'))
+                if resp.get('success') or resp.get('suc'):
+                    logger.info("Imóvel publicado com sucesso via AJAX")
+                    property_id = resp.get("property_id") or resp.get("prop_id") or resp.get("id")
+                    url = self._montar_url_mercadoi(property_id)
+                    return {"ok": True, "property_id": property_id, "url": url}
+                else:
+                    logger.warning(f"AJAX submit_property retornou falha: {resp} — tentando botão")
+                    return await self._publicar_via_botao(page)
+            except Exception:
+                logger.info("AJAX publicar completou (resposta aceita)")
+                return {"ok": True}
+
+        except Exception as e:
+            logger.error(f"Erro ao publicar: {e}")
+            return {"ok": False}
+
+    async def _publicar_via_botao(self, page):
+        """Fallback: clica no botão de submit do formulário para publicar."""
+        try:
+            seletores = [
+                'button[type="submit"][id*="submit"]',
+                'input[type="submit"][id*="submit"]',
+                '#submit-property',
+                'button:has-text("Publicar")',
+                'button:has-text("Submit")',
+                'button:has-text("Enviar")',
+            ]
+            for sel in seletores:
+                btn = await page.query_selector(sel)
+                if btn:
+                    await btn.click()
+                    await page.wait_for_load_state("domcontentloaded", timeout=15000)
+                    logger.info(f"Publicado via clique no botão: {sel}")
+                    # Tenta extrair ID da URL resultante
+                    url_atual = page.url
+                    import re as _re
+                    m = _re.search(r'post=(\d+)', url_atual)
+                    pid = m.group(1) if m else None
+                    return {"ok": True, "property_id": pid, "url": self._montar_url_mercadoi(pid)}
+            logger.error("Nenhum botão de publicar encontrado")
+            return {"ok": False}
+        except Exception as e:
+            logger.error(f"Erro ao publicar via botão: {e}")
             return {"ok": False}
 
     def _montar_url_mercadoi(self, property_id) -> str:

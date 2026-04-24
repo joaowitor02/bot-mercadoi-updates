@@ -524,7 +524,7 @@ def _execucoes_db(dias: int = 7) -> list[dict]:
             pass
 
         status_raw = (r.get("status") or "").lower()
-        if status_raw in ("rascunho_salvo", "rascunho_salvo_sem_midia_video"):
+        if status_raw in ("rascunho_salvo", "rascunho_salvo_sem_midia_video", "publicado"):
             status = "sucesso"
         elif status_raw == "processando":
             status = "processando"
@@ -872,7 +872,7 @@ async def adicionar_url(body: AdicionarRequest):
                 except Exception as e:
                     results.append({"url": url, "status": "erro", "msg": str(e)})
             else:
-                _STATUS_PUBLICADO = {"rascunho_salvo", "rascunho_salvo_sem_midia_video"}
+                _STATUS_PUBLICADO = {"rascunho_salvo", "rascunho_salvo_sem_midia_video", "publicado"}
                 if status_existente in _STATUS_PUBLICADO:
                     msg_dup = "Já publicado com sucesso"
                 elif status_existente == "pendente":
