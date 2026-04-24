@@ -21,6 +21,9 @@ _logger = logging.getLogger("panel")
 
 from version import VERSION
 
+print(f"[INICIO] Bot Mercadoi v{VERSION} — carregando...", flush=True)
+print(f"[INICIO] Python {sys.version.split()[0]} em {sys.platform}", flush=True)
+
 # Python <= 3.13 no Windows: ProactorEventLoop gera ValueError em transports fechados.
 # SelectorEventLoop evita isso. Em 3.14+ a política foi depreciada e não é necessária.
 if sys.platform == "win32" and sys.version_info < (3, 14):

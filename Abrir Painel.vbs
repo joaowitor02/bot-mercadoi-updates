@@ -98,7 +98,27 @@ strCmd = "cmd /c cd /d """ & strDir & """ && " & _
          """" & strPython & """ panel.py >> """ & strLogs & "\painel.log"" 2>&1"
 objShell.Run strCmd, 0, False   ' 0 = sem janela, False = nao aguarda
 
-' === 6. Aguarda o painel responder (ate 90 segundos) =========================
+' === 6. Aguarda o painel responder mostrando progresso =======================
+Dim strBat2
+strBat2 = strLogs & "\_aguardar.bat"
+Dim fAg : Set fAg = objFSO.CreateTextFile(strBat2, True)
+fAg.WriteLine "@echo off"
+fAg.WriteLine "title Bot Mercadoi - Iniciando"
+fAg.WriteLine "color 0B"
+fAg.WriteLine "echo."
+fAg.WriteLine "echo  ======================================================"
+fAg.WriteLine "echo    Bot Mercadoi - Iniciando o painel"
+fAg.WriteLine "echo  ======================================================"
+fAg.WriteLine "echo."
+fAg.WriteLine "echo  Aguarde enquanto o sistema carrega..."
+fAg.WriteLine "echo  Esta janela fecha automaticamente."
+fAg.WriteLine "echo."
+fAg.WriteLine "echo  Log de inicializacao:"
+fAg.WriteLine "echo  " & strLogs & "\painel.log"
+fAg.WriteLine "echo."
+fAg.Close
+objShell.Run "cmd /c """ & strBat2 & """", 1, False  ' abre em paralelo, nao aguarda
+
 Dim i, blnOk
 blnOk = False
 For i = 1 To 90
@@ -109,11 +129,33 @@ For i = 1 To 90
     End If
 Next
 
+' Fecha a janela de espera
+objShell.Run "taskkill /fi ""WINDOWTITLE eq Bot Mercadoi - Iniciando"" /f", 0, False
+If objFSO.FileExists(strBat2) Then objFSO.DeleteFile strBat2
+
 If Not blnOk Then
-    MsgBox "O painel nao respondeu." & vbCrLf & vbCrLf & _
-           "Tente abrir novamente. Se o erro persistir," & vbCrLf & _
-           "verifique o log de erros em:" & vbCrLf & _
-           "  " & strLogs & "\painel.log", _
+    ' Le ultimas linhas do log para ajudar no diagnostico
+    Dim strUltimasLinhas : strUltimasLinhas = ""
+    Dim strLogPath : strLogPath = strLogs & "\painel.log"
+    If objFSO.FileExists(strLogPath) Then
+        Dim ts : Set ts = objFSO.OpenTextFile(strLogPath, 1)
+        Dim strTudo : strTudo = ts.ReadAll()
+        ts.Close
+        Dim arrL : arrL = Split(strTudo, vbNewLine)
+        Dim nL : nL = UBound(arrL)
+        Dim ini : ini = nL - 8
+        If ini < 0 Then ini = 0
+        Dim k
+        For k = ini To nL
+            If Trim(arrL(k)) <> "" Then
+                strUltimasLinhas = strUltimasLinhas & arrL(k) & vbCrLf
+            End If
+        Next
+    End If
+    MsgBox "O painel nao respondeu a tempo." & vbCrLf & vbCrLf & _
+           "Tente abrir novamente clicando duas vezes no arquivo." & vbCrLf & vbCrLf & _
+           "Ultimas linhas do log:" & vbCrLf & _
+           strUltimasLinhas, _
            vbExclamation, "Bot Mercadoi — Erro ao iniciar"
     WScript.Quit 1
 End If
