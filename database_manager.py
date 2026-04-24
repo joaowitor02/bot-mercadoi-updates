@@ -14,7 +14,7 @@ _CAMPOS_VALIDOS = frozenset({
     "url_instagram", "status", "titulo_gerado", "tipo_midia",
     "arquivo_midia", "cidade_aplicada", "bairro_aplicado",
     "fim_processamento", "resultado", "mensagem_erro", "id_execucao",
-    "mercadoi_url", "tentativas",
+    "mercadoi_url", "tentativas", "tempo_seg",
 })
 
 _CREATE_TABLE = """
@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS imoveis (
     id_execucao       TEXT    DEFAULT '',
     mercadoi_url      TEXT    DEFAULT '',
     tentativas        INTEGER DEFAULT 0,
+    tempo_seg         INTEGER DEFAULT 0,
     criado_em         TEXT    DEFAULT (datetime('now', 'localtime')),
     atualizado_em     TEXT    DEFAULT (datetime('now', 'localtime'))
 )
@@ -65,6 +66,8 @@ class DatabaseManager:
                     conn.execute("ALTER TABLE imoveis ADD COLUMN mercadoi_url TEXT DEFAULT ''")
                 if "tentativas" not in cols:
                     conn.execute("ALTER TABLE imoveis ADD COLUMN tentativas INTEGER DEFAULT 0")
+                if "tempo_seg" not in cols:
+                    conn.execute("ALTER TABLE imoveis ADD COLUMN tempo_seg INTEGER DEFAULT 0")
                 conn.commit()
 
     def _to_dict(self, row) -> dict:

@@ -672,13 +672,30 @@ async def status(request: Request):
     token = request.cookies.get("mercadoi_session", "")
     sem_auth = not _SENHA and not _ADMIN_SENHA
     nivel = _SESSION_TOKENS.get(token, "admin" if sem_auth else "")
+
+    tempo_medio = None
+    try:
+        db = _db_manager()
+        with db._conn() as conn:
+            row = conn.execute(
+                "SELECT AVG(tempo_seg) as media FROM imoveis "
+                "WHERE tempo_seg > 0 AND status IN "
+                "('rascunho_salvo','rascunho_salvo_sem_midia_video','publicado') "
+                "ORDER BY id DESC LIMIT 20"
+            ).fetchone()
+            if row and row["media"]:
+                tempo_medio = round(row["media"])
+    except Exception:
+        pass
+
     return JSONResponse({
         "rodando":      _bot_rodando,
         "watch_ativo":  _watch_ativo,
         "hoje":         date.today().isoformat(),
         "autenticado":  bool(nivel),
         "senha_ativa":  bool(_SENHA),
-        "nivel":        nivel,  # "admin" | "user" | ""
+        "nivel":        nivel,
+        "tempo_medio":  tempo_medio,
     })
 
 

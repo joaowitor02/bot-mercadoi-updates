@@ -78,6 +78,12 @@
       <div id="version-pill" class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-500 cursor-default" title="Versão do bot">
         <span id="version-txt">v—</span>
       </div>
+      <div id="tempo-pill" class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-500 cursor-default" title="Tempo médio por publicação (últimas 20)">
+        <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <span id="tempo-txt">—</span>
+      </div>
       <button id="btn-watch" onclick="toggleWatch()"
         class="hidden items-center gap-2 h-9 px-4 border border-slate-200 hover:border-slate-300 text-slate-600 hover:text-slate-800 text-sm font-medium rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1188,6 +1194,19 @@ async function atualizarStatus() {
       watchTxt.textContent = 'Watch Mode';
     }
     btnWatch.disabled = _botRodando && !_watchAtivo;
+
+    // Tempo médio
+    const tempoPill = document.getElementById('tempo-pill');
+    const tempoTxt  = document.getElementById('tempo-txt');
+    if (d.tempo_medio) {
+      const min = Math.floor(d.tempo_medio / 60);
+      const seg = d.tempo_medio % 60;
+      tempoTxt.textContent = min > 0 ? `~${min}m${seg}s/pub` : `~${seg}s/pub`;
+      tempoPill.classList.remove('hidden');
+      tempoPill.classList.add('sm:flex');
+    } else {
+      tempoTxt.textContent = '—';
+    }
 
     const btnPausar = document.getElementById('btn-pausar');
     if (_botRodando) {

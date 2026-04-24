@@ -240,6 +240,7 @@ async def processar_link(row: dict, sheet, config: dict):
     execution_id = str(uuid.uuid4())[:8].upper()
 
     logger.info(f"[{execution_id}] === Iniciando: {url} ===")
+    _inicio = __import__("time").time()
     sheet.atualizar_status(row_index, "processando")
     sheet.atualizar_campo(row_index, "id_execucao", execution_id)
 
@@ -323,8 +324,10 @@ async def processar_link(row: dict, sheet, config: dict):
         # Define status: publicado diretamente ou rascunho
         msg = resultado.get("mensagem", "")
         status_final = "publicado" if "Publicado" in msg else "rascunho_salvo"
+        tempo_total = int(__import__("time").time() - _inicio)
+        sheet.atualizar_campo(row_index, "tempo_seg", str(tempo_total))
         status.sucesso(status_final, msg)
-        logger.info(f"[{execution_id}] Sucesso!")
+        logger.info(f"[{execution_id}] Sucesso! ({tempo_total}s)")
         for arq in arquivo_midia:
             try:
                 os.remove(arq)
