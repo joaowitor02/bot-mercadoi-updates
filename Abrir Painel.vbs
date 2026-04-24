@@ -98,10 +98,10 @@ strCmd = "cmd /c cd /d """ & strDir & """ && " & _
          """" & strPython & """ panel.py >> """ & strLogs & "\painel.log"" 2>&1"
 objShell.Run strCmd, 0, False   ' 0 = sem janela, False = nao aguarda
 
-' === 6. Aguarda o painel responder (ate 25 segundos) =========================
+' === 6. Aguarda o painel responder (ate 90 segundos) =========================
 Dim i, blnOk
 blnOk = False
-For i = 1 To 25
+For i = 1 To 90
     WScript.Sleep 1000
     If PainelRodando() Then
         blnOk = True
@@ -110,8 +110,9 @@ For i = 1 To 25
 Next
 
 If Not blnOk Then
-    MsgBox "O painel nao respondeu apos 25 segundos." & vbCrLf & vbCrLf & _
-           "Verifique o log de erros em:" & vbCrLf & _
+    MsgBox "O painel nao respondeu." & vbCrLf & vbCrLf & _
+           "Tente abrir novamente. Se o erro persistir," & vbCrLf & _
+           "verifique o log de erros em:" & vbCrLf & _
            "  " & strLogs & "\painel.log", _
            vbExclamation, "Bot Mercadoi — Erro ao iniciar"
     WScript.Quit 1
