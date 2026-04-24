@@ -183,62 +183,24 @@ class MercadoiDriver:
             operacao = dados.get("operacao", "").strip() or "A Venda"
             await self._selecionar_por_texto(page, '#prop_status', operacao)
 
-            # PRECO
-            preco = dados.get("preco", "").strip()
-            if preco:
-                await page.fill('#prop_price', preco)
-                logger.info(f"Preco preenchido: {preco}")
+            # Preenche todos os campos numéricos em uma única chamada JS
+            await self._preencher_campos_batch(page, {
+                '#prop_price':  dados.get("preco",    "").strip(),
+                '#prop_beds':   dados.get("quartos",  "").strip(),
+                '#prop_rooms':  dados.get("suites",   "").strip(),
+                '#prop_baths':  dados.get("banheiros","").strip(),
+                '#prop_garage': dados.get("vagas",    "").strip(),
+                '#prop_size':   dados.get("area_m2",  "").strip(),
+            })
 
-            # ESTAGIO
-            estagio = dados.get("estagio_imovel", "").strip()
-            if estagio:
-                await self._selecionar_por_texto(page, 'select[name="estagio-da-obra-imc3b3vel[]"]', estagio)
-
-            # ANDAR
-            andar = dados.get("andar", "").strip()
-            if andar:
-                await self._selecionar_por_texto(page, 'select[name="no-tc3a9rreo[]"]', andar)
-
-            # ELEVADOR
-            elevador = dados.get("elevador", "").strip()
-            if elevador:
-                await self._selecionar_por_texto(page, 'select[name="tem-elevador"]', elevador)
-
-            # QUARTOS
-            quartos = dados.get("quartos", "").strip()
-            if quartos:
-                await page.fill('#prop_beds', quartos)
-                logger.info(f"Quartos preenchido: {quartos}")
-
-            # SUITES
-            suites = dados.get("suites", "").strip()
-            if suites:
-                await page.fill('#prop_rooms', suites)
-                logger.info(f"Suites preenchido: {suites}")
-
-            # BANHEIROS
-            banheiros = dados.get("banheiros", "").strip()
-            if banheiros:
-                await page.fill('#prop_baths', banheiros)
-                logger.info(f"Banheiros preenchido: {banheiros}")
-
-            # VAGAS
-            vagas = dados.get("vagas", "").strip()
-            if vagas:
-                await page.fill('#prop_garage', vagas)
-                logger.info(f"Vagas preenchido: {vagas}")
-
-            # TAMANHO
-            area = dados.get("area_m2", "").strip()
-            if area:
-                await page.fill('#prop_size', area)
-                logger.info(f"Area preenchida: {area}")
-
-            # ROLE (tipo de conta)
-            await self._selecionar_por_texto(page, 'select[name="role"]', "Corretor")
-
-            # FAZ PARCERIA - sempre "A combinar"
-            await self._selecionar_por_texto(page, 'select[name="faz-parcerc3ada"]', "A combinar")
+            # Seleciona todos os selects simples em uma única chamada JS
+            await self._selecionar_batch(page, [
+                ('select[name="estagio-da-obra-imc3b3vel[]"]', dados.get("estagio_imovel","").strip()),
+                ('select[name="no-tc3a9rreo[]"]',              dados.get("andar",         "").strip()),
+                ('select[name="tem-elevador"]',                dados.get("elevador",      "").strip()),
+                ('select[name="role"]',                        "Corretor"),
+                ('select[name="faz-parcerc3ada"]',             "A combinar"),
+            ])
 
             # CIDADE
             cidade = dados.get("cidade_extraida", "").strip()
@@ -507,8 +469,8 @@ class MercadoiDriver:
                 f"() => {{ window._botDescricao = {json.dumps(conteudo_html)}; }}"
             )
 
-            # Aguarda TinyMCE inicializar (até 4s)
-            for _ in range(8):
+            # Aguarda TinyMCE inicializar (até 1.2s)
+            for _ in range(4):
                 pronto = await page.evaluate("""
                     () => {
                         const ed = window.tinymce || window.tinyMCE;
@@ -517,7 +479,7 @@ class MercadoiDriver:
                 """)
                 if pronto:
                     break
-                await page.wait_for_timeout(500)
+                await page.wait_for_timeout(300)
 
             resultado = await page.evaluate(f"""
                 () => {{
@@ -546,6 +508,69 @@ class MercadoiDriver:
                 logger.warning("Editor de conteudo nao encontrado")
         except Exception as e:
             logger.warning(f"Erro ao preencher editor: {e}")
+
+    async def _preencher_campos_batch(self, page, campos: dict):
+        """Preenche múltiplos inputs em uma única chamada JS."""
+        try:
+            preenchidos = await page.evaluate("""
+                (campos) => {
+                    const log = [];
+                    for (const [sel, val] of Object.entries(campos)) {
+                        if (!val) continue;
+                        const el = document.querySelector(sel);
+                        if (!el) continue;
+                        el.value = val;
+                        el.dispatchEvent(new Event('input',  {bubbles: true}));
+                        el.dispatchEvent(new Event('change', {bubbles: true}));
+                        log.push(sel + '=' + val);
+                    }
+                    return log;
+                }
+            """, campos)
+            if preenchidos:
+                logger.info(f"Campos preenchidos em batch: {', '.join(preenchidos)}")
+        except Exception as e:
+            logger.warning(f"Erro ao preencher campos em batch: {e}")
+
+    async def _selecionar_batch(self, page, selecoes: list):
+        """Seleciona múltiplos <select> em uma única chamada JS."""
+        try:
+            validos = [(s, v) for s, v in selecoes if v]
+            if not validos:
+                return
+            resultado = await page.evaluate("""
+                (selecoes) => {
+                    const log = [];
+                    for (const [seletor, valorAlvo] of selecoes) {
+                        const sel = document.querySelector(seletor);
+                        if (!sel) continue;
+                        const norm = t => t.toLowerCase()
+                            .normalize('NFD').replace(/[\\u0300-\\u036f]/g,'')
+                            .replace(/\\s+/g,' ').trim();
+                        const alvo = norm(valorAlvo);
+                        let melhor = null;
+                        for (const op of sel.options) {
+                            const t = norm(op.text);
+                            const b = t.replace(/^\\d+\\s*[-\\u2013]\\s*/, '');
+                            if (t === alvo || b === alvo || t.includes(alvo) || alvo.includes(b)) {
+                                melhor = op; break;
+                            }
+                        }
+                        if (melhor) {
+                            sel.value = melhor.value;
+                            sel.dispatchEvent(new Event('change', {bubbles: true}));
+                            if (window.jQuery && window.jQuery(sel).data('select2'))
+                                window.jQuery(sel).trigger('change');
+                            log.push(seletor + '=' + melhor.text);
+                        }
+                    }
+                    return log;
+                }
+            """, validos)
+            if resultado:
+                logger.info(f"Selects em batch: {len(resultado)} selecionados")
+        except Exception as e:
+            logger.warning(f"Erro ao selecionar em batch: {e}")
 
     def _cidade_por_bairro(self, bairro: str) -> str:
         b = normalizar(bairro)
