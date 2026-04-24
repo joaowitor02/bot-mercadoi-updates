@@ -124,6 +124,16 @@ class DatabaseManager:
             logger.info(f"{count} item(ns) pendente(s) removido(s)")
         return count
 
+    def limpar_erros(self) -> int:
+        with self._lock:
+            with self._conn() as conn:
+                cur = conn.execute("DELETE FROM imoveis WHERE status LIKE 'erro%'")
+                conn.commit()
+        count = cur.rowcount
+        if count:
+            logger.info(f"{count} erro(s) removido(s)")
+        return count
+
     def resetar_travados(self) -> int:
         with self._lock:
             with self._conn() as conn:

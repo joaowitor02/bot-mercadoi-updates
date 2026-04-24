@@ -1168,6 +1168,18 @@ async def limpar_pendentes():
         return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
 
 
+@app.post("/api/limpar-erros")
+async def limpar_erros():
+    if _bot_rodando:
+        return JSONResponse({"ok": False, "msg": "Aguarde o bot terminar"}, status_code=409)
+    try:
+        db = _db_manager()
+        count = db.limpar_erros()
+        return JSONResponse({"ok": True, "msg": f"{count} erro(s) removido(s)"})
+    except Exception as e:
+        return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
+
+
 @app.get("/api/fila")
 async def listar_fila():
     """Retorna todos os itens pendentes e com erro para exibição na fila."""
