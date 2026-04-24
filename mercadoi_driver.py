@@ -244,6 +244,10 @@ class MercadoiDriver:
                 logger.info("Criterios atendidos — publicando diretamente")
                 salvamento = await self._publicar(page)
                 modo = "Publicado"
+                if not salvamento.get("ok"):
+                    logger.warning("Publicacao direta falhou — salvando como rascunho")
+                    salvamento = await self._salvar_rascunho(page)
+                    modo = "Rascunho salvo"
             else:
                 motivos = []
                 if tipo_midia != "imagem":

@@ -214,11 +214,13 @@ class DeepSeekParser:
     def _normalizar_preco(self, valor):
         if not valor:
             return ""
-        # Remove prefixo R$ e espaços
-        valor = re.sub(r'^R\$\s*', '', valor.strip(), flags=re.IGNORECASE).strip()
+        valor = str(valor).strip()
+        # Remove prefixos textuais: "a partir de R$ 590 mil" → "590 mil"
+        valor = re.sub(r'^(?:a partir de|a partir|partir de|valor|preço|preco)\s*', '', valor, flags=re.IGNORECASE).strip()
+        valor = re.sub(r'^R\$\s*', '', valor, flags=re.IGNORECASE).strip()
 
-        # "350 mil", "3,5 mil", "1.5k" → multiplica por 1000
-        mil = re.match(r'^([\d.,]+)\s*(?:mil|k)\b', valor, re.IGNORECASE)
+        # "350 mil", "3,5 mil", "1.5k" — busca em qualquer posição na string
+        mil = re.search(r'([\d.,]+)\s*(?:mil|k)\b', valor, re.IGNORECASE)
         if mil:
             num = mil.group(1).replace(',', '.')
             partes = num.split('.')

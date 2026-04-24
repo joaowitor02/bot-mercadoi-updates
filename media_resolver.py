@@ -55,7 +55,7 @@ class MediaResolver:
                 campo = await page.query_selector('input[type="text"], input[placeholder*="nstagram"], textarea')
                 await campo.fill(url_instagram)
                 await page.click('button[type="submit"], button:has-text("Download"), button:has-text("Baixar")')
-                await page.wait_for_timeout(2500)
+                await page.wait_for_timeout(4000)
 
                 tipo = await self._detectar_tipo(page)
                 logger.info(f"Tipo de midia detectado: {tipo}")
