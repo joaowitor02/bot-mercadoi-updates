@@ -198,7 +198,6 @@ class MercadoiDriver:
                 ('select[name="estagio-da-obra-imc3b3vel[]"]', dados.get("estagio_imovel","").strip()),
                 ('select[name="no-tc3a9rreo[]"]',              dados.get("andar",         "").strip()),
                 ('select[name="tem-elevador"]',                dados.get("elevador",      "").strip()),
-                ('select[name="role"]',                        "Corretor"),
                 ('select[name="faz-parcerc3ada"]',             "A combinar"),
             ])
 
@@ -359,10 +358,10 @@ class MercadoiDriver:
                 return True
             else:
                 motivo = resultado.get('motivo', 'desconhecido') if resultado else 'erro JS'
-                logger.warning(f"Nao selecionou '{valor}' em {seletor}: {motivo}")
+                logger.info(f"Nao selecionou '{valor}' em {seletor}: {motivo}")
                 return False
         except Exception as e:
-            logger.warning(f"Erro ao selecionar '{valor}' em {seletor}: {e}")
+            logger.info(f"Erro ao selecionar '{valor}' em {seletor}: {e}")
             return False
 
     async def _selecionar_tipo_imovel(self, page, tipo_imovel):
@@ -653,7 +652,7 @@ class MercadoiDriver:
                 logger.info(f"Bairro parcial aceito: '{primeira_palavra}' (original: '{bairro}')")
                 return primeira_palavra
 
-        logger.warning(f"Bairro '{bairro}' nao encontrado no select — campo deixado em branco")
+        logger.info(f"Bairro '{bairro}' nao encontrado no select — campo deixado em branco")
         return ""
 
     def _validar_arquivos(self, caminhos: list) -> list:
