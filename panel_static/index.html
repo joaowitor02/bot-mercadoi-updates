@@ -2031,8 +2031,8 @@ function _mostrarReiniciando() {
 
   // Aguarda painel voltar e recarrega
   (async () => {
-    await new Promise(r => setTimeout(r, 3000));
-    for (let i = 0; i < 25; i++) {
+    await new Promise(r => setTimeout(r, 6000));
+    for (let i = 0; i < 30; i++) {
       await new Promise(r => setTimeout(r, 1500));
       try {
         const r = await fetch('/api/health');

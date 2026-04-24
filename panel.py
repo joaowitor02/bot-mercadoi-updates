@@ -1342,23 +1342,24 @@ async def atualizar_bot():
 
         copiados = await asyncio.get_event_loop().run_in_executor(None, _aplicar)
 
-        # Agenda reinício: novo processo sobe em 2s, este encerra
+        # Agenda reinício via cmd externo — aguarda 4s (porta libera) depois sobe novo processo
         import threading as _threading
         def _restart():
             import time as _t, subprocess as _sp
-            _t.sleep(2)
             log_path = str(BASE_DIR / "logs" / "painel.log")
-            try:
-                _sp.Popen(
-                    [sys.executable, str(BASE_DIR / "panel.py")],
-                    cwd=str(BASE_DIR),
-                    stdout=open(log_path, "a"),
-                    stderr=_sp.STDOUT,
-                    creationflags=_sp.CREATE_NEW_PROCESS_GROUP if hasattr(_sp, "CREATE_NEW_PROCESS_GROUP") else 0,
-                )
-            except Exception:
-                pass
+            cmd = (
+                f'cmd /c timeout /t 4 /nobreak > nul'
+                f' && "{sys.executable}" "{BASE_DIR / "panel.py"}"'
+                f' >> "{log_path}" 2>&1'
+            )
+            _sp.Popen(
+                cmd, shell=True,
+                creationflags=_sp.DETACHED_PROCESS | _sp.CREATE_NEW_PROCESS_GROUP,
+                stdin=_sp.DEVNULL, stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+            )
+            _t.sleep(0.5)  # garante que o cmd externo iniciou antes de sair
             os._exit(0)
+
         _threading.Thread(target=_restart, daemon=False).start()
 
         return JSONResponse({
