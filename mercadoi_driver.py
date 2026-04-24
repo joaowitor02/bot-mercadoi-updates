@@ -956,14 +956,23 @@ class MercadoiDriver:
             for sel in seletores:
                 btn = await page.query_selector(sel)
                 if btn:
+                    url_antes = page.url
                     await btn.scroll_into_view_if_needed()
                     await btn.click()
                     await page.wait_for_load_state("domcontentloaded", timeout=15000)
+                    url_depois = page.url
+
+                    # URL igual = formulário ficou na mesma página (erro de validação)
+                    if url_depois == url_antes:
+                        logger.warning(
+                            f"Botão '{sel}' clicado mas página não redirecionou "
+                            f"— erro de validação do formulário (campo obrigatório faltando?)"
+                        )
+                        return {"ok": False}
+
                     logger.info(f"Publicado via clique no botão: {sel}")
-                    # Tenta extrair ID da URL resultante
-                    url_atual = page.url
                     import re as _re
-                    m = _re.search(r'post=(\d+)', url_atual)
+                    m = _re.search(r'post=(\d+)', url_depois)
                     pid = m.group(1) if m else None
                     return {"ok": True, "property_id": pid, "url": self._montar_url_mercadoi(pid)}
             logger.error("Nenhum botão de publicar encontrado")
