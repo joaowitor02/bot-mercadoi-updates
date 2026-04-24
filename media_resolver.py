@@ -222,32 +222,35 @@ class MediaResolver:
             """
         )
 
-    async def _aguardar_botoes_imagem(self, page, timeout_ms: int = 20000) -> list[dict]:
+    async def _aguardar_botoes_imagem(self, page, timeout_ms: int = 30000) -> list[dict]:
         """
         Aguarda a lista de downloads estabilizar.
-        Para assim que os botões ficam estáveis por 2 iterações seguidas.
+        Rola a página completa para forçar lazy-load e para quando estável por 3 iterações.
         """
         melhor = []
         melhor_qtd = 0
         estavel = 0
+        iteracao = 0
         inicio = asyncio.get_running_loop().time()
 
         while (asyncio.get_running_loop().time() - inicio) * 1000 < timeout_ms:
             await self._remover_bloqueios(page)
+            # Rola em 5 passos para ativar lazy-load de todas as imagens
             await page.evaluate(
                 """
                 async () => {
                     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
                     const maxY = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
-                    for (const p of [0, 0.5, 1]) {
+                    for (const p of [0, 0.25, 0.5, 0.75, 1]) {
                         window.scrollTo(0, Math.floor(maxY * p));
-                        await sleep(300);
+                        await sleep(350);
                     }
                     window.scrollTo(0, maxY);
                 }
                 """
             )
-            await page.wait_for_timeout(800)
+            await page.wait_for_timeout(900)
+            iteracao += 1
 
             botoes = await self._coletar_botoes_imagem(page)
             qtd = len(botoes)
@@ -259,11 +262,11 @@ class MediaResolver:
             else:
                 estavel += 1
 
-            # Para assim que encontrou botões e estabilizou por 2 iterações
-            if melhor_qtd > 0 and estavel >= 2:
+            # Mínimo 2 iterações antes de parar (garante lazy-load completo)
+            # Para quando estável por 3 iterações seguidas ou encontrou 10+
+            if iteracao >= 2 and melhor_qtd > 0 and estavel >= 3:
                 break
-            # Ou se encontrou muitos botões já na primeira vez
-            if melhor_qtd >= 10:
+            if melhor_qtd >= 10 and estavel >= 1:
                 break
 
         await page.evaluate("window.scrollTo(0, 0)")
