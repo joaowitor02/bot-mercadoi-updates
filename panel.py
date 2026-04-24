@@ -846,7 +846,11 @@ async def adicionar_url(body: AdicionarRequest):
     try:
         sheet = _db_manager()
         _, rows = sheet._todas_as_linhas()
-        existentes = {r.get("url_instagram", "").strip(): r.get("status", "") for r in rows if r.get("url_instagram")}
+        existentes = {}
+        for r in rows:
+            url_existente = r.get("url_instagram", "").strip()
+            if url_existente and url_existente not in existentes:
+                existentes[url_existente] = r.get("status", "")
     except Exception as e:
         return JSONResponse({"ok": False, "msg": f"Erro ao conectar à planilha: {e}"}, status_code=500)
 
@@ -858,6 +862,9 @@ async def adicionar_url(body: AdicionarRequest):
     def _pode_reativar(status: str) -> bool:
         return "erro" in status.lower() or status == "processando"
 
+    def _pode_inserir_novamente(status: str) -> bool:
+        return status not in {"pendente", "processando"}
+
     for url in urls_raw:
         if not _INSTAGRAM_RE.match(url):
             results.append({"url": url, "status": "invalida", "msg": "URL não é um post do Instagram"})
@@ -867,12 +874,19 @@ async def adicionar_url(body: AdicionarRequest):
             continue
         if url in existentes:
             status_existente = existentes[url]
-            if _pode_reativar(status_existente) or body.forcar:
+            if body.forcar and _pode_inserir_novamente(status_existente):
+                try:
+                    linha = sheet.adicionar_pendente(url)
+                    adicionadas_agora.add(url)
+                    msg_reativ = "Duplicada inserida novamente para novo processamento"
+                    results.append({"url": url, "status": "adicionada", "linha": linha, "msg": msg_reativ})
+                except Exception as e:
+                    results.append({"url": url, "status": "erro", "msg": str(e)})
+            elif _pode_reativar(status_existente):
                 try:
                     sheet.resetar_url(url)
                     adicionadas_agora.add(url)
-                    msg_reativ = "Forçada para reprocessamento" if body.forcar else "Reativada para reprocessamento"
-                    results.append({"url": url, "status": "adicionada", "msg": msg_reativ})
+                    results.append({"url": url, "status": "adicionada", "msg": "Reativada para reprocessamento"})
                 except Exception as e:
                     results.append({"url": url, "status": "erro", "msg": str(e)})
             else:
@@ -882,10 +896,19 @@ async def adicionar_url(body: AdicionarRequest):
                 elif status_existente == "pendente":
                     msg_dup = "Já está na fila aguardando processamento"
                     status_dup = "pendente"
+                elif status_existente == "processando":
+                    msg_dup = "Ja esta em processamento agora"
+                    status_dup = "processando"
                 else:
                     msg_dup = "Já existe na fila"
                     status_dup = status_existente
-                results.append({"url": url, "status": "duplicada", "msg": msg_dup, "status_existente": status_dup})
+                results.append({
+                    "url": url,
+                    "status": "duplicada",
+                    "msg": msg_dup,
+                    "status_existente": status_dup,
+                    "forcavel": _pode_inserir_novamente(status_existente),
+                })
             continue
         try:
             linha = sheet.adicionar_pendente(url)
@@ -894,7 +917,7 @@ async def adicionar_url(body: AdicionarRequest):
         except Exception as e:
             results.append({"url": url, "status": "erro", "msg": str(e)})
 
-    duplicadas_forcaveis = [r for r in results if r["status"] == "duplicada" and r.get("status_existente") != "duplicada"]
+    duplicadas_forcaveis = [r for r in results if r["status"] == "duplicada" and r.get("forcavel")]
 
     return JSONResponse({
         "ok": True,
