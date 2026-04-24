@@ -22,6 +22,7 @@
 - Frames de vídeo: detector de face (Haar) + corpo (HOG) filtra frames com corretor
 - Extrator de frames: até 20 por vídeo, nitidez e variedade maiores
 - OCR de preço nas imagens quando a IA não encontrou no texto
+- Reinício automático após atualização corrigido: porta 8000 agora libera antes do novo processo subir
 
 ## [3.2] - 2026-04-21
 ### Melhorias
