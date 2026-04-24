@@ -36,7 +36,10 @@ End If
 ' Captura o caminho exato do Python que 'py' usa (garante consistencia pip/panel)
 Dim oExec, strPython
 Set oExec = objShell.Exec("py -c ""import sys; print(sys.executable)""")
-strPython = Trim(oExec.StdOut.ReadAll())
+strPython = oExec.StdOut.ReadAll()
+strPython = Replace(Replace(strPython, vbCrLf, ""), vbLf, "")
+strPython = Replace(strPython, vbCr, "")
+strPython = Trim(strPython)
 If strPython = "" Then strPython = "py"
 
 ' === 3. Cria pasta de logs ====================================================
