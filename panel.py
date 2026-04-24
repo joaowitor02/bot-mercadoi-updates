@@ -1310,7 +1310,10 @@ async def get_version():
                     m = re.search(r'VERSION\s*=\s*["\']([^"\']+)["\']', r.text)
                     if m:
                         versao_remota = m.group(1)
-                        has_update    = versao_remota != VERSION
+                        def _ver(v):
+                            try: return tuple(int(x) for x in v.split("."))
+                            except: return (0,)
+                        has_update = _ver(versao_remota) > _ver(VERSION)
 
                 # Busca CHANGELOG.md na mesma base da version_check_url
                 if has_update:
