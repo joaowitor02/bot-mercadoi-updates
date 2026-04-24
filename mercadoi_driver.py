@@ -343,11 +343,12 @@ class MercadoiDriver:
                         }
                     }
                     if (!melhorOpcao) return { ok: false, motivo: 'valor nao encontrado nas opcoes' };
-                    sel.value = melhorOpcao.value;
-                    sel.dispatchEvent(new Event('change', { bubbles: true }));
-                    sel.dispatchEvent(new Event('input', { bubbles: true }));
                     if (window.jQuery && window.jQuery(sel).data('select2')) {
-                        window.jQuery(sel).trigger('change');
+                        window.jQuery(sel).val(melhorOpcao.value).trigger('change');
+                    } else {
+                        sel.value = melhorOpcao.value;
+                        sel.dispatchEvent(new Event('change', { bubbles: true }));
+                        sel.dispatchEvent(new Event('input',  { bubbles: true }));
                     }
                     return { ok: true, texto: melhorTexto };
                 }
@@ -581,10 +582,13 @@ class MercadoiDriver:
                             }
                         }
                         if (melhor) {
-                            sel.value = melhor.value;
-                            sel.dispatchEvent(new Event('change', {bubbles: true}));
-                            if (window.jQuery && window.jQuery(sel).data('select2'))
-                                window.jQuery(sel).trigger('change');
+                            if (window.jQuery && window.jQuery(sel).data('select2')) {
+                                window.jQuery(sel).val(melhor.value).trigger('change');
+                            } else {
+                                sel.value = melhor.value;
+                                sel.dispatchEvent(new Event('change', {bubbles: true}));
+                                sel.dispatchEvent(new Event('input',  {bubbles: true}));
+                            }
                             log.push(seletor + '=' + melhor.text);
                         }
                     }
@@ -943,6 +947,7 @@ class MercadoiDriver:
         """Fallback: clica no botão de submit do formulário para publicar."""
         try:
             seletores = [
+                '#add_new_property',
                 'button:has-text("Enviar imóvel")',
                 'button:has-text("Enviar imovel")',
                 'input[type="submit"][value*="Enviar"]',
