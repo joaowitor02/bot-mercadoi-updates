@@ -55,7 +55,7 @@ class MediaResolver:
                 campo = await page.query_selector('input[type="text"], input[placeholder*="nstagram"], textarea')
                 await campo.fill(url_instagram)
                 await page.click('button[type="submit"], button:has-text("Download"), button:has-text("Baixar")')
-                await page.wait_for_timeout(4000)
+                await page.wait_for_timeout(2000)
 
                 tipo = await self._detectar_tipo(page)
                 logger.info(f"Tipo de midia detectado: {tipo}")
@@ -149,7 +149,7 @@ class MediaResolver:
         for i, item in enumerate(botoes):
             try:
                 await self._remover_bloqueios(page)
-                await page.wait_for_timeout(300)
+                await page.wait_for_timeout(150)
                 async with page.expect_download(timeout=30000) as download_info:
                     clicou = await page.evaluate(
                         """
@@ -178,7 +178,7 @@ class MediaResolver:
                 destino = self._converter_para_jpg_se_necessario(destino)
                 arquivos.append(destino)
                 logger.info(f"Imagem {i + 1}/{len(botoes)} baixada: {destino}")
-                await page.wait_for_timeout(500)
+                await page.wait_for_timeout(200)
             except Exception as e:
                 logger.warning(f"Erro ao baixar imagem {i + 1}: {e}")
 
@@ -222,10 +222,10 @@ class MediaResolver:
             """
         )
 
-    async def _aguardar_botoes_imagem(self, page, timeout_ms: int = 45000) -> list[dict]:
+    async def _aguardar_botoes_imagem(self, page, timeout_ms: int = 20000) -> list[dict]:
         """
         Aguarda a lista de downloads estabilizar.
-        O FastDL carrega parte dos cards sob demanda; uma varredura unica pode pegar so 6 de 13.
+        Para assim que os botões ficam estáveis por 2 iterações seguidas.
         """
         melhor = []
         melhor_qtd = 0
@@ -239,16 +239,15 @@ class MediaResolver:
                 async () => {
                     const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
                     const maxY = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
-                    const passos = [0, 0.25, 0.5, 0.75, 1];
-                    for (const p of passos) {
+                    for (const p of [0, 0.5, 1]) {
                         window.scrollTo(0, Math.floor(maxY * p));
-                        await sleep(450);
+                        await sleep(300);
                     }
                     window.scrollTo(0, maxY);
                 }
                 """
             )
-            await page.wait_for_timeout(1200)
+            await page.wait_for_timeout(800)
 
             botoes = await self._coletar_botoes_imagem(page)
             qtd = len(botoes)
@@ -257,12 +256,14 @@ class MediaResolver:
                 melhor_qtd = qtd
                 estavel = 0
                 logger.info(f"FastDL: {qtd} botao(oes) de imagem detectado(s)")
-                if melhor_qtd >= 10:
-                    break
             else:
                 estavel += 1
 
-            if melhor_qtd >= 10 and estavel >= 3:
+            # Para assim que encontrou botões e estabilizou por 2 iterações
+            if melhor_qtd > 0 and estavel >= 2:
+                break
+            # Ou se encontrou muitos botões já na primeira vez
+            if melhor_qtd >= 10:
                 break
 
         await page.evaluate("window.scrollTo(0, 0)")
