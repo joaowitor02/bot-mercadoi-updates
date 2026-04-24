@@ -1264,7 +1264,11 @@ async function adicionarUrls(forcar = false, urlsParaForcar = null) {
     // Se há duplicatas e não estamos no modo forcar, mostra modal
     if (!forcar && d.duplicadas > 0) {
       const duplicatas = d.results.filter(r => r.status === 'duplicada');
-      const duplicatasForcaveis = duplicatas.filter(r => r.forcavel);
+      const duplicatasForcaveis = duplicatas.filter(r => {
+        if (r.forcavel === true) return true;
+        const statusExistente = String(r.status_existente || '').toLowerCase().trim();
+        return !!statusExistente && !['pendente', 'processando'].includes(statusExistente);
+      });
       _urlsDuplicatasPendentes = duplicatasForcaveis.map(r => r.url);
       _mostrarModalDuplicatas(duplicatas, d.adicionadas, duplicatasForcaveis.length);
 

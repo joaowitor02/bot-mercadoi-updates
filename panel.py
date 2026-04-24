@@ -635,7 +635,10 @@ def _db_manager():
 @app.get("/", response_class=HTMLResponse)
 async def dashboard():
     html = BASE_DIR / "panel_static" / "index.html"
-    return HTMLResponse(html.read_text(encoding="utf-8"))
+    return HTMLResponse(
+        html.read_text(encoding="utf-8"),
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"},
+    )
 
 
 @app.get("/api/execucoes")
