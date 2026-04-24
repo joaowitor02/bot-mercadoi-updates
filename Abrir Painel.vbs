@@ -23,7 +23,7 @@ If PainelRodando() Then
     WScript.Quit 0
 End If
 
-' === 2. Verifica Python =======================================================
+' === 2. Verifica Python e captura o executavel exato =========================
 If objShell.Run("py --version", 0, True) <> 0 Then
     MsgBox "Python nao foi encontrado." & vbCrLf & vbCrLf & _
            "Instale o Python 3.10+ em:" & vbCrLf & _
@@ -33,17 +33,23 @@ If objShell.Run("py --version", 0, True) <> 0 Then
     WScript.Quit 1
 End If
 
+' Captura o caminho exato do Python que 'py' usa (garante consistencia pip/panel)
+Dim oExec, strPython
+Set oExec = objShell.Exec("py -c ""import sys; print(sys.executable)""")
+strPython = Trim(oExec.StdOut.ReadAll())
+If strPython = "" Then strPython = "py"
+
 ' === 3. Cria pasta de logs ====================================================
 If Not objFSO.FolderExists(strLogs) Then objFSO.CreateFolder strLogs
 
 ' === 4. Primeira execucao: instala dependencias ===============================
 If Not objFSO.FileExists(strFlag) Then
-    ' Instala pacotes Python
-    Executar "py -m pip install --upgrade pip -q"
-    Executar "py -m pip install -r """ & strDir & "\requirements.txt"" -q"
+    ' Instala pacotes Python usando o mesmo executavel capturado acima
+    Executar """" & strPython & """ -m pip install --upgrade pip -q"
+    Executar """" & strPython & """ -m pip install -r """ & strDir & "\requirements.txt"" -q"
 
     ' Instala o browser Chromium do Playwright
-    Executar "py -m playwright install chromium"
+    Executar """" & strPython & """ -m playwright install chromium"
 
     ' Marca como instalado
     Dim f : Set f = objFSO.CreateTextFile(strFlag, True)
@@ -54,7 +60,7 @@ End If
 ' === 5. Inicia o painel (sem janela de terminal) ==============================
 Dim strCmd
 strCmd = "cmd /c cd /d """ & strDir & """ && " & _
-         "py panel.py >> """ & strLogs & "\painel.log"" 2>&1"
+         """" & strPython & """ panel.py >> """ & strLogs & "\painel.log"" 2>&1"
 objShell.Run strCmd, 0, False   ' 0 = sem janela, False = nao aguarda
 
 ' === 6. Aguarda o painel responder (ate 25 segundos) =========================

@@ -21,9 +21,9 @@ _logger = logging.getLogger("panel")
 
 from version import VERSION
 
-# Python 3.12 no Windows: ProactorEventLoop gera ValueError em transports fechados.
-# SelectorEventLoop evita isso (seguro pois não usamos asyncio.create_subprocess_exec).
-if sys.platform == "win32":
+# Python <= 3.13 no Windows: ProactorEventLoop gera ValueError em transports fechados.
+# SelectorEventLoop evita isso. Em 3.14+ a política foi depreciada e não é necessária.
+if sys.platform == "win32" and sys.version_info < (3, 14):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, Request
