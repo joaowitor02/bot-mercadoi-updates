@@ -88,7 +88,10 @@ If Not objFSO.FileExists(strFlag) Then
     f.Close
 End If
 
-' === 5. Inicia o painel (sem janela de terminal) ==============================
+' === 5. Libera porta 8000 se houver processo travado ===========================
+objShell.Run "cmd /c for /f ""tokens=5"" %a in ('netstat -ano ^| findstr :8000 ^| findstr LISTENING') do taskkill /F /PID %a", 0, True
+
+' === 6. Inicia o painel (sem janela de terminal) ==============================
 Dim strCmd
 strCmd = "cmd /c cd /d """ & strDir & """ && " & _
          """" & strPython & """ panel.py >> """ & strLogs & "\painel.log"" 2>&1"
