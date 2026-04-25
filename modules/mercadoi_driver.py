@@ -200,17 +200,17 @@ class MercadoiDriver:
                 ('select[name="tem-elevador"]',                dados.get("elevador",      "").strip()),
             ])
 
-            # Faz Parceria — sempre "A combinar" via Playwright select_option
-            # (mais confiável que JS para select2)
-            try:
-                await page.select_option('select[name*="parcer"]', label="A combinar")
-                logger.info("Selecionado 'A combinar' em faz-parceria")
-            except Exception:
+            # Faz Parceria — sempre "A combinar", com retry por timing de select2
+            for _tentativa in range(4):
                 try:
-                    await page.select_option('select[name*="parcer"]', index=1)
-                    logger.info("Selecionado faz-parceria pelo indice 1 (fallback)")
-                except Exception as e:
-                    logger.info(f"Faz-parceria nao selecionado: {e}")
+                    await page.select_option('select[name*="parcer"]', label="A combinar", timeout=3000)
+                    logger.info("Selecionado 'A combinar' em faz-parceria")
+                    break
+                except Exception:
+                    if _tentativa < 3:
+                        await page.wait_for_timeout(600)
+                    else:
+                        logger.info("Faz-parceria nao selecionado apos 4 tentativas")
 
             # CIDADE
             cidade = dados.get("cidade_extraida", "").strip()
