@@ -978,9 +978,34 @@ class MercadoiDriver:
 
                     logger.info(f"Publicado via clique no botão: {sel}")
                     import re as _re
+
+                    # Tenta extrair ID da URL resultante (wp-admin)
                     m = _re.search(r'post=(\d+)', url_depois)
                     pid = m.group(1) if m else None
-                    return {"ok": True, "property_id": pid, "url": self._montar_url_mercadoi(pid)}
+                    url_mercadoi = self._montar_url_mercadoi(pid)
+
+                    # Se não achou ID na URL, tenta encontrar link de edição na página
+                    if not pid:
+                        try:
+                            links = await page.evaluate("""
+                                () => Array.from(document.querySelectorAll('a[href]'))
+                                    .map(a => a.href)
+                                    .filter(h => h.includes('post=') || h.includes('/listing/') || h.includes('/imovel/'))
+                            """)
+                            for lnk in links:
+                                m2 = _re.search(r'post=(\d+)', lnk)
+                                if m2:
+                                    pid = m2.group(1)
+                                    url_mercadoi = self._montar_url_mercadoi(pid)
+                                    break
+                            # Se ainda não achou ID, usa a URL da página resultante direto
+                            if not url_mercadoi:
+                                url_mercadoi = url_depois
+                        except Exception:
+                            url_mercadoi = url_depois
+
+                    logger.info(f"URL Mercadoi capturada: {url_mercadoi}")
+                    return {"ok": True, "property_id": pid, "url": url_mercadoi}
             logger.error("Nenhum botão de publicar encontrado")
             return {"ok": False}
         except Exception as e:
