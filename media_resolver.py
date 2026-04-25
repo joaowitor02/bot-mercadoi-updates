@@ -158,7 +158,7 @@ class MediaResolver:
         for i, item in enumerate(botoes):
             try:
                 await self._remover_bloqueios(page)
-                await page.wait_for_timeout(150)
+                await page.wait_for_timeout(80)
                 async with page.expect_download(timeout=30000) as download_info:
                     clicou = await page.evaluate(
                         """
@@ -187,7 +187,7 @@ class MediaResolver:
                 destino = self._converter_para_jpg_se_necessario(destino)
                 arquivos.append(destino)
                 logger.info(f"Imagem {i + 1}/{len(botoes)} baixada: {destino}")
-                await page.wait_for_timeout(200)
+                await page.wait_for_timeout(100)
             except Exception as e:
                 logger.warning(f"Erro ao baixar imagem {i + 1}: {e}")
 

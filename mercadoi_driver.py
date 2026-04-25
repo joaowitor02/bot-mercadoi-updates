@@ -151,16 +151,10 @@ class MercadoiDriver:
         try:
             await page.goto(f"{self.base_url}/create-a-listing/", timeout=30000)
             await page.wait_for_load_state("domcontentloaded", timeout=20000)
-            # Aguarda rede estabilizar para garantir que select2, TinyMCE e AJAX estejam prontos
-            try:
-                await page.wait_for_load_state("networkidle", timeout=15000)
-            except Exception:
-                pass
             try:
                 await page.wait_for_selector('#prop_title', timeout=15000)
             except Exception:
                 logger.warning("Campo #prop_title demorou para aparecer, continuando mesmo assim")
-            await page.wait_for_timeout(300)  # pequena margem para select2/TinyMCE iniciarem
 
             # TITULO
             titulo = dados.get("titulo", "").strip()
@@ -208,7 +202,7 @@ class MercadoiDriver:
                     break
                 except Exception:
                     if _tentativa < 3:
-                        await page.wait_for_timeout(600)
+                        await page.wait_for_timeout(200)
                     else:
                         logger.info("Faz-parceria nao selecionado apos 4 tentativas")
 
@@ -505,17 +499,14 @@ class MercadoiDriver:
                 f"() => {{ window._botDescricao = {json.dumps(conteudo_html)}; }}"
             )
 
-            # Aguarda TinyMCE inicializar (até 1.2s)
-            for _ in range(4):
-                pronto = await page.evaluate("""
-                    () => {
-                        const ed = window.tinymce || window.tinyMCE;
-                        return !!(ed && ed.get('prop_des'));
-                    }
-                """)
-                if pronto:
-                    break
-                await page.wait_for_timeout(300)
+            # Aguarda TinyMCE inicializar
+            try:
+                await page.wait_for_function(
+                    "() => { const ed = window.tinymce || window.tinyMCE; return !!(ed && ed.get('prop_des')); }",
+                    timeout=3000
+                )
+            except Exception:
+                pass
 
             resultado = await page.evaluate(f"""
                 () => {{
@@ -643,14 +634,13 @@ class MercadoiDriver:
 
     async def _aguardar_opcoes_bairro(self, page, timeout_s: int = 6):
         """Aguarda o select #neighborhood ser populado via AJAX após seleção da cidade."""
-        for _ in range(timeout_s * 2):
-            n = await page.evaluate(
-                "() => { const s = document.querySelector('#neighborhood'); return s ? s.options.length : 0; }"
+        try:
+            await page.wait_for_function(
+                "() => { const s = document.querySelector('#neighborhood'); return s && s.options.length > 1; }",
+                timeout=timeout_s * 1000
             )
-            if n > 1:
-                return
-            await page.wait_for_timeout(500)
-        logger.warning("Timeout aguardando opções de bairro")
+        except Exception:
+            logger.warning("Timeout aguardando opções de bairro")
 
     async def _selecionar_bairro(self, page, bairro):
         if not bairro:
@@ -751,7 +741,7 @@ class MercadoiDriver:
                     return False
 
             # Aguarda upload iniciar no servidor
-            await page.wait_for_timeout(1500)
+            await page.wait_for_timeout(500)
 
             # Detecta erros do plupload exibidos na página
             erro_plupload = await page.evaluate("""
