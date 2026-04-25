@@ -286,8 +286,12 @@ class MercadoiDriver:
         texto = normalizar(valor or "")
         if "cobertura" in texto:
             return "Apto. Cobertura"
+        if "duplex" in texto:
+            return "Apto. Duplex"
         if "flat" in texto:
-            return "Flat"
+            return "Apto. Flat"
+        if "garden" in texto:
+            return "Apto. Garden"
         if "apart" in texto or "studio" in texto or "kitnet" in texto or "kit net" in texto:
             return "Apartamento"
         if "chacara" in texto:
@@ -377,12 +381,18 @@ class MercadoiDriver:
         nao atualiza bem quando escolhemos apenas por texto.
         """
         mapa_values = {
-            "Apartamento": "16",
-            "Casa": "53",
-            "Terreno": "103",
-            "Sala Comercial": "98",
-            # Flat, Apto. Cobertura, Chácara, Fazenda, Sítio — usa matching por texto abaixo
+            "Apartamento":   "16",
+            "Casa":          "53",
+            "Terreno":       "103",
+            "Sala Comercial":"98",
+            # Subtipos — sem ID fixo, usa matching por texto via _selecionar_subtipo_imovel
         }
+        _subtipos_texto = {
+            "Apto. Flat", "Apto. Duplex", "Apto. Cobertura", "Apto. Garden",
+            "Chácara", "Fazenda", "Sítio",
+        }
+        if tipo_imovel in _subtipos_texto:
+            return await self._selecionar_subtipo_imovel(page, tipo_imovel)
         value = mapa_values.get(tipo_imovel)
         if value:
             try:
@@ -414,6 +424,50 @@ class MercadoiDriver:
                 logger.warning(f"Erro ao selecionar tipo '{tipo_imovel}' por value: {e}")
 
         return await self._selecionar_por_texto(page, '#prop_type', tipo_imovel)
+
+    async def _selecionar_subtipo_imovel(self, page, tipo_imovel: str) -> bool:
+        """Seleciona subtipo de imóvel (Apto. Flat, Apto. Duplex, etc.) pelo texto visível."""
+        tipo_norm = normalizar(tipo_imovel)
+        try:
+            resultado = await page.evaluate("""
+                ({tipoNorm}) => {
+                    const sel = document.querySelector('#prop_type');
+                    if (!sel) return {ok: false, motivo: 'elemento nao encontrado'};
+                    const norm = t => t.toLowerCase()
+                        .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
+                        .replace(/[\\s.]+/g, ' ').trim()
+                        .replace(/^[-\\s]+/, '');   // remove "- " do início
+                    const alvo = norm(tipoNorm);
+                    let melhor = null;
+                    for (const op of sel.options) {
+                        const t = norm(op.text);
+                        if (t === alvo || t.includes(alvo) || alvo.includes(t)) {
+                            melhor = op; break;
+                        }
+                    }
+                    if (!melhor) return {ok: false, motivo: 'opcao nao encontrada: ' + tipoNorm};
+                    if (window.jQuery && window.jQuery(sel).data('select2')) {
+                        window.jQuery(sel).val([melhor.value]).trigger('change');
+                        window.jQuery(sel).trigger({
+                            type: 'select2:select',
+                            params: {data: {id: melhor.value, text: melhor.text}}
+                        });
+                    } else {
+                        for (const op of sel.options) op.selected = false;
+                        melhor.selected = true;
+                        sel.dispatchEvent(new Event('change', {bubbles: true}));
+                    }
+                    return {ok: true, texto: melhor.text};
+                }
+            """, {"tipoNorm": tipo_norm})
+            if resultado and resultado.get("ok"):
+                logger.info(f"Selecionado subtipo '{resultado['texto']}' em #prop_type")
+                return True
+            logger.info(f"Subtipo '{tipo_imovel}' nao encontrado: {resultado}")
+            return False
+        except Exception as e:
+            logger.warning(f"Erro ao selecionar subtipo '{tipo_imovel}': {e}")
+            return False
 
     async def _marcar_nao_exibir_contato(self, page):
         """
