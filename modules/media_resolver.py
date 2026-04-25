@@ -55,7 +55,16 @@ class MediaResolver:
                 campo = await page.query_selector('input[type="text"], input[placeholder*="nstagram"], textarea')
                 await campo.fill(url_instagram)
                 await page.click('button[type="submit"], button:has-text("Download"), button:has-text("Baixar")')
-                await page.wait_for_timeout(2000)
+
+                # Aguarda resultados aparecerem em vez de espera fixa
+                try:
+                    await page.wait_for_selector(
+                        'a[href*="media.fastdl.app"], a[href*="fastdl.app/get"], '
+                        'a[download], video, a[href*=".mp4"], a[href*=".jpg"], a[href*=".jpeg"]',
+                        timeout=15000
+                    )
+                except Exception:
+                    await page.wait_for_timeout(2000)  # fallback mínimo
 
                 tipo = await self._detectar_tipo(page)
                 logger.info(f"Tipo de midia detectado: {tipo}")
