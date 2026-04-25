@@ -198,8 +198,19 @@ class MercadoiDriver:
                 ('select[name="estagio-da-obra-imc3b3vel[]"]', dados.get("estagio_imovel","").strip()),
                 ('select[name="no-tc3a9rreo[]"]',              dados.get("andar",         "").strip()),
                 ('select[name="tem-elevador"]',                dados.get("elevador",      "").strip()),
-                ('select[name*="parcer"]',                     "A combinar"),
             ])
+
+            # Faz Parceria — sempre "A combinar" via Playwright select_option
+            # (mais confiável que JS para select2)
+            try:
+                await page.select_option('select[name*="parcer"]', label="A combinar")
+                logger.info("Selecionado 'A combinar' em faz-parceria")
+            except Exception:
+                try:
+                    await page.select_option('select[name*="parcer"]', index=1)
+                    logger.info("Selecionado faz-parceria pelo indice 1 (fallback)")
+                except Exception as e:
+                    logger.info(f"Faz-parceria nao selecionado: {e}")
 
             # CIDADE
             cidade = dados.get("cidade_extraida", "").strip()
