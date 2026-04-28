@@ -19,6 +19,7 @@ from modules.deepseek_parser import DeepSeekParser
 from modules.media_resolver import MediaResolver
 from modules.mercadoi_driver import MercadoiDriver
 from modules.wordpress_publisher import WordPressPublisher
+from modules.wordpress_xmlrpc_publisher import WordPressXmlRpcPublisher
 from modules.status_writer import StatusWriter
 from modules.logger import Logger
 from modules.notificador import notificar
@@ -31,11 +32,21 @@ ESPERA_ENTRE_TENTATIVAS = 10  # segundos
 
 
 def _usar_wordpress_api(config: dict) -> bool:
-    """Retorna True quando a API WordPress está configurada e ativada."""
+    """Retorna True quando o plugin REST API está configurado e ativado."""
     return (
         bool(config.get("usar_wordpress_api"))
         and bool(config.get("wordpress_api_url", "").strip())
         and bool(config.get("wordpress_api_key", "").strip())
+    )
+
+
+def _usar_wordpress_xmlrpc(config: dict) -> bool:
+    """Retorna True quando XML-RPC está configurado (não exige plugin no site do cliente)."""
+    return (
+        bool(config.get("usar_wordpress_api"))
+        and bool(config.get("wordpress_xmlrpc_url", "").strip())
+        and bool(config.get("wordpress_xmlrpc_user", "").strip())
+        and bool(config.get("wordpress_xmlrpc_password", "").strip())
     )
 
 
@@ -309,11 +320,35 @@ async def processar_link(row: dict, sheet, config: dict):
     resultado = None
 
     if _usar_wordpress_api(config):
-        # Modo API: sem browser, suporta paralelismo
-        logger.info(f"[{execution_id}] Usando WordPress REST API")
+        # Modo REST API: plugin (Bearer) ou snippet functions.php (Application Password)
+        modo = "Application Password" if config.get("wordpress_wp_user") else "API Key"
+        logger.info(f"[{execution_id}] Usando WordPress REST API ({modo})")
         publisher = WordPressPublisher(
-            api_url=config["wordpress_api_url"],
-            api_key=config["wordpress_api_key"],
+            api_url        = config["wordpress_api_url"],
+            api_key        = config.get("wordpress_api_key", ""),
+            wp_user        = config.get("wordpress_wp_user", ""),
+            wp_app_password= config.get("wordpress_app_password", ""),
+            execution_id   = execution_id,
+        )
+        for tentativa in range(1, MAX_TENTATIVAS_MERCADOI + 1):
+            if tentativa > 1:
+                logger.info(f"[{execution_id}] Tentativa {tentativa}/{MAX_TENTATIVAS_MERCADOI}...")
+            resultado = await publisher.preencher_e_salvar(dados, tipo_midia, arquivo_midia)
+            if resultado["sucesso"]:
+                break
+            if tentativa < MAX_TENTATIVAS_MERCADOI:
+                logger.warning(
+                    f"[{execution_id}] Falhou: {resultado.get('mensagem', '')}. "
+                    f"Aguardando {ESPERA_ENTRE_TENTATIVAS}s..."
+                )
+                await asyncio.sleep(ESPERA_ENTRE_TENTATIVAS)
+    elif _usar_wordpress_xmlrpc(config):
+        # Modo XML-RPC: não exige plugin — só usuário e senha WordPress
+        logger.info(f"[{execution_id}] Usando WordPress XML-RPC")
+        publisher = WordPressXmlRpcPublisher(
+            site_url=config["wordpress_xmlrpc_url"],
+            wp_user=config["wordpress_xmlrpc_user"],
+            wp_password=config["wordpress_xmlrpc_password"],
             execution_id=execution_id,
         )
         for tentativa in range(1, MAX_TENTATIVAS_MERCADOI + 1):
@@ -407,7 +442,7 @@ async def executar_ciclo(config: dict):
     if not pendentes:
         return 0
 
-    if not _usar_wordpress_api(config) and not await _verificar_chrome():
+    if not _usar_wordpress_api(config) and not _usar_wordpress_xmlrpc(config) and not await _verificar_chrome():
         logger.error("Chrome do Mercadoi não está aberto. Abra o Chrome com remote debugging na porta 9222.")
         await notificar(config, "⚠️ <b>Bot Mercadoi</b> — Chrome não está aberto.\nAbra o Chrome com remote debugging para retomar o processamento.")
         return 0
@@ -419,11 +454,12 @@ async def executar_ciclo(config: dict):
     # Paralelismo seguro apenas quando não há browser no caminho crítico.
     # Browser DeepSeek ou Playwright para publicação não suportam múltiplas
     # instâncias simultâneas no mesmo Chrome.
-    modo_api_completo = _usar_wordpress_api(config) and bool(config.get("usar_deepseek_api"))
+    sem_browser_publicacao = _usar_wordpress_api(config) or _usar_wordpress_xmlrpc(config)
+    modo_api_completo = sem_browser_publicacao and bool(config.get("usar_deepseek_api"))
     if max_workers > 1 and not modo_api_completo:
         logger.warning(
             f"max_workers={max_workers} ignorado — paralelismo requer "
-            f"usar_wordpress_api=true e usar_deepseek_api=true. Rodando com 1 worker."
+            f"(usar_wordpress_api ou wordpress_xmlrpc) e usar_deepseek_api=true. Rodando com 1 worker."
         )
         max_workers = 1
 
