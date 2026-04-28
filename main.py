@@ -1,6 +1,6 @@
 """
 Automacao de cadastro de anuncios imobiliarios no Mercadoi
-Versao: 3.1
+Versao: 4.0
 """
 
 import argparse
@@ -18,6 +18,7 @@ from modules.deepseek_client import DeepSeekClient
 from modules.deepseek_parser import DeepSeekParser
 from modules.media_resolver import MediaResolver
 from modules.mercadoi_driver import MercadoiDriver
+from modules.wordpress_publisher import WordPressPublisher
 from modules.status_writer import StatusWriter
 from modules.logger import Logger
 from modules.notificador import notificar
@@ -27,6 +28,15 @@ logger = Logger("main")
 
 MAX_TENTATIVAS_MERCADOI = 3
 ESPERA_ENTRE_TENTATIVAS = 10  # segundos
+
+
+def _usar_wordpress_api(config: dict) -> bool:
+    """Retorna True quando a API WordPress está configurada e ativada."""
+    return (
+        bool(config.get("usar_wordpress_api"))
+        and bool(config.get("wordpress_api_url", "").strip())
+        and bool(config.get("wordpress_api_key", "").strip())
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -298,15 +308,18 @@ async def processar_link(row: dict, sheet, config: dict):
     logger.info(f"[{execution_id}] Publicando no Mercadoi...")
     resultado = None
 
-    async with MercadoiDriver(
-        config["mercadoi_url"],
-        config.get("mercadoi_profile_path", r"C:\chrome_bot_mercadoi"),
-        execution_id=execution_id,
-    ) as driver:
+    if _usar_wordpress_api(config):
+        # Modo API: sem browser, suporta paralelismo
+        logger.info(f"[{execution_id}] Usando WordPress REST API")
+        publisher = WordPressPublisher(
+            api_url=config["wordpress_api_url"],
+            api_key=config["wordpress_api_key"],
+            execution_id=execution_id,
+        )
         for tentativa in range(1, MAX_TENTATIVAS_MERCADOI + 1):
             if tentativa > 1:
                 logger.info(f"[{execution_id}] Tentativa {tentativa}/{MAX_TENTATIVAS_MERCADOI}...")
-            resultado = await driver.preencher_e_salvar(dados, tipo_midia, arquivo_midia)
+            resultado = await publisher.preencher_e_salvar(dados, tipo_midia, arquivo_midia)
             if resultado["sucesso"]:
                 break
             if tentativa < MAX_TENTATIVAS_MERCADOI:
@@ -315,6 +328,26 @@ async def processar_link(row: dict, sheet, config: dict):
                     f"Aguardando {ESPERA_ENTRE_TENTATIVAS}s..."
                 )
                 await asyncio.sleep(ESPERA_ENTRE_TENTATIVAS)
+    else:
+        # Modo legado: Playwright + Chrome
+        logger.info(f"[{execution_id}] Usando Playwright (modo legado)")
+        async with MercadoiDriver(
+            config["mercadoi_url"],
+            config.get("mercadoi_profile_path", r"C:\chrome_bot_mercadoi"),
+            execution_id=execution_id,
+        ) as driver:
+            for tentativa in range(1, MAX_TENTATIVAS_MERCADOI + 1):
+                if tentativa > 1:
+                    logger.info(f"[{execution_id}] Tentativa {tentativa}/{MAX_TENTATIVAS_MERCADOI}...")
+                resultado = await driver.preencher_e_salvar(dados, tipo_midia, arquivo_midia)
+                if resultado["sucesso"]:
+                    break
+                if tentativa < MAX_TENTATIVAS_MERCADOI:
+                    logger.warning(
+                        f"[{execution_id}] Falhou: {resultado.get('mensagem', '')}. "
+                        f"Aguardando {ESPERA_ENTRE_TENTATIVAS}s..."
+                    )
+                    await asyncio.sleep(ESPERA_ENTRE_TENTATIVAS)
 
     if resultado and resultado["sucesso"]:
         sheet.atualizar_campo(row_index, "cidade_aplicada", resultado.get("cidade_aplicada", ""))
@@ -374,7 +407,7 @@ async def executar_ciclo(config: dict):
     if not pendentes:
         return 0
 
-    if not await _verificar_chrome():
+    if not _usar_wordpress_api(config) and not await _verificar_chrome():
         logger.error("Chrome do Mercadoi não está aberto. Abra o Chrome com remote debugging na porta 9222.")
         await notificar(config, "⚠️ <b>Bot Mercadoi</b> — Chrome não está aberto.\nAbra o Chrome com remote debugging para retomar o processamento.")
         return 0
