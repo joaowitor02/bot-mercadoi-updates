@@ -29,6 +29,25 @@ REGRAS GERAIS:
 - ano_construcao: ano de construção com 4 dígitos (ex: "2019") ou "".
 - condominio: valor do condomínio mensal em reais, apenas dígitos, sem R$. Ex: "850". Use "" se não informado.
 - endereco: rua e número se mencionados na legenda (ex: "Rua das Flores, 123"). Use "" se não informado.
+- caracteristicas: array JSON com nomes de características EXATAMENTE como na lista abaixo.
+  Inclua APENAS itens claramente mencionados ou fortemente implícitos. Não invente.
+  Áreas Comuns: Academia, Acesso para cadeirantes, Área de Lazer, Área pet, Área Verde,
+  Biblioteca, Bicicletário, Campo de futebol, Campo de Golf, Churrasqueira,
+  Circuito de segurança, Condomínio fechado, Espaço gourmet, Espaço kids,
+  Estacionamento para visita, Gerador Elétrico, Lavanderia, Lounge, Mini mercado,
+  Piscina adulto, Piscina infantil, Playground, Portaria, Portaria 24h, Portaria eletrônica,
+  Quadra de tênis, Quadra poliesportiva, Recepção, Salão de festas / SUM, Salão de jogos,
+  Sauna, Segurança 24h, Sistema de alarme, Solarium, Spa, Terraço/Rooftop,
+  Vaga coberta, Vestiário.
+  Áreas Privativas: Aceita animais, Agua inclusa, Aquecedor, Aquecimento central,
+  Ar Condicionado, Área de serviço, Área externa privativa, Churrasqueira propria, Closet,
+  Conexão à internet, Cozinha, Cozinha americana, Cozinha Gourmet, Cozinha independente,
+  DCE - Dependência de empregada, Depósito, Despensa, Energia solar, Entrada de serviço,
+  Escritório, Espaço Gourmet, Freezer, Gás Central, Geladeira, Gramado / Jardim,
+  Hidromassagem, Interfone, Jacuzzi, Lareira, Lava-louça, Lavadora de roupas, Lavanderia,
+  Mezanino, Microondas, Mobiliado, Piscina, Porteira Fechada, Projetados, Sala de jantar,
+  Sala em 2 ambientes, Suíte, Telefone, TV, TV a cabo, Varanda, Varanda gourmet,
+  Varanda Integrada, Ventilado.
 
 REGRAS CRÍTICAS PARA CAMPOS NUMÉRICOS:
 - quartos: apenas dormitórios/quartos. NÃO incluir pavimentos, andares ou outros cômodos.
@@ -68,7 +87,8 @@ Retorne exatamente este JSON preenchido:
   "bairro_extraido": "",
   "url_publicacao": "",
   "whatsapp_url": "",
-  "instagram_url": ""
+  "instagram_url": "",
+  "caracteristicas": []
 }}"""
 
 

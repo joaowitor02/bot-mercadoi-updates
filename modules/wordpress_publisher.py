@@ -115,6 +115,8 @@ class WordPressPublisher:
             "url_publicacao":  _s("url_publicacao"),
             "whatsapp_url":    _s("whatsapp_url"),
             "instagram_url":   _s("instagram_url"),
+            # Características (array de strings)
+            "caracteristicas": dados.get("caracteristicas") or [],
             # Controle
             "publicar":        publicar,
         }

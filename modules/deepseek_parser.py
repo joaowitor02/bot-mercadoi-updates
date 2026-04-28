@@ -35,6 +35,90 @@ ROTULOS = {
 
 VALORES_VAZIOS = {"0", "não informado", "nao informado", "campo vazio", "-", "n/a", "não há", "nao ha", ""}
 
+# Mapeamento keyword → nome oficial da característica (busca no texto livre)
+# Usado como fallback quando o DeepSeek não retorna JSON estruturado (modo browser)
+_FEATURES_KEYWORDS: list[tuple[list[str], str]] = [
+    # Áreas Comuns
+    (["academia", "musculação", "musculacao", "fitness"],        "Academia"),
+    (["cadeirante", "acessibil"],                                "Acesso para cadeirantes"),
+    (["área de lazer", "area de lazer", "lazer coletivo"],       "Área de Lazer"),
+    (["área pet", "area pet", "pet friendly", "aceita pet"],     "Área pet"),
+    (["área verde", "area verde", "jardim coletivo"],            "Área Verde"),
+    (["bicicletário", "bicicletario", "bike"],                   "Bicicletário"),
+    (["campo de futebol", "quadra de futebol"],                  "Campo de futebol"),
+    (["campo de golf", "campo de golfe"],                        "Campo de Golf"),
+    (["churrasqueira coletiva", "churrasco coletivo"],           "Churrasqueira"),
+    (["circuito de segurança", "câmeras", "cameras", "cftv"],    "Circuito de segurança"),
+    (["condomínio fechado", "condominio fechado"],               "Condomínio fechado"),
+    (["espaço kids", "espaco kids", "brinquedoteca"],            "Espaço kids"),
+    (["estacionamento para visita", "vaga para visita"],         "Estacionamento para visita"),
+    (["gerador"],                                                "Gerador Elétrico"),
+    (["lounge"],                                                 "Lounge"),
+    (["mini mercado", "minimercado"],                            "Mini mercado"),
+    (["piscina adulto"],                                         "Piscina adulto"),
+    (["piscina infantil"],                                       "Piscina infantil"),
+    (["playground"],                                             "Playground"),
+    (["portaria 24h", "portaria 24 h", "portaria vinte"],        "Portaria 24h"),
+    (["portaria eletrônica", "portaria eletronica"],             "Portaria eletrônica"),
+    (["portaria"],                                               "Portaria"),
+    (["quadra de tênis", "quadra de tenis"],                     "Quadra de tênis"),
+    (["quadra poliesportiva", "quadra esportiva"],               "Quadra poliesportiva"),
+    (["salão de festas", "salao de festas", "sum"],              "Salão de festas / SUM"),
+    (["salão de jogos", "salao de jogos", "game room"],          "Salão de jogos"),
+    (["sauna"],                                                  "Sauna"),
+    (["segurança 24h", "seguranca 24h", "vigilância 24"],        "Segurança 24h"),
+    (["solarium", "solário", "solario"],                         "Solarium"),
+    (["spa"],                                                    "Spa"),
+    (["terraço/rooftop", "rooftop", "terraço coletivo"],        "Terraço/Rooftop"),
+    (["vaga coberta", "garagem coberta"],                        "Vaga coberta"),
+    (["vestiário", "vestiario"],                                 "Vestiário"),
+    # Áreas Privativas
+    (["aceita animais", "aceita cachorro", "aceita pet"],        "Aceita animais"),
+    (["água inclusa", "agua inclusa", "água incluída"],          "Agua inclusa"),
+    (["aquecedor"],                                              "Aquecedor"),
+    (["aquecimento central"],                                    "Aquecimento central"),
+    (["ar condicionado", "ar-condicionado", "climatizado"],      "Ar Condicionado"),
+    (["área de serviço", "area de servico"],                     "Área de serviço"),
+    (["área externa privativa", "quintal privativo"],            "Área externa privativa"),
+    (["churrasqueira própria", "churrasqueira propria"],         "Churrasqueira propria"),
+    (["closet"],                                                 "Closet"),
+    (["conexão à internet", "wi-fi", "wifi", "internet"],        "Conexão à internet"),
+    (["cozinha gourmet"],                                        "Cozinha Gourmet"),
+    (["cozinha americana"],                                      "Cozinha americana"),
+    (["cozinha independente"],                                   "Cozinha independente"),
+    (["dependência de empregada", "dependencia empregada", "dce"],"DCE - Dependência de empregada"),
+    (["depósito", "deposito"],                                   "Depósito"),
+    (["despensa"],                                               "Despensa"),
+    (["energia solar", "painel solar"],                          "Energia solar"),
+    (["entrada de serviço", "entrada de servico"],               "Entrada de serviço"),
+    (["escritório", "escritorio", "home office"],                "Escritório"),
+    (["espaço gourmet", "espaco gourmet"],                       "Espaço Gourmet"),
+    (["freezer"],                                                "Freezer"),
+    (["gás central", "gas central"],                             "Gás Central"),
+    (["geladeira"],                                              "Geladeira"),
+    (["gramado", "jardim privativo"],                            "Gramado / Jardim"),
+    (["hidromassagem"],                                          "Hidromassagem"),
+    (["interfone", "porteiro eletrônico"],                       "Interfone"),
+    (["jacuzzi", "banheira de hidromassagem"],                   "Jacuzzi"),
+    (["lareira"],                                                "Lareira"),
+    (["lava-louça", "lava louça", "lava-loca"],                  "Lava-louça"),
+    (["lavadora de roupas", "máquina de lavar"],                 "Lavadora de roupas"),
+    (["lavanderia privativa", "lavanderia própria"],             "Lavanderia"),
+    (["mezanino"],                                               "Mezanino"),
+    (["microondas"],                                             "Microondas"),
+    (["mobiliado", "semi-mobiliado", "semi mobiliado"],          "Mobiliado"),
+    (["piscina privativa", "piscina própria"],                   "Piscina"),
+    (["porteira fechada", "portão automático"],                  "Porteira Fechada"),
+    (["projetados", "armários projetados"],                      "Projetados"),
+    (["sala de jantar"],                                         "Sala de jantar"),
+    (["sala em 2 ambientes", "sala integrada"],                  "Sala em 2 ambientes"),
+    (["suíte", "suite"],                                         "Suíte"),
+    (["varanda gourmet"],                                        "Varanda gourmet"),
+    (["varanda integrada"],                                      "Varanda Integrada"),
+    (["varanda"],                                                "Varanda"),
+    (["ventilado", "ventilação"],                                "Ventilado"),
+]
+
 
 class DeepSeekParser:
     def parse(self, texto):
@@ -93,6 +177,12 @@ class DeepSeekParser:
         # Normalizar bairro e cidade (remover emojis, sufixos como "– João Pessoa/PB")
         dados["bairro_extraido"] = self._normalizar_localidade(dados.get("bairro_extraido", ""))
         dados["cidade_extraida"] = self._normalizar_localidade(dados.get("cidade_extraida", ""))
+
+        # Características — fallback para modo browser (sem JSON estruturado)
+        if not dados.get("caracteristicas"):
+            dados["caracteristicas"] = self._detectar_caracteristicas(
+                titulo + "\n" + descricao_bruta
+            )
 
         # Limpar valores inutils
         for k, v in dados.items():
@@ -278,5 +368,16 @@ class DeepSeekParser:
             return ""
         match = re.search(r"\b(19|20)\d{2}\b", str(valor))
         return match.group() if match else ""
+
+    def _detectar_caracteristicas(self, texto: str) -> list[str]:
+        """Detecta características pelo texto livre (usado no modo browser)."""
+        if not texto:
+            return []
+        texto_lower = texto.lower()
+        encontradas = []
+        for keywords, nome in _FEATURES_KEYWORDS:
+            if any(kw in texto_lower for kw in keywords):
+                encontradas.append(nome)
+        return encontradas
 
 

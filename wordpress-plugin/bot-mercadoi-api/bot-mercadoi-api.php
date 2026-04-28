@@ -237,8 +237,13 @@ class BotMercadoiAPI {
         // Não exibir contato (equivale a fave_agent_display_option = 2)
         update_post_meta($post_id, 'fave_agent_display_option', '2');
 
-        // Taxonomias
+        // Taxonomias de tipo/operação/cidade/bairro
         $this->set_taxonomies($post_id, $p);
+
+        // Características (Áreas Comuns + Áreas Privativas)
+        if (!empty($p['caracteristicas']) && is_array($p['caracteristicas'])) {
+            $this->set_features($post_id, $p['caracteristicas']);
+        }
 
         // Localização no mapa (Nominatim / OpenStreetMap — gratuito, sem API key)
         $this->geocode_and_save($post_id, $p);
@@ -383,6 +388,62 @@ class BotMercadoiAPI {
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    // -------------------------------------------------------------------------
+    // Geocoding via Nominatim (OpenStreetMap) — sem API key, gratuito
+    // -------------------------------------------------------------------------
+
+    // -------------------------------------------------------------------------
+    // Características — taxonomy property-feature (Houzez)
+    // -------------------------------------------------------------------------
+
+    private function set_features(int $post_id, array $nomes): void {
+        $taxonomy = 'property-feature';
+        if (!taxonomy_exists($taxonomy)) return;
+
+        $term_ids = [];
+        foreach ($nomes as $nome) {
+            $nome = sanitize_text_field(trim($nome));
+            if (!$nome) continue;
+
+            // Busca por nome exato primeiro
+            $term = get_term_by('name', $nome, $taxonomy);
+
+            // Fallback: busca normalizada (sem acentos, lowercase)
+            if (!$term) {
+                $slug = sanitize_title($nome);
+                $term = get_term_by('slug', $slug, $taxonomy);
+            }
+
+            // Fallback: busca parcial em todos os termos da taxonomy
+            if (!$term) {
+                $all = get_terms(['taxonomy' => $taxonomy, 'hide_empty' => false, 'number' => 200]);
+                if (!is_wp_error($all)) {
+                    $nome_norm = $this->norm_str($nome);
+                    foreach ($all as $t) {
+                        if ($this->norm_str($t->name) === $nome_norm) {
+                            $term = $t;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if ($term && !is_wp_error($term)) {
+                $term_ids[] = $term->term_id;
+            }
+        }
+
+        if (!empty($term_ids)) {
+            wp_set_object_terms($post_id, $term_ids, $taxonomy, false);
+        }
+    }
+
+    private function norm_str(string $s): string {
+        $s = mb_strtolower(trim($s));
+        $s = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $s) ?: $s;
+        return preg_replace('/\s+/', ' ', $s);
+    }
 
     // -------------------------------------------------------------------------
     // Geocoding via Nominatim (OpenStreetMap) — sem API key, gratuito
