@@ -81,23 +81,41 @@ class WordPressPublisher:
 
     async def _criar_imovel(self, dados: dict, publicar: bool) -> tuple[int | None, str, str, str]:
         """Retorna (post_id, url_admin, url_publica, erro)."""
+        def _s(key: str) -> str:
+            v = dados.get(key, "")
+            return v.strip() if isinstance(v, str) else str(v or "").strip()
+
         payload = {
-            "titulo":          dados.get("titulo", "").strip(),
-            "descricao":       dados.get("descricao_util", "").strip(),
-            "preco":           dados.get("preco", "").strip(),
-            "tipo_imovel":     dados.get("tipo_imovel", "").strip(),
-            "operacao":        dados.get("operacao", "A Venda").strip(),
-            "cidade":          dados.get("cidade_extraida", "").strip(),
-            "bairro":          dados.get("bairro_extraido", "").strip(),
-            "quartos":         dados.get("quartos", "").strip(),
-            "suites":          dados.get("suites", "").strip(),
-            "banheiros":       dados.get("banheiros", "").strip(),
-            "vagas":           dados.get("vagas", "").strip(),
-            "area_m2":         dados.get("area_m2", "").strip(),
-            "estagio_imovel":  dados.get("estagio_imovel", "").strip(),
-            "url_publicacao":  dados.get("url_publicacao", "").strip(),
-            "whatsapp_url":    dados.get("whatsapp_url", "").strip(),
-            "instagram_url":   dados.get("instagram_url", "").strip(),
+            # Obrigatório
+            "titulo":          _s("titulo"),
+            # Descrição
+            "descricao":       _s("descricao_util"),
+            # Operação e tipo
+            "tipo_imovel":     _s("tipo_imovel"),
+            "operacao":        _s("operacao") or "A Venda",
+            # Valores financeiros
+            "preco":           _s("preco"),
+            "condominio":      _s("condominio"),
+            # Características do imóvel
+            "quartos":         _s("quartos"),
+            "suites":          _s("suites"),
+            "banheiros":       _s("banheiros"),
+            "vagas":           _s("vagas"),
+            "area_m2":         _s("area_m2"),
+            "area_terreno":    _s("area_terreno"),
+            "ano_construcao":  _s("ano_construcao"),
+            "estagio_imovel":  _s("estagio_imovel"),
+            "andar":           _s("andar"),
+            "elevador":        _s("elevador"),
+            # Localização (usada também para geocodificar no plugin)
+            "cidade":          _s("cidade_extraida"),
+            "bairro":          _s("bairro_extraido"),
+            "endereco":        _s("endereco"),
+            # Links de contato (vão para o conteúdo do post)
+            "url_publicacao":  _s("url_publicacao"),
+            "whatsapp_url":    _s("whatsapp_url"),
+            "instagram_url":   _s("instagram_url"),
+            # Controle
             "publicar":        publicar,
         }
 

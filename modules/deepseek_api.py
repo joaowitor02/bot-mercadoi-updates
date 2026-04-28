@@ -25,6 +25,10 @@ REGRAS GERAIS:
 - whatsapp_url: formato https://wa.me/+55...
 - titulo: atraente com tipo + quartos + bairro + cidade quando disponíveis.
 - descricao_util: texto comercial organizado com emojis e tópicos separados por newline.
+- area_terreno: área do terreno/lote em m², apenas dígitos. Para apartamentos sempre "". Para casas e terrenos use quando informado.
+- ano_construcao: ano de construção com 4 dígitos (ex: "2019") ou "".
+- condominio: valor do condomínio mensal em reais, apenas dígitos, sem R$. Ex: "850". Use "" se não informado.
+- endereco: rua e número se mencionados na legenda (ex: "Rua das Flores, 123"). Use "" se não informado.
 
 REGRAS CRÍTICAS PARA CAMPOS NUMÉRICOS:
 - quartos: apenas dormitórios/quartos. NÃO incluir pavimentos, andares ou outros cômodos.
@@ -56,6 +60,10 @@ Retorne exatamente este JSON preenchido:
   "banheiros": "",
   "vagas": "",
   "area_m2": "",
+  "area_terreno": "",
+  "ano_construcao": "",
+  "condominio": "",
+  "endereco": "",
   "cidade_extraida": "",
   "bairro_extraido": "",
   "url_publicacao": "",

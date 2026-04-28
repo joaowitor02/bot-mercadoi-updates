@@ -193,20 +193,28 @@ class BotMercadoiAPI {
             return new WP_Error('insert_failed', $post_id->get_error_message(), ['status' => 500]);
         }
 
-        // Meta fields numéricos (Houzez)
+        // Meta fields numéricos — Houzez
         $meta_map = [
-            'preco'     => 'fave_property_price',
-            'quartos'   => 'fave_property_bedrooms',
-            'suites'    => 'fave_property_rooms',
-            'banheiros' => 'fave_property_bathrooms',
-            'vagas'     => 'fave_property_garage',
-            'area_m2'   => 'fave_property_size',
+            'preco'        => 'fave_property_price',
+            'quartos'      => 'fave_property_bedrooms',
+            'suites'       => 'fave_property_rooms',
+            'banheiros'    => 'fave_property_bathrooms',
+            'vagas'        => 'fave_property_garage',
+            'area_m2'      => 'fave_property_size',
+            'area_terreno' => 'fave_property_land',
+            'ano_construcao'=> 'fave_property_year',
+            'condominio'   => 'fave_property_condominium',
         ];
         foreach ($meta_map as $field => $meta_key) {
             if (!empty($p[$field])) {
                 update_post_meta($post_id, $meta_key, sanitize_text_field((string) $p[$field]));
             }
         }
+
+        // Sufixo de preço: "/mês" para aluguel, vazio para venda
+        $operacao = strtolower(trim($p['operacao'] ?? ''));
+        $postfix  = (str_contains($operacao, 'aluguel') || str_contains($operacao, 'locacao') || str_contains($operacao, 'locação')) ? '/mês' : '';
+        update_post_meta($post_id, 'fave_property_price_postfix', $postfix);
 
         // Campos customizados do Mercadoi
         $custom = [
@@ -231,6 +239,9 @@ class BotMercadoiAPI {
 
         // Taxonomias
         $this->set_taxonomies($post_id, $p);
+
+        // Localização no mapa (Nominatim / OpenStreetMap — gratuito, sem API key)
+        $this->geocode_and_save($post_id, $p);
 
         return rest_ensure_response([
             'id'          => $post_id,
@@ -372,6 +383,49 @@ class BotMercadoiAPI {
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    // -------------------------------------------------------------------------
+    // Geocoding via Nominatim (OpenStreetMap) — sem API key, gratuito
+    // -------------------------------------------------------------------------
+
+    private function geocode_and_save(int $post_id, array $p): void {
+        // Monta query: "Rua X 123, Bairro, Cidade, Brasil" ou "Bairro, Cidade, Brasil"
+        $parts = array_filter([
+            !empty($p['endereco']) ? sanitize_text_field($p['endereco']) : '',
+            !empty($p['bairro'])   ? sanitize_text_field($p['bairro'])   : '',
+            !empty($p['cidade'])   ? sanitize_text_field($p['cidade'])   : '',
+            'Brasil',
+        ]);
+
+        if (count($parts) < 2) return; // Sem dados suficientes para geocodificar
+
+        $query    = implode(', ', $parts);
+        $endpoint = 'https://nominatim.openstreetmap.org/search?' . http_build_query([
+            'q'              => $query,
+            'format'         => 'json',
+            'limit'          => 1,
+            'addressdetails' => 0,
+        ]);
+
+        $response = wp_remote_get($endpoint, [
+            'timeout'    => 8,
+            'user-agent' => 'BotMercadoiAPI/1.0 (WordPress plugin; contact@mercadoi.com.br)',
+            'headers'    => ['Accept-Language' => 'pt-BR,pt;q=0.9'],
+        ]);
+
+        if (is_wp_error($response)) return;
+
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+        if (empty($body[0]['lat']) || empty($body[0]['lon'])) return;
+
+        $lat = (float) $body[0]['lat'];
+        $lng = (float) $body[0]['lon'];
+
+        // Houzez armazena como "lat,lng" em fave_property_location
+        update_post_meta($post_id, 'fave_property_location', "{$lat},{$lng}");
+        update_post_meta($post_id, 'fave_property_map_address', sanitize_text_field($query));
+        update_post_meta($post_id, 'fave_property_map_zoom',   '15');
+    }
 
     private function set_taxonomies(int $post_id, array $p): void {
         $tax_map = [

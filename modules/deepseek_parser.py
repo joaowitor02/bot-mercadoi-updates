@@ -24,7 +24,11 @@ ROTULOS = {
     "suites": r"Quantas\s+Su[íi]tes?\s*:|Su[íi]tes?\s*:",
     "banheiros": r"Banheiros\s*:",
     "vagas": r"Vagas?\s*(?:\(garagem\))?\s*:",
-    "area_m2": r"[AÁ]rea\/Metros\s+quadrados\s*(?:\(m2\))?\s*:|Tamanho\s*:",
+    "area_m2": r"[AÁ]rea\/Metros\s+quadrados\s*(?:\(m2\))?\s*:|Tamanho\s*:|[AÁ]rea\s+constru[íi]da\s*:",
+    "area_terreno": r"[AÁ]rea\s+(?:do\s+)?[Tt]erreno\s*:|[AÁ]rea\s+[Tt]otal\s+do\s+[Ll]ote\s*:",
+    "ano_construcao": r"Ano\s+de\s+[Cc]onstru[çc][aã]o\s*:|Ano\s*:",
+    "condominio": r"[Cc]ondom[íi]nio\s*:|[Tt]axa\s+de\s+[Cc]ondom[íi]nio\s*:",
+    "endereco": r"[Ee]ndere[çc]o\s*:|[Rr]ua\s*:",
     "cidade_extraida": r"Cidade\s*:",
     "bairro_extraido": r"Bairro\s*:",
 }
@@ -76,12 +80,15 @@ class DeepSeekParser:
             dados["cidade_extraida"] = self._extrair_cidade_descricao(texto_completo)
 
         # Normalizar campos numericos
-        dados["preco"] = self._normalizar_preco(dados.get("preco", ""))
-        dados["area_m2"] = self._normalizar_area(dados.get("area_m2", ""))
-        dados["quartos"] = self._normalizar_numero(dados.get("quartos", ""))
-        dados["suites"] = self._normalizar_numero(dados.get("suites", ""))
-        dados["banheiros"] = self._normalizar_numero(dados.get("banheiros", ""))
-        dados["vagas"] = self._normalizar_numero(dados.get("vagas", ""))
+        dados["preco"]        = self._normalizar_preco(dados.get("preco", ""))
+        dados["area_m2"]      = self._normalizar_area(dados.get("area_m2", ""))
+        dados["area_terreno"] = self._normalizar_area(dados.get("area_terreno", ""))
+        dados["quartos"]      = self._normalizar_numero(dados.get("quartos", ""))
+        dados["suites"]       = self._normalizar_numero(dados.get("suites", ""))
+        dados["banheiros"]    = self._normalizar_numero(dados.get("banheiros", ""))
+        dados["vagas"]        = self._normalizar_numero(dados.get("vagas", ""))
+        dados["condominio"]   = self._normalizar_preco(dados.get("condominio", ""))
+        dados["ano_construcao"] = self._normalizar_ano(dados.get("ano_construcao", ""))
 
         # Normalizar bairro e cidade (remover emojis, sufixos como "– João Pessoa/PB")
         dados["bairro_extraido"] = self._normalizar_localidade(dados.get("bairro_extraido", ""))
@@ -265,5 +272,11 @@ class DeepSeekParser:
             return ""
         num = int(match.group())
         return str(num) if num > 0 else ""
+
+    def _normalizar_ano(self, valor):
+        if not valor:
+            return ""
+        match = re.search(r"\b(19|20)\d{2}\b", str(valor))
+        return match.group() if match else ""
 
 
