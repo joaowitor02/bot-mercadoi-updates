@@ -16,7 +16,7 @@ from modules.frame_extractor import extrair_frames
 logger = Logger("instagram_media_api")
 
 # Actor IDs disponíveis no Apify Marketplace
-ACTOR_OFICIAL   = "apify~instagram-post-scraper"           # $2,70/1k posts — recomendado
+ACTOR_OFICIAL   = "apify~instagram-scraper"                # actor principal — suporta directUrls
 ACTOR_LOWCOST   = "sones~instagram-posts-scraper-lowcost"  # $0,30/1k posts — testar estabilidade
 
 APIFY_RUN_URL   = "https://api.apify.com/v2/acts/{actor}/run-sync-get-dataset-items"
