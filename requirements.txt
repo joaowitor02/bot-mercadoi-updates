@@ -9,3 +9,4 @@ pillow-heif>=1.3.0
 opencv-python>=4.9.0
 psutil>=5.9.0
 pytesseract>=0.3.10
+yt-dlp>=2024.1.0

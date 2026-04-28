@@ -195,7 +195,7 @@ async def _extrair_e_baixar(url: str, config: dict) -> tuple:
     Retorna (dados, tipo_midia, arquivo_midia, motivo_falha).
     """
     usar_api = bool(config.get("usar_deepseek_api")) and bool(config.get("deepseek_api_key", "").strip())
-    media = MediaResolver(config["downloads_path"])
+    media = MediaResolver(config["downloads_path"], config)
 
     if usar_api:
         # Dispara download de mídia ao mesmo tempo que a extração API

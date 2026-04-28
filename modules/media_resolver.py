@@ -1,6 +1,10 @@
 """
-Modulo para resolver midia via FastDL.
-Detecta se a midia e imagem ou video e baixa todas as imagens disponiveis.
+Resolve mídia do Instagram com cadeia de fallback:
+  1. Apify API       — rápido (3-8s), pago (~R$150/mês para 300/dia)
+  2. yt-dlp          — gratuito, mas bloqueado em alto volume
+  3. FastDL browser  — lento (30-60s), fallback final
+
+Ativa o Apify quando config tiver apify_api_token preenchido e usar_apify=true.
 """
 
 import asyncio
@@ -13,6 +17,7 @@ from PIL import Image
 from pillow_heif import register_heif_opener
 
 from modules.logger import Logger
+from modules.instagram_media_api import ApifyMediaExtractor, extrair_via_ytdlp
 
 logger = Logger("media_resolver")
 register_heif_opener()
@@ -21,26 +26,55 @@ FASTDL_URL = "https://fastdl.app/pt/"
 
 
 class MediaResolver:
-    def __init__(self, downloads_path: str):
+    def __init__(self, downloads_path: str, config: dict | None = None):
         self.downloads_path = downloads_path
+        self._config        = config or {}
 
-    async def resolver(self, url_instagram: str, max_tentativas: int = 2) -> tuple[str, list[str]]:
+    async def resolver(self, url_instagram: str) -> tuple[str, list[str]]:
         """
-        Acessa o FastDL com a URL do Instagram.
-        Retorna (tipo_midia, lista_arquivos) onde tipo_midia e 'imagem' ou 'video'.
-        Faz ate max_tentativas em caso de falha transitoria.
+        Resolve mídia com fallback automático: Apify → yt-dlp → FastDL.
+        Retorna (tipo_midia, lista_arquivos).
         """
-        for tentativa in range(1, max_tentativas + 1):
-            resultado = await self._resolver_uma_vez(url_instagram)
+        cfg = self._config
+
+        # --- Tentativa 1: Apify API ---
+        if cfg.get("usar_apify") and cfg.get("apify_api_token", "").strip():
+            logger.info("Tentativa 1: Apify API")
+            extrator = ApifyMediaExtractor(
+                token          = cfg["apify_api_token"],
+                downloads_path = self.downloads_path,
+                actor_id       = cfg.get("apify_actor_id", ""),
+            )
+            tipo, arquivos = await extrator.extrair(url_instagram)
+            if arquivos:
+                logger.info(f"Apify OK: {len(arquivos)} arquivo(s)")
+                return tipo, arquivos
+            logger.warning("Apify não retornou arquivos — tentando yt-dlp")
+
+        # --- Tentativa 2: yt-dlp ---
+        logger.info("Tentativa 2: yt-dlp")
+        tipo, arquivos = await extrair_via_ytdlp(url_instagram, self.downloads_path)
+        if arquivos:
+            logger.info(f"yt-dlp OK: {len(arquivos)} arquivo(s)")
+            return tipo, arquivos
+        logger.warning("yt-dlp não retornou arquivos — tentando FastDL")
+
+        # --- Tentativa 3: FastDL browser (legado) ---
+        logger.info("Tentativa 3: FastDL browser")
+        for tentativa in range(1, 3):
+            resultado = await self._via_fastdl(url_instagram)
             tipo, arquivos = resultado
-            if arquivos or tentativa == max_tentativas:
+            if arquivos:
                 return resultado
-            logger.warning(f"Midia vazia na tentativa {tentativa}/{max_tentativas} - aguardando 5s...")
-            await asyncio.sleep(5)
+            if tentativa < 2:
+                logger.warning(f"FastDL vazio na tentativa {tentativa}/2 — aguardando 5s...")
+                await asyncio.sleep(5)
+
+        logger.error("Todas as tentativas de download falharam")
         return "imagem", []
 
-    async def _resolver_uma_vez(self, url_instagram: str) -> tuple[str, list[str]]:
-        """Tentativa unica de resolver midia via FastDL."""
+    async def _via_fastdl(self, url_instagram: str) -> tuple[str, list[str]]:
+        """Download via FastDL browser (fallback final)."""
         logger.info(f"Acessando FastDL para: {url_instagram}")
         browser = None
         try:
