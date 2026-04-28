@@ -75,11 +75,16 @@ class MediaResolver:
 
     async def _via_fastdl(self, url_instagram: str) -> tuple[str, list[str]]:
         """Download via FastDL browser (fallback final)."""
-        logger.info(f"Acessando FastDL para: {url_instagram}")
+        import sys
+        headless = sys.platform != "win32"
+        logger.info(f"Acessando FastDL para: {url_instagram} (headless={headless})")
         browser = None
         try:
             async with async_playwright() as p:
-                browser = await p.chromium.launch(headless=False)
+                browser = await p.chromium.launch(
+                    headless=headless,
+                    args=["--no-sandbox", "--disable-dev-shm-usage"] if headless else [],
+                )
                 context = await browser.new_context(accept_downloads=True)
                 page = await context.new_page()
 

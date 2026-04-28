@@ -37,7 +37,10 @@ from starlette.middleware.base import BaseHTTPMiddleware
 app = FastAPI(title="Bot Mercadoi — Painel")
 
 BASE_DIR = Path(__file__).parent
-LOGS_DIR = BASE_DIR / "logs"
+# Em Docker, BOT_DATA_DIR aponta para o volume persistente (/data)
+# Em Windows local, usa a pasta do projeto normalmente
+_DATA_DIR = Path(os.environ.get("BOT_DATA_DIR", str(BASE_DIR)))
+LOGS_DIR = _DATA_DIR / "logs"
 SCREENSHOTS_DIR = LOGS_DIR / "screenshots"
 
 # ---------------------------------------------------------------------------
@@ -628,7 +631,7 @@ def _db_manager():
     sys.path.insert(0, str(BASE_DIR))
     from modules.database_manager import DatabaseManager
     config = _load_config()
-    db_path = config.get("db_path", str(BASE_DIR / "botmercadoi.db"))
+    db_path = config.get("db_path", str(_DATA_DIR / "botmercadoi.db"))
     return DatabaseManager(db_path)
 
 

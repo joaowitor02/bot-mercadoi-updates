@@ -1,0 +1,40 @@
+# docker-compose.yml — Bot Mercadoi Multi-Cliente
+# Cada cliente é um container isolado com seu próprio banco e config.
+#
+# Para adicionar um cliente:
+#   1. Copie o bloco "cliente_a" e renomeie
+#   2. Crie a pasta clientes/NOME_CLIENTE/
+#   3. Copie config.example.json → clientes/NOME_CLIENTE/config.json e preencha
+#   4. docker-compose up -d
+
+services:
+
+  cliente_a:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: bot_cliente_a
+    restart: unless-stopped
+    volumes:
+      - ./clientes/cliente_a/config.json:/app/config.json:ro
+      - ./clientes/cliente_a/data:/data
+    environment:
+      - BOT_DATA_DIR=/data
+    ports:
+      - "8001:8000"   # painel em clienteA.seudominio.com.br via nginx
+    shm_size: '256mb'  # necessário para Chromium headless
+
+  cliente_b:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: bot_cliente_b
+    restart: unless-stopped
+    volumes:
+      - ./clientes/cliente_b/config.json:/app/config.json:ro
+      - ./clientes/cliente_b/data:/data
+    environment:
+      - BOT_DATA_DIR=/data
+    ports:
+      - "8002:8000"
+    shm_size: '256mb'

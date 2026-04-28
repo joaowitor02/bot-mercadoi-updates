@@ -1,0 +1,13 @@
+.git
+__pycache__
+*.pyc
+*.pyo
+logs/
+botmercadoi.db
+botmercadoi.db-shm
+botmercadoi.db-wal
+config.json
+credentials.json
+cloudflared.exe
+bot_mercadoi_cliente.zip
+Mercadoi_memoria/

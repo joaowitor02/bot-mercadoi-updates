@@ -33,25 +33,60 @@ Bairro: [nome do bairro]
 
 Link: {url}"""
 
-CHROME_PATH = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+import sys
+import os
+
+def _headless() -> bool:
+    # Headless no Linux/Docker, visível no Windows (para login manual)
+    return sys.platform != "win32"
+
+def _chrome_args() -> list[str]:
+    if _headless():
+        return ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
+    return ["--start-maximized"]
+
+def _chrome_path() -> str | None:
+    # Windows: usa Chrome instalado (mais estável para login manual)
+    # Linux: usa Playwright bundled Chromium (não precisa instalar nada)
+    if sys.platform != "win32":
+        return None
+    caminhos = [
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), r"Google\Chrome\Application\chrome.exe"),
+    ]
+    return next((p for p in caminhos if os.path.exists(p)), None)
 
 
 class DeepSeekClient:
-    def __init__(self, deepseek_profile_path="C:\\chrome_bot_deepseek"):
-        self.profile_path = deepseek_profile_path
+    def __init__(self, deepseek_profile_path=""):
+        # Perfil persistente só faz sentido no Windows (sessão de login salva)
+        # No Linux/Docker não há perfil — usa sessão efêmera
+        self.profile_path = deepseek_profile_path if sys.platform == "win32" else ""
 
     async def extrair(self, url):
         prompt = PROMPT_FIXO.format(url=url)
         try:
             async with async_playwright() as p:
-                browser = await p.chromium.launch_persistent_context(
-                    user_data_dir=self.profile_path,
-                    headless=False,
-                    executable_path=CHROME_PATH,
-                    args=["--start-maximized"],
+                launch_kwargs = dict(
+                    headless=_headless(),
+                    args=_chrome_args(),
                 )
+                chrome = _chrome_path()
+                if chrome:
+                    launch_kwargs["executable_path"] = chrome
+
+                if self.profile_path:
+                    browser = await p.chromium.launch_persistent_context(
+                        user_data_dir=self.profile_path,
+                        **launch_kwargs,
+                    )
+                else:
+                    _browser = await p.chromium.launch(**launch_kwargs)
+                    browser = await _browser.new_context()
+                    browser._browser_obj = _browser  # mantém referência
                 page = browser.pages[0] if browser.pages else await browser.new_page()
-                logger.info("Abrindo DeepSeek...")
+                logger.info(f"Abrindo DeepSeek... (headless={_headless()})")
                 await page.goto(DEEPSEEK_URL, timeout=30000)
                 try:
                     await page.wait_for_selector(

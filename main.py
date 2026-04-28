@@ -433,8 +433,9 @@ async def _verificar_chrome() -> bool:
 
 async def executar_ciclo(config: dict):
     """Lê pendentes e processa. Retorna o número de itens processados."""
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    db_path = config.get("db_path", os.path.join(base_dir, "botmercadoi.db"))
+    base_dir  = os.path.dirname(os.path.abspath(__file__))
+    data_dir  = os.environ.get("BOT_DATA_DIR", base_dir)
+    db_path   = config.get("db_path", os.path.join(data_dir, "botmercadoi.db"))
     db = DatabaseManager(db_path)
 
     db.resetar_travados()
