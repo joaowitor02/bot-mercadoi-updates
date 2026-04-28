@@ -1015,9 +1015,12 @@ async def get_config():
             # WordPress / API
             "usar_wordpress_api":       cfg.get("usar_wordpress_api", False),
             "wordpress_api_url":        cfg.get("wordpress_api_url", ""),
-            "wordpress_wp_user":        cfg.get("wordpress_wp_user", ""),
-            "wordpress_app_password":   cfg.get("wordpress_app_password", ""),
-            "wordpress_api_key":        cfg.get("wordpress_api_key", ""),
+            "wordpress_wp_user":          cfg.get("wordpress_wp_user", ""),
+            "wordpress_app_password":    cfg.get("wordpress_app_password", ""),
+            "wordpress_api_key":         cfg.get("wordpress_api_key", ""),
+            "wordpress_xmlrpc_url":      cfg.get("wordpress_xmlrpc_url", ""),
+            "wordpress_xmlrpc_user":     cfg.get("wordpress_xmlrpc_user", ""),
+            "wordpress_xmlrpc_password": cfg.get("wordpress_xmlrpc_password", ""),
             # Apify
             "usar_apify":               cfg.get("usar_apify", False),
             "apify_api_token":          cfg.get("apify_api_token", ""),
@@ -1205,15 +1208,18 @@ async def salvar_config_avancada(body: ConfigAvancadaRequest):
 
 
 class WordPressConfigRequest(BaseModel):
-    usar_wordpress_api:     bool        = False
-    wordpress_api_url:      str         = ""
-    wordpress_wp_user:      str         = ""
-    wordpress_app_password: str         = ""
-    wordpress_api_key:      str         = ""
-    usar_apify:             bool        = False
-    apify_api_token:        str         = ""
-    apify_actor_id:         str         = ""
-    max_workers:            int         = 1
+    usar_wordpress_api:       bool = False
+    wordpress_api_url:        str  = ""
+    wordpress_wp_user:        str  = ""
+    wordpress_app_password:   str  = ""
+    wordpress_api_key:        str  = ""
+    wordpress_xmlrpc_url:     str  = ""
+    wordpress_xmlrpc_user:    str  = ""
+    wordpress_xmlrpc_password:str  = ""
+    usar_apify:               bool = False
+    apify_api_token:          str  = ""
+    apify_actor_id:           str  = ""
+    max_workers:              int  = 1
 
 
 @app.post("/api/config/wordpress")

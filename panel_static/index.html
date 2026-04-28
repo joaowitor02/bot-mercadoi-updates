@@ -792,8 +792,12 @@
           <div>
             <label class="block text-xs text-slate-500 mb-2">Método de autenticação</label>
             <div class="flex gap-2">
-              <button id="btn-auth-snippet" onclick="setAuthMode('snippet')"
+              <button id="btn-auth-xmlrpc" onclick="setAuthMode('xmlrpc')"
                 class="flex-1 py-2 text-xs font-semibold rounded-lg border-2 border-blue-500 bg-blue-50 text-blue-700 transition-colors">
+                Usuário + Senha
+              </button>
+              <button id="btn-auth-snippet" onclick="setAuthMode('snippet')"
+                class="flex-1 py-2 text-xs font-semibold rounded-lg border-2 border-slate-200 bg-white text-slate-600 transition-colors">
                 Snippet (functions.php)
               </button>
               <button id="btn-auth-plugin" onclick="setAuthMode('plugin')"
@@ -801,10 +805,32 @@
                 Plugin instalado
               </button>
             </div>
+            <p id="wp-auth-hint" class="text-xs text-blue-600 bg-blue-50 rounded-lg px-3 py-2">
+              ✅ Recomendado para clientes resistentes — não instala nada no site. Só precisa de usuário e senha WordPress.
+            </p>
+          </div>
+
+          <!-- Campos XML-RPC (usuário + senha) -->
+          <div id="wp-auth-xmlrpc" class="hidden grid sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">Usuário WordPress</label>
+              <input id="wp-xmlrpc-user" type="text" placeholder="admin"
+                class="w-full h-9 px-3 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
+            </div>
+            <div>
+              <label class="block text-xs text-slate-500 mb-1">Senha WordPress</label>
+              <div class="relative">
+                <input id="wp-xmlrpc-password" type="password" placeholder="Senha do painel wp-admin"
+                  class="w-full h-9 px-3 pr-9 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                <button onclick="toggleVer('wp-xmlrpc-password')" class="absolute right-2 top-2 text-slate-300 hover:text-slate-500">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                </button>
+              </div>
+            </div>
           </div>
 
           <!-- Campos Snippet (Application Password) -->
-          <div id="wp-auth-snippet" class="grid sm:grid-cols-2 gap-3">
+          <div id="wp-auth-snippet" class="hidden grid sm:grid-cols-2 gap-3">
             <div>
               <label class="block text-xs text-slate-500 mb-1">Usuário WordPress</label>
               <input id="wp-user" type="text" placeholder="admin"
@@ -1910,9 +1936,14 @@ async function carregarConfig() {
     setChk('wp-usar-apify',      d.usar_apify);
     set('wp-apify-token',        d.apify_api_token);
     if (d.max_workers) document.getElementById('wp-max-workers').value = d.max_workers;
+    set('wp-xmlrpc-user',      d.wordpress_xmlrpc_user);
+    set('wp-xmlrpc-password',  d.wordpress_xmlrpc_password);
+    // URL unificada: xmlrpc_url tem prioridade, senão api_url
+    set('wp-api-url', d.wordpress_xmlrpc_url || d.wordpress_api_url);
     // Define modo auth pelo que está preenchido
-    if (d.wordpress_api_key && !d.wordpress_wp_user) setAuthMode('plugin');
-    else setAuthMode('snippet');
+    if (d.wordpress_xmlrpc_user && d.wordpress_xmlrpc_password) setAuthMode('xmlrpc');
+    else if (d.wordpress_api_key) setAuthMode('plugin');
+    else setAuthMode('xmlrpc'); // padrão recomendado
     // Badge de status
     const wpBadge = document.getElementById('wp-badge');
     if (d.usar_wordpress_api && d.wordpress_api_url) {
@@ -2101,14 +2132,26 @@ function toggleWP() {
 
 function setAuthMode(mode) {
   _wpAuthMode = mode;
+  document.getElementById('wp-auth-xmlrpc').classList.toggle('hidden',  mode !== 'xmlrpc');
   document.getElementById('wp-auth-snippet').classList.toggle('hidden', mode !== 'snippet');
-  document.getElementById('wp-auth-plugin').classList.toggle('hidden', mode !== 'plugin');
-  document.getElementById('btn-auth-snippet').className =
-    'flex-1 py-2 text-xs font-semibold rounded-lg border-2 transition-colors ' +
-    (mode === 'snippet' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600');
-  document.getElementById('btn-auth-plugin').className =
-    'flex-1 py-2 text-xs font-semibold rounded-lg border-2 transition-colors ' +
-    (mode === 'plugin' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600');
+  document.getElementById('wp-auth-plugin').classList.toggle('hidden',  mode !== 'plugin');
+  const active   = 'flex-1 py-2 text-xs font-semibold rounded-lg border-2 transition-colors border-blue-500 bg-blue-50 text-blue-700';
+  const inactive = 'flex-1 py-2 text-xs font-semibold rounded-lg border-2 transition-colors border-slate-200 bg-white text-slate-600';
+  document.getElementById('btn-auth-xmlrpc').className  = mode === 'xmlrpc'  ? active : inactive;
+  document.getElementById('btn-auth-snippet').className = mode === 'snippet' ? active : inactive;
+  document.getElementById('btn-auth-plugin').className  = mode === 'plugin'  ? active : inactive;
+  const hint = document.getElementById('wp-auth-hint');
+  if (hint) {
+    const hints = {
+      xmlrpc:  '✅ Recomendado para clientes resistentes — não instala nada no site. Só precisa de usuário e senha WordPress.',
+      snippet: '⚠️ Requer colar código no functions.php do tema filho.',
+      plugin:  '⚠️ Requer instalar o plugin bot-mercadoi-api.zip no WordPress.',
+    };
+    hint.textContent = hints[mode] || '';
+    hint.className = mode === 'xmlrpc'
+      ? 'text-xs text-blue-600 bg-blue-50 rounded-lg px-3 py-2'
+      : 'text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2';
+  }
 }
 
 function toggleWPAuthMode() {
@@ -2120,16 +2163,20 @@ function toggleWPAuthMode() {
 
 async function salvarWordPress() {
   try {
+    const siteUrl = document.getElementById('wp-api-url').value.trim();
     const payload = {
-      usar_wordpress_api:     document.getElementById('wp-usar-api').checked,
-      wordpress_api_url:      document.getElementById('wp-api-url').value.trim(),
-      wordpress_wp_user:      _wpAuthMode === 'snippet' ? document.getElementById('wp-user').value.trim() : '',
-      wordpress_app_password: _wpAuthMode === 'snippet' ? document.getElementById('wp-app-password').value.trim() : '',
-      wordpress_api_key:      _wpAuthMode === 'plugin'  ? document.getElementById('wp-api-key').value.trim() : '',
-      usar_apify:             document.getElementById('wp-usar-apify').checked,
-      apify_api_token:        document.getElementById('wp-apify-token').value.trim(),
-      apify_actor_id:         '',
-      max_workers:            parseInt(document.getElementById('wp-max-workers').value) || 1,
+      usar_wordpress_api:      document.getElementById('wp-usar-api').checked,
+      wordpress_api_url:       _wpAuthMode !== 'xmlrpc' ? siteUrl : '',
+      wordpress_wp_user:       _wpAuthMode === 'snippet' ? document.getElementById('wp-user').value.trim() : '',
+      wordpress_app_password:  _wpAuthMode === 'snippet' ? document.getElementById('wp-app-password').value.trim() : '',
+      wordpress_api_key:       _wpAuthMode === 'plugin'  ? document.getElementById('wp-api-key').value.trim() : '',
+      wordpress_xmlrpc_url:    _wpAuthMode === 'xmlrpc'  ? siteUrl : '',
+      wordpress_xmlrpc_user:   _wpAuthMode === 'xmlrpc'  ? document.getElementById('wp-xmlrpc-user').value.trim() : '',
+      wordpress_xmlrpc_password: _wpAuthMode === 'xmlrpc' ? document.getElementById('wp-xmlrpc-password').value.trim() : '',
+      usar_apify:              document.getElementById('wp-usar-apify').checked,
+      apify_api_token:         document.getElementById('wp-apify-token').value.trim(),
+      apify_actor_id:          '',
+      max_workers:             parseInt(document.getElementById('wp-max-workers').value) || 1,
     };
     const r = await fetch('/api/config/wordpress', {
       method: 'POST',
