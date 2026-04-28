@@ -59,7 +59,8 @@ _ADMIN_API_PATHS = frozenset({
     "/api/config", "/api/config/senha", "/api/config/telegram",
     "/api/config/admin-senha", "/api/config/licenca", "/api/testar-telegram",
     "/api/tunnel/baixar", "/api/config/avancada", "/api/gerar-licenca",
-    # /api/atualizar é intencional fora daqui — cliente precisa poder atualizar
+    "/api/config/wordpress",
+    # /api/atualizar e /api/conectar-wordpress são intencionais fora daqui
 })
 
 # ---------------------------------------------------------------------------
@@ -1239,6 +1240,67 @@ async def salvar_config_wordpress(body: WordPressConfigRequest):
         return JSONResponse({"ok": True})
     except Exception as e:
         return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
+
+
+class ConectarWordPressRequest(BaseModel):
+    site_url:    str
+    wp_user:     str
+    wp_password: str
+
+
+@app.post("/api/conectar-wordpress")
+async def conectar_wordpress(body: ConectarWordPressRequest):
+    """Acessível ao usuário comum — permite que o cliente conecte o próprio site."""
+    site_url    = body.site_url.strip().rstrip("/")
+    wp_user     = body.wp_user.strip()
+    wp_password = body.wp_password.strip()
+
+    if not site_url or not wp_user or not wp_password:
+        return JSONResponse({"ok": False, "msg": "Preencha todos os campos"}, status_code=400)
+
+    if not site_url.startswith("http"):
+        site_url = "https://" + site_url
+
+    # Verifica se xmlrpc.php responde antes de salvar
+    try:
+        import httpx as _httpx
+        async with _httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            r = await client.get(f"{site_url}/xmlrpc.php")
+            if r.status_code not in (200, 405):
+                return JSONResponse({
+                    "ok": False,
+                    "msg": f"Não consegui acessar {site_url}/xmlrpc.php (HTTP {r.status_code}). Verifique a URL do site."
+                }, status_code=400)
+    except Exception as e:
+        return JSONResponse({"ok": False, "msg": f"Não consegui conectar ao site: {e}"}, status_code=400)
+
+    cfg = _load_config()
+    cfg["usar_wordpress_api"]       = True
+    cfg["wordpress_xmlrpc_url"]     = site_url
+    cfg["wordpress_xmlrpc_user"]    = wp_user
+    cfg["wordpress_xmlrpc_password"]= wp_password
+    # Limpa modos alternativos para evitar conflito
+    cfg["wordpress_api_key"]        = ""
+    cfg["wordpress_app_password"]   = ""
+    (BASE_DIR / "config.json").write_text(
+        json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    return JSONResponse({"ok": True, "msg": "WordPress conectado com sucesso!"})
+
+
+@app.get("/api/wordpress-status")
+async def wordpress_status():
+    """Retorna se o WordPress está conectado — acessível a todos."""
+    cfg = _load_config()
+    conectado = (
+        bool(cfg.get("usar_wordpress_api"))
+        and (
+            bool(cfg.get("wordpress_xmlrpc_url") and cfg.get("wordpress_xmlrpc_user") and cfg.get("wordpress_xmlrpc_password"))
+            or bool(cfg.get("wordpress_api_key"))
+            or bool(cfg.get("wordpress_app_password"))
+        )
+    )
+    return JSONResponse({"conectado": conectado})
 
 
 @app.post("/api/testar-telegram")

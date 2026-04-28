@@ -183,6 +183,25 @@
   <!-- ===================== SEÇÃO: DASHBOARD ===================== -->
   <div id="section-dashboard" class="space-y-5">
 
+    <!-- Card de onboarding: conectar WordPress (visível quando não configurado) -->
+    <div id="card-conectar-wp" class="hidden bg-blue-50 border border-blue-200 rounded-2xl p-5">
+      <div class="flex items-start gap-4">
+        <div class="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center shrink-0">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9"/>
+          </svg>
+        </div>
+        <div class="flex-1">
+          <h3 class="text-sm font-semibold text-blue-900">Conecte seu site WordPress</h3>
+          <p class="text-xs text-blue-700 mt-1">Para o bot publicar os imóveis automaticamente, informe os dados do seu site. Não é necessário instalar nada.</p>
+          <button onclick="abrirModalWP()"
+            class="mt-3 h-9 px-4 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl transition-colors">
+            Conectar agora
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
 
       <div class="stat-card bg-white rounded-2xl border border-slate-100 p-5 flex flex-col gap-3">
@@ -1307,10 +1326,18 @@ async function toggleWatch() {
 
 async function atualizarStatus() {
   try {
-    const r = await fetch('/api/status');
-    const d = await r.json();
+    const [r, rWP] = await Promise.all([
+      fetch('/api/status'),
+      fetch('/api/wordpress-status'),
+    ]);
+    const d   = await r.json();
+    const dWP = await rWP.json();
     _botRodando = d.rodando;
     _watchAtivo = d.watch_ativo || false;
+
+    // Card de onboarding WordPress
+    const cardWP = document.getElementById('card-conectar-wp');
+    if (cardWP) cardWP.classList.toggle('hidden', dWP.conectado);
 
     const dot      = document.getElementById('dot');
     const txt      = document.getElementById('status-txt');
@@ -2122,6 +2149,63 @@ async function testarTelegram() {
 // ---- WordPress & Integrações ----
 let _wpAuthMode = 'snippet';
 
+// ---- Modal Conectar WordPress ----
+function abrirModalWP() {
+  document.getElementById('modal-wp').classList.remove('hidden');
+  document.getElementById('modal-wp-erro').classList.add('hidden');
+  document.getElementById('modal-wp-url').focus();
+}
+
+function fecharModalWP() {
+  document.getElementById('modal-wp').classList.add('hidden');
+}
+
+async function salvarConexaoWP() {
+  const url      = document.getElementById('modal-wp-url').value.trim();
+  const user     = document.getElementById('modal-wp-user').value.trim();
+  const password = document.getElementById('modal-wp-password').value.trim();
+  const erro     = document.getElementById('modal-wp-erro');
+  const btn      = document.getElementById('btn-salvar-wp');
+
+  if (!url || !user || !password) {
+    erro.textContent = 'Preencha todos os campos.';
+    erro.classList.remove('hidden');
+    return;
+  }
+
+  btn.textContent = 'Conectando...';
+  btn.disabled    = true;
+  erro.classList.add('hidden');
+
+  try {
+    const r = await fetch('/api/conectar-wordpress', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ site_url: url, wp_user: user, wp_password: password }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      fecharModalWP();
+      toast('WordPress conectado! O bot já pode publicar automaticamente.');
+      document.getElementById('card-conectar-wp').classList.add('hidden');
+    } else {
+      erro.textContent = d.msg || 'Erro ao conectar.';
+      erro.classList.remove('hidden');
+    }
+  } catch {
+    erro.textContent = 'Erro de conexão. Tente novamente.';
+    erro.classList.remove('hidden');
+  } finally {
+    btn.textContent = 'Conectar';
+    btn.disabled    = false;
+  }
+}
+
+// Fecha modal ao clicar fora
+document.getElementById('modal-wp')?.addEventListener('click', function(e) {
+  if (e.target === this) fecharModalWP();
+});
+
 function toggleWP() {
   const body    = document.getElementById('wp-body');
   const chevron = document.getElementById('wp-chevron');
@@ -2529,6 +2613,60 @@ document.addEventListener('keydown', e => {
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
         </svg>
         Retirar da lista
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Conectar WordPress -->
+<div id="modal-wp" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+      <div class="flex items-center gap-2">
+        <div class="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
+          <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9"/>
+          </svg>
+        </div>
+        <h2 class="text-sm font-semibold text-slate-800">Conectar WordPress</h2>
+      </div>
+      <button onclick="fecharModalWP()" class="text-slate-400 hover:text-slate-600">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+    <div class="px-6 py-5 space-y-4">
+      <p class="text-xs text-slate-500">Informe os dados do seu WordPress. Não será instalado nenhum arquivo no seu site.</p>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">URL do site</label>
+        <input id="modal-wp-url" type="url" placeholder="https://mercadoi.com.br"
+          class="w-full h-10 px-3 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Usuário WordPress</label>
+        <input id="modal-wp-user" type="text" placeholder="admin"
+          class="w-full h-10 px-3 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
+      </div>
+      <div>
+        <label class="block text-xs font-medium text-slate-600 mb-1">Senha</label>
+        <div class="relative">
+          <input id="modal-wp-password" type="password" placeholder="Senha do painel wp-admin"
+            class="w-full h-10 px-3 pr-10 text-sm border border-slate-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-400" />
+          <button onclick="toggleVer('modal-wp-password')" class="absolute right-3 top-3 text-slate-300 hover:text-slate-500">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+          </button>
+        </div>
+      </div>
+      <div id="modal-wp-erro" class="hidden text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2"></div>
+    </div>
+    <div class="px-6 py-4 border-t border-slate-100 flex gap-3 justify-end">
+      <button onclick="fecharModalWP()" class="h-9 px-4 text-sm text-slate-600 hover:text-slate-800 font-medium transition-colors">
+        Cancelar
+      </button>
+      <button onclick="salvarConexaoWP()" id="btn-salvar-wp"
+        class="h-9 px-5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors">
+        Conectar
       </button>
     </div>
   </div>
