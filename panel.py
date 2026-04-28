@@ -1012,6 +1012,18 @@ async def get_config():
             "admin_senha_configurada":  bool(cfg.get("admin_senha", "").strip()),
             "licenca_expira":           expira,
             "licenca_dias_restantes":   dias_restantes,
+            # WordPress / API
+            "usar_wordpress_api":       cfg.get("usar_wordpress_api", False),
+            "wordpress_api_url":        cfg.get("wordpress_api_url", ""),
+            "wordpress_wp_user":        cfg.get("wordpress_wp_user", ""),
+            "wordpress_app_password":   cfg.get("wordpress_app_password", ""),
+            "wordpress_api_key":        cfg.get("wordpress_api_key", ""),
+            # Apify
+            "usar_apify":               cfg.get("usar_apify", False),
+            "apify_api_token":          cfg.get("apify_api_token", ""),
+            "apify_actor_id":           cfg.get("apify_actor_id", ""),
+            # Workers
+            "max_workers":              cfg.get("max_workers", 1),
             # campos avançados
             "mercadoi_url":             cfg.get("mercadoi_url", ""),
             "downloads_path":           cfg.get("downloads_path", ""),
@@ -1183,6 +1195,37 @@ async def salvar_config_avancada(body: ConfigAvancadaRequest):
         for k, v in campos.items():
             if isinstance(v, str):
                 campos[k] = v.strip()
+        cfg.update(campos)
+        (BASE_DIR / "config.json").write_text(
+            json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        return JSONResponse({"ok": True})
+    except Exception as e:
+        return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
+
+
+class WordPressConfigRequest(BaseModel):
+    usar_wordpress_api:     bool        = False
+    wordpress_api_url:      str         = ""
+    wordpress_wp_user:      str         = ""
+    wordpress_app_password: str         = ""
+    wordpress_api_key:      str         = ""
+    usar_apify:             bool        = False
+    apify_api_token:        str         = ""
+    apify_actor_id:         str         = ""
+    max_workers:            int         = 1
+
+
+@app.post("/api/config/wordpress")
+async def salvar_config_wordpress(body: WordPressConfigRequest):
+    try:
+        cfg = _load_config()
+        campos = body.model_dump()
+        for k, v in campos.items():
+            if isinstance(v, str):
+                campos[k] = v.strip()
+        if not (1 <= campos["max_workers"] <= 10):
+            return JSONResponse({"ok": False, "msg": "max_workers deve ser entre 1 e 10"}, status_code=400)
         cfg.update(campos)
         (BASE_DIR / "config.json").write_text(
             json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8"
