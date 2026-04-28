@@ -414,18 +414,39 @@ async def executar_ciclo(config: dict):
 
     urls_processadas = {row["url_instagram"].strip() for row in pendentes}
 
-    # Processa links sequencialmente — o paralelismo ocorre DENTRO de cada link
-    # (API Deepseek + download de mídia em paralelo via _extrair_e_baixar)
-    for row in pendentes:
-        try:
-            await processar_link(row, db, config)
-        except Exception as e:
-            logger.error(f"Erro inesperado: {e}")
+    max_workers = int(config.get("max_workers", 1))
+
+    # Paralelismo seguro apenas quando não há browser no caminho crítico.
+    # Browser DeepSeek ou Playwright para publicação não suportam múltiplas
+    # instâncias simultâneas no mesmo Chrome.
+    modo_api_completo = _usar_wordpress_api(config) and bool(config.get("usar_deepseek_api"))
+    if max_workers > 1 and not modo_api_completo:
+        logger.warning(
+            f"max_workers={max_workers} ignorado — paralelismo requer "
+            f"usar_wordpress_api=true e usar_deepseek_api=true. Rodando com 1 worker."
+        )
+        max_workers = 1
+
+    if max_workers > 1:
+        logger.info(f"Processando {len(pendentes)} link(s) com {max_workers} workers em paralelo")
+    else:
+        logger.info(f"Processando {len(pendentes)} link(s) sequencialmente")
+
+    semaforo = asyncio.Semaphore(max_workers)
+
+    async def _processar_com_semaforo(row: dict):
+        async with semaforo:
             try:
-                db.atualizar_status(row["_row_index"], "erro_preenchimento")
-                db.atualizar_campo(row["_row_index"], "mensagem_erro", str(e))
-            except Exception:
-                pass
+                await processar_link(row, db, config)
+            except Exception as e:
+                logger.error(f"Erro inesperado: {e}")
+                try:
+                    db.atualizar_status(row["_row_index"], "erro_preenchimento")
+                    db.atualizar_campo(row["_row_index"], "mensagem_erro", str(e))
+                except Exception:
+                    pass
+
+    await asyncio.gather(*[_processar_com_semaforo(row) for row in pendentes])
 
     total = len(pendentes)
 

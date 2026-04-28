@@ -12,6 +12,7 @@
   "usar_apify": false,
   "apify_api_token": "",
   "apify_actor_id": "",
+  "max_workers": 1,
   "watch_intervalo_minutos": 5,
   "panel_usuario": "",
   "admin_usuario": "",
