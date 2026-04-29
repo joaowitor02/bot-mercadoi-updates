@@ -458,7 +458,7 @@ async def executar_ciclo(config: dict):
     if not pendentes:
         return 0
 
-    if not _usar_wordpress_api(config) and not _usar_wordpress_xmlrpc(config) and not await _verificar_chrome():
+    if not _usar_wordpress_api(config) and not _usar_wordpress_xmlrpc(config) and sys.platform == "win32" and not await _verificar_chrome():
         logger.error("Chrome do Mercadoi não está aberto. Abra o Chrome com remote debugging na porta 9222.")
         await notificar(config, "⚠️ <b>Bot Mercadoi</b> — Chrome não está aberto.\nAbra o Chrome com remote debugging para retomar o processamento.")
         return 0
