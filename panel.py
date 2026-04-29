@@ -83,7 +83,7 @@ _CLOUDFLARED_DOWNLOAD_URL = (
 # Segurança: hash de senhas + assinatura HMAC da licença
 # ---------------------------------------------------------------------------
 
-_LICENSE_SECRET = b"BotMercadoi@2024#7f3c9a1e"
+_LICENSE_SECRET = os.environ.get("LICENSE_SECRET", "BotMercadoi@2024#7f3c9a1e").encode()
 
 
 def _sha256(text: str) -> str:

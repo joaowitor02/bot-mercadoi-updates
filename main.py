@@ -20,7 +20,6 @@ from modules.media_resolver import MediaResolver
 from modules.mercadoi_driver import MercadoiDriver
 from modules.wordpress_publisher import WordPressPublisher
 from modules.wordpress_xmlrpc_publisher import WordPressXmlRpcPublisher
-from modules.wordpress_xmlrpc_publisher import WordPressXmlRpcPublisher
 from modules.status_writer import StatusWriter
 from modules.logger import Logger
 from modules.notificador import notificar
