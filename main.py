@@ -156,6 +156,19 @@ async def _via_api(url: str, config: dict) -> tuple[dict | None, str]:
             scraper = InstagramScraper()
             post = await scraper.extrair(url)
 
+    # Fallback: Apify (extrai caption + mídia, não bloqueia VPS)
+    if not post.get("ok") and config.get("usar_apify") and config.get("apify_api_token", "").strip():
+        motivo = post.get("motivo", "erro_rede")
+        if motivo not in ("url_invalida", "nao_encontrado"):
+            logger.info(f"HTTP scraper falhou ({motivo}), tentando Apify para caption...")
+            from modules.instagram_media_api import ApifyMediaExtractor
+            apify = ApifyMediaExtractor(
+                token=config["apify_api_token"],
+                downloads_path=config["downloads_path"],
+                actor_id=config.get("apify_actor_id", ""),
+            )
+            post = await apify.extrair_post(url)
+
     if not post.get("ok"):
         return None, post.get("motivo", "erro_rede")
 

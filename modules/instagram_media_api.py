@@ -30,6 +30,36 @@ class ApifyMediaExtractor:
         self.downloads_path = downloads_path
         self.actor_id       = actor_id.strip() or ACTOR_OFICIAL
 
+    async def extrair_post(self, url_instagram: str) -> dict:
+        """
+        Extrai dados do post (caption, perfil) via Apify.
+        Retorna dict compatível com InstagramScraper.extrair().
+        """
+        try:
+            item = await self._chamar_apify(url_instagram)
+        except Exception as e:
+            logger.warning(f"Apify post: {e}")
+            return {"ok": False, "motivo": "erro_rede"}
+
+        if not item:
+            return {"ok": False, "motivo": "nao_encontrado"}
+
+        caption = (
+            item.get("caption")
+            or item.get("description")
+            or item.get("alt")
+            or ""
+        )
+        perfil = item.get("ownerUsername") or item.get("username") or ""
+
+        logger.info(f"Apify: caption extraído ({len(caption)} chars)")
+        return {
+            "ok": True,
+            "caption": caption,
+            "url_publicacao": url_instagram,
+            "perfil_instagram": perfil,
+        }
+
     async def extrair(self, url_instagram: str) -> tuple[str, list[str]]:
         """
         Extrai mídia de um post do Instagram via Apify.
