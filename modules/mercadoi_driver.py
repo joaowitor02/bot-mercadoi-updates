@@ -147,27 +147,40 @@ class MercadoiDriver:
             await self._playwright.stop()
 
     async def _garantir_login(self, page):
-        await page.goto(self.base_url, timeout=30000)
+        await page.goto(f"{self.base_url}/create-a-listing/", timeout=30000)
         await page.wait_for_load_state("domcontentloaded", timeout=15000)
         logado = await page.query_selector('a[href*="logout"], a[href*="dashboard"], .user-menu, #user-menu')
         if logado:
             return
 
         if sys.platform != "win32" and self._wp_user and self._wp_pass:
-            # VPS: login automático via formulário Houzez
-            logger.info("Fazendo login automático no Mercadoi...")
+            logger.info("Fazendo login automatico via AJAX no Mercadoi...")
             try:
-                await page.fill('input[name="username"]', self._wp_user)
-                await page.fill('input[name="password"]', self._wp_pass)
-                await page.click('#houzez-login-btn')
-                await page.wait_for_load_state("domcontentloaded", timeout=20000)
-                logado = await page.query_selector('a[href*="logout"], a[href*="dashboard"], .user-menu, #user-menu')
+                resultado = await page.evaluate("""
+                    async ([user, pass_]) => {
+                        const sec = document.querySelector('#houzez_login_security');
+                        const ajaxUrl = window.ajaxurl || window.ajax_url || '/wp-admin/admin-ajax.php';
+                        const fd = new FormData();
+                        fd.append('action', 'houzez_ajax_login');
+                        fd.append('username', user);
+                        fd.append('password', pass_);
+                        fd.append('security', sec ? sec.value : '');
+                        const r = await fetch(ajaxUrl, {method:'POST', body:fd, credentials:'include'});
+                        const t = await r.text();
+                        return t;
+                    }
+                """, [self._wp_user, self._wp_pass])
+                logger.info(f"Resposta login AJAX: {str(resultado)[:100]}")
+                await page.reload()
+                await page.wait_for_load_state("domcontentloaded", timeout=15000)
+                logado = await page.query_selector('a[href*="logout"], a[href*="dashboard"], .user-menu, #user-menu, #prop_title')
                 if logado:
-                    logger.info("Login automático realizado com sucesso")
+                    logger.info("Login automatico realizado com sucesso")
                     return
+                logger.warning("Login AJAX nao confirmou sessao")
             except Exception as e:
-                logger.warning(f"Login automático falhou: {e}")
-            raise Exception("Login automático no Mercadoi falhou — verifique usuário/senha")
+                logger.warning(f"Login automatico falhou: {e}")
+            raise Exception("Login automatico no Mercadoi falhou")
 
         # Windows: aguarda login manual
         logger.info("Nao logado. Abrindo pagina de login — aguardando ate 120s para login manual...")
