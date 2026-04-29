@@ -4,6 +4,7 @@ Modulo de automacao do formulario do Mercadoi.
 
 import json
 import os
+import sys
 import unicodedata
 import re
 from urllib.parse import urljoin
@@ -93,10 +94,13 @@ _BAIRRO_CIDADE_PB: dict[str, str] = {
 
 
 class MercadoiDriver:
-    def __init__(self, base_url, profile_path=r"C:\chrome_bot_mercadoi", execution_id: str = ""):
+    def __init__(self, base_url, profile_path=r"C:\chrome_bot_mercadoi", execution_id: str = "",
+                 wp_user: str = "", wp_pass: str = ""):
         self.base_url = base_url
         self.profile_path = profile_path
         self.execution_id = execution_id
+        self._wp_user = wp_user
+        self._wp_pass = wp_pass
         self._playwright = None
         self._browser = None
         self._context = None
@@ -104,19 +108,41 @@ class MercadoiDriver:
 
     async def __aenter__(self):
         self._playwright = await async_playwright().start()
-        self._browser = await self._playwright.chromium.connect_over_cdp("http://localhost:9222")
-        contexts = self._browser.contexts
-        if not contexts:
-            raise Exception("Chrome do Mercadoi conectado, mas sem contexto disponivel")
-        self._context = contexts[0]
-        pages = self._context.pages
-        self._page = pages[0] if pages else await self._context.new_page()
-        logger.info("Conectado ao Chrome do Mercadoi ja aberto na porta 9222")
+        if sys.platform == "win32":
+            # Windows: conecta ao Chrome já aberto pelo usuário (porta 9222)
+            self._browser = await self._playwright.chromium.connect_over_cdp("http://localhost:9222")
+            contexts = self._browser.contexts
+            if not contexts:
+                raise Exception("Chrome do Mercadoi conectado, mas sem contexto disponivel")
+            self._context = contexts[0]
+            pages = self._context.pages
+            self._page = pages[0] if pages else await self._context.new_page()
+            logger.info("Conectado ao Chrome do Mercadoi ja aberto na porta 9222")
+        else:
+            # Linux/VPS: lança Chromium headless
+            self._browser = await self._playwright.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu",
+                      "--disable-setuid-sandbox", "--single-process"],
+            )
+            self._context = await self._browser.new_context(
+                viewport={"width": 1280, "height": 900},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            )
+            self._page = await self._context.new_page()
+            logger.info("Browser headless iniciado para Mercadoi (VPS)")
         return self
 
     async def __aexit__(self, *args):
-        # Nao fechar o contexto: ele pertence ao Chrome aberto/logado pelo usuario.
-        # Encerrar aqui derrubaria a sessao que o bot reutiliza entre execucoes.
+        if sys.platform != "win32":
+            # VPS: fecha o browser após cada uso
+            try:
+                if self._context:
+                    await self._context.close()
+                if self._browser:
+                    await self._browser.close()
+            except Exception:
+                pass
         if self._playwright:
             await self._playwright.stop()
 
@@ -126,6 +152,24 @@ class MercadoiDriver:
         logado = await page.query_selector('a[href*="logout"], a[href*="dashboard"], .user-menu, #user-menu')
         if logado:
             return
+
+        if sys.platform != "win32" and self._wp_user and self._wp_pass:
+            # VPS: login automático via formulário Houzez
+            logger.info("Fazendo login automático no Mercadoi...")
+            try:
+                await page.fill('input[name="username"]', self._wp_user)
+                await page.fill('input[name="password"]', self._wp_pass)
+                await page.click('#houzez-login-btn')
+                await page.wait_for_load_state("domcontentloaded", timeout=20000)
+                logado = await page.query_selector('a[href*="logout"], a[href*="dashboard"], .user-menu, #user-menu')
+                if logado:
+                    logger.info("Login automático realizado com sucesso")
+                    return
+            except Exception as e:
+                logger.warning(f"Login automático falhou: {e}")
+            raise Exception("Login automático no Mercadoi falhou — verifique usuário/senha")
+
+        # Windows: aguarda login manual
         logger.info("Nao logado. Abrindo pagina de login — aguardando ate 120s para login manual...")
         await page.goto(f"{self.base_url}/login/", timeout=30000)
         for _ in range(60):

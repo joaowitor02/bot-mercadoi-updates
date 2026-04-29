@@ -383,6 +383,8 @@ async def processar_link(row: dict, sheet, config: dict):
             config["mercadoi_url"],
             config.get("mercadoi_profile_path", r"C:\chrome_bot_mercadoi"),
             execution_id=execution_id,
+            wp_user=config.get("wordpress_xmlrpc_user", "") or config.get("wordpress_wp_user", ""),
+            wp_pass=config.get("wordpress_xmlrpc_password", "") or config.get("wordpress_app_password", ""),
         ) as driver:
             for tentativa in range(1, MAX_TENTATIVAS_MERCADOI + 1):
                 if tentativa > 1:
