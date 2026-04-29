@@ -880,6 +880,17 @@ async def listar_pendentes():
 _INSTAGRAM_RE = re.compile(
     r"https?://(?:www\.)?instagram\.com/(?:p|reel|tv)/[A-Za-z0-9_-]+", re.IGNORECASE
 )
+_OLX_RE = re.compile(
+    r"https?://(?:[\w-]+\.)?olx\.com\.br/", re.IGNORECASE
+)
+
+def _url_suportada(url: str) -> bool:
+    return bool(_INSTAGRAM_RE.match(url) or _OLX_RE.match(url))
+
+def _fonte(url: str) -> str:
+    if _OLX_RE.match(url):
+        return "OLX"
+    return "Instagram"
 
 
 class AdicionarRequest(BaseModel):
@@ -919,8 +930,8 @@ async def adicionar_url(body: AdicionarRequest):
         return status not in {"pendente", "processando"}
 
     for url in urls_raw:
-        if not _INSTAGRAM_RE.match(url):
-            results.append({"url": url, "status": "invalida", "msg": "URL não é um post do Instagram"})
+        if not _url_suportada(url):
+            results.append({"url": url, "status": "invalida", "msg": "URL não é um post do Instagram ou anúncio do OLX"})
             continue
         if url in adicionadas_agora:
             results.append({"url": url, "status": "duplicada", "msg": "Duplicada neste envio"})

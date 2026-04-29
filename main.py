@@ -24,6 +24,7 @@ from modules.status_writer import StatusWriter
 from modules.logger import Logger
 from modules.notificador import notificar
 from modules.ocr_preco import extrair_preco_de_imagens
+from modules.olx_scraper import OlxScraper, url_valida as olx_url_valida
 
 logger = Logger("main")
 
@@ -267,6 +268,25 @@ async def _extrair_e_baixar(url: str, config: dict) -> tuple:
 # Processamento de um link
 # ---------------------------------------------------------------------------
 
+async def _extrair_olx(url: str, config: dict) -> tuple:
+    """Extrai dados e baixa imagens de um anúncio OLX."""
+    scraper = OlxScraper()
+    resultado = await scraper.extrair(url)
+    if not resultado.get("ok"):
+        return None, None, None, resultado.get("motivo", "erro_rede")
+
+    dados = resultado["dados"]
+    imagens_urls = resultado.get("imagens_urls", [])
+
+    downloads_path = config.get("downloads_path", "/data/downloads")
+    arquivo_midia = []
+    if imagens_urls:
+        arquivo_midia = await scraper.baixar_imagens(imagens_urls, downloads_path)
+
+    tipo_midia = "imagem" if arquivo_midia else None
+    return dados, tipo_midia, arquivo_midia, ""
+
+
 async def processar_link(row: dict, sheet, config: dict):
     url = row["url_instagram"]
     row_index = row["_row_index"]
@@ -279,8 +299,12 @@ async def processar_link(row: dict, sheet, config: dict):
 
     status = StatusWriter(sheet, row_index)
 
-    # --- ETAPA 1+2: Extração (API) e download de mídia em paralelo ---
-    dados, tipo_midia, arquivo_midia, motivo_falha = await _extrair_e_baixar(url, config)
+    # --- ETAPA 1+2: Extração e download (rota por fonte) ---
+    if olx_url_valida(url):
+        logger.info(f"[{execution_id}] Fonte: OLX")
+        dados, tipo_midia, arquivo_midia, motivo_falha = await _extrair_olx(url, config)
+    else:
+        dados, tipo_midia, arquivo_midia, motivo_falha = await _extrair_e_baixar(url, config)
 
     if not dados or not dados.get("titulo"):
         msg_final = _MOTIVO_MSGS.get(motivo_falha, "Não foi possível extrair dados do imóvel")
