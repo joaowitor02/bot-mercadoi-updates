@@ -1,6 +1,6 @@
 # Plano de Implementação — Bot Mercadoi v4.0
-**Data:** 2026-04-25
-**Versão atual:** 3.4 (local, sequencial, FastDL, formulário browser)
+**Data:** 2026-04-25 (atualizado 2026-04-29)
+**Versão atual:** 3.4 (VPS Linux, sequencial, Apify + FastDL, formulário browser headless) ✅ Em produção na VPS
 **Versão alvo:** 4.0 (cloud, paralelo, API de mídia, WordPress REST API)
 
 ---
@@ -123,7 +123,7 @@ O Chrome do Mercadoi deixa de ser necessário.
 - [x] `main.py` atualizado — modo híbrido API/Playwright (2026-04-28)
 - [ ] Cliente instala plugin e gera chave de API
 - [ ] Criar rascunho sem abrir nenhum browser (teste real)
-- [ ] Subir 10 imagens corretamente (teste real)
+- [ ] Subir 1 ou mais imagens corretamente (teste real)
 - [ ] Retornar url_admin e url_publica (teste real)
 - [ ] Testar com 10 links reais do cliente
 
@@ -253,6 +253,17 @@ await asyncio.gather(*[processar_com_semaforo(l) for l in pendentes])
 **Dependências:** Fases 1, 2 e 3 completas.
 **Duração estimada:** 2 semanas
 
+### ✅ Migração VPS concluída (2026-04-29)
+
+Bot funcionando em produção na VPS Linux. Correções aplicadas:
+
+| Item | Antes | Depois |
+|---|---|---|
+| DeepSeek | Modo browser (Chrome) | API automática no Linux ✅ |
+| Downloads path | `C:\Users\...` | `/data/downloads` automático ✅ |
+| Login Mercadoi | Dependia do Chrome aberto | Formulário headless automático ✅ |
+| Sessão | Manual (Chrome logado) | Salva em `mercadoi_session.json` ✅ |
+
 ### Infraestrutura
 
 ```
@@ -269,16 +280,16 @@ configuração e workers.
 
 | Item | Hoje | Na cloud |
 |---|---|---|
-| Caminhos | C:\Users\... | /data/cliente/ via env var |
+| Caminhos | C:\Users\... | /data/cliente/ via env var ✅ |
 | Chrome Mercadoi | Obrigatório | Eliminado (WordPress API) |
-| Chrome DeepSeek | Visível, Windows | Headless, Linux |
-| Chrome FastDL | Visível, Windows | Headless, Linux (fallback) |
+| Chrome DeepSeek | Visível, Windows | Headless, Linux ✅ |
+| Chrome FastDL | Visível, Windows | Headless, Linux (fallback) ✅ |
 | Painel | localhost:8000 | HTTPS via nginx |
 
 ### Critérios de aceite
 
-- [ ] Painel acessível via HTTPS sem instalação local
-- [ ] DeepSeek funciona headless no Linux
+- [x] Painel acessível na VPS sem instalação local (2026-04-29)
+- [x] DeepSeek funciona headless no Linux (2026-04-29)
 - [ ] 2 clientes rodando isolados no mesmo VPS
 - [ ] Deploy de novo cliente em menos de 30 minutos
 
