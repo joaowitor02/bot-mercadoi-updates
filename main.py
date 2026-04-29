@@ -449,6 +449,21 @@ async def executar_ciclo(config: dict):
     """Lê pendentes e processa. Retorna o número de itens processados."""
     base_dir  = os.path.dirname(os.path.abspath(__file__))
     data_dir  = os.environ.get("BOT_DATA_DIR", base_dir)
+
+    # Correções automáticas para VPS (Linux) — sem alterar o config.json em disco
+    if sys.platform != "win32":
+        config = dict(config)
+        # Força modo DeepSeek API se a chave estiver configurada mas browser mode estiver ativo
+        if not config.get("usar_deepseek_api") and config.get("deepseek_api_key", "").strip():
+            config["usar_deepseek_api"] = True
+            logger.info("VPS: DeepSeek API ativado automaticamente (Chrome nao disponivel no Linux)")
+        # Corrige downloads_path com caminho Windows (C:\...) ou vazio
+        dp = config.get("downloads_path", "")
+        if not dp or not dp.startswith("/"):
+            config["downloads_path"] = os.path.join(data_dir, "downloads")
+            os.makedirs(config["downloads_path"], exist_ok=True)
+            logger.info(f"VPS: downloads_path corrigido para {config['downloads_path']}")
+
     db_path   = config.get("db_path", os.path.join(data_dir, "botmercadoi.db"))
     db = DatabaseManager(db_path)
 

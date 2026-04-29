@@ -202,6 +202,32 @@
       </div>
     </div>
 
+    <!-- Card: Sessão Mercadoi (VPS) -->
+    <div id="card-sessao-vps" class="hidden bg-amber-50 border border-amber-200 rounded-2xl p-5">
+      <div class="flex items-start gap-4">
+        <div class="w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center shrink-0">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+          </svg>
+        </div>
+        <div class="flex-1">
+          <h3 class="text-sm font-semibold text-amber-900">Sessão do Mercadoi (VPS)</h3>
+          <p id="sessao-vps-status-txt" class="text-xs text-amber-700 mt-1">Verificando sessão salva...</p>
+          <div class="flex gap-2 mt-3">
+            <button id="btn-exportar-sessao" onclick="exportarSessaoMercadoi()" class="hidden h-9 px-4 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-xl transition-colors">
+              Exportar sessão (Windows)
+            </button>
+            <a id="btn-download-sessao" href="/api/download-sessao-mercadoi" class="hidden h-9 px-4 bg-slate-600 hover:bg-slate-700 text-white text-xs font-semibold rounded-xl transition-colors flex items-center">
+              Baixar arquivo
+            </a>
+            <button id="btn-importar-sessao" onclick="abrirModalImportarSessao()" class="hidden h-9 px-4 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-xl transition-colors">
+              Importar sessão (VPS)
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
 
       <div class="stat-card bg-white rounded-2xl border border-slate-100 p-5 flex flex-col gap-3">
@@ -1272,7 +1298,7 @@ async function atualizarChromeStatus() {
     if (d.ok) {
       pill.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 cursor-default';
       dot.className  = 'w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0';
-      txt.textContent = 'Chrome OK';
+      txt.textContent = d.managed ? 'VPS OK' : 'Chrome OK';
       pill.title = d.browser || 'Chrome conectado';
       pill.onclick = null;
     } else {
@@ -2618,6 +2644,46 @@ document.addEventListener('keydown', e => {
   </div>
 </div>
 
+<!-- Modal: Importar Sessão Mercadoi (VPS) -->
+<div id="modal-importar-sessao" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+      <div class="flex items-center gap-2">
+        <div class="w-8 h-8 rounded-lg bg-amber-500 flex items-center justify-center">
+          <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+          </svg>
+        </div>
+        <h2 class="text-sm font-semibold text-slate-800">Importar Sessão do Mercadoi</h2>
+      </div>
+      <button onclick="fecharModalImportarSessao()" class="text-slate-400 hover:text-slate-600">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+    <div class="px-6 py-5 space-y-3">
+      <p class="text-xs text-slate-500">
+        Cole aqui o conteúdo do arquivo <code class="bg-slate-100 px-1 rounded">mercadoi_session.json</code> gerado pelo painel Windows.
+        Isso permite que a VPS use a sessão já autenticada do Mercadoi sem precisar de login manual.
+      </p>
+      <textarea id="modal-sessao-json" rows="8"
+        placeholder='[{"name":"wordpress_logged_in_...","value":"...","domain":"mercadoi.com.br",...}]'
+        class="w-full px-3 py-2 text-xs font-mono border border-slate-200 rounded-xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"></textarea>
+      <div id="modal-sessao-erro" class="hidden text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2"></div>
+    </div>
+    <div class="px-6 py-4 border-t border-slate-100 flex gap-3 justify-end">
+      <button onclick="fecharModalImportarSessao()" class="h-9 px-4 text-sm text-slate-600 hover:text-slate-800 font-medium transition-colors">
+        Cancelar
+      </button>
+      <button onclick="importarSessaoMercadoi()" id="btn-salvar-sessao"
+        class="h-9 px-5 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-xl transition-colors">
+        Importar
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal: Conectar WordPress -->
 <div id="modal-wp" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
   <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md">
@@ -2671,6 +2737,136 @@ document.addEventListener('keydown', e => {
     </div>
   </div>
 </div>
+
+
+<script>
+// ---- Sessão Mercadoi (VPS) ----
+let _isVPS = false;
+
+async function verificarSessaoMercadoi() {
+  try {
+    const [rChrome, rSessao] = await Promise.all([
+      fetch('/api/chrome-status'),
+      fetch('/api/sessao-mercadoi-status'),
+    ]);
+    const dChrome = await rChrome.json();
+    const dSessao = await rSessao.json();
+
+    _isVPS = dChrome.managed === true;  // managed=true significa VPS
+
+    const card = document.getElementById('card-sessao-vps');
+    const txt  = document.getElementById('sessao-vps-status-txt');
+    const btnExportar = document.getElementById('btn-exportar-sessao');
+    const btnDownload = document.getElementById('btn-download-sessao');
+    const btnImportar = document.getElementById('btn-importar-sessao');
+
+    // Mostra card sempre (útil para ambos os ambientes)
+    card.classList.remove('hidden');
+
+    if (dSessao.existe) {
+      txt.textContent = `Sessão salva: ${dSessao.cookies} cookie(s) — o bot pode autenticar automaticamente.`;
+    } else {
+      txt.textContent = 'Sem sessão salva. Configure credenciais no WordPress ou importe a sessão do Windows.';
+    }
+
+    if (_isVPS) {
+      btnImportar.classList.remove('hidden');
+      btnExportar.classList.add('hidden');
+      btnDownload.classList.add('hidden');
+    } else {
+      // Windows: permite exportar e baixar
+      btnExportar.classList.remove('hidden');
+      if (dSessao.existe) btnDownload.classList.remove('hidden');
+      btnImportar.classList.add('hidden');
+    }
+  } catch {}
+}
+
+async function exportarSessaoMercadoi() {
+  const btn = document.getElementById('btn-exportar-sessao');
+  const orig = btn.textContent;
+  btn.textContent = 'Exportando...';
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/exportar-sessao-mercadoi', { method: 'POST' });
+    const d = await r.json();
+    if (d.ok) {
+      toast(d.msg, 'ok');
+      document.getElementById('btn-download-sessao').classList.remove('hidden');
+      document.getElementById('sessao-vps-status-txt').textContent = d.msg;
+    } else {
+      toast(d.msg || 'Erro ao exportar sessão', 'erro');
+    }
+  } catch (e) {
+    toast('Erro ao conectar: ' + e, 'erro');
+  } finally {
+    btn.textContent = orig;
+    btn.disabled = false;
+  }
+}
+
+function abrirModalImportarSessao() {
+  document.getElementById('modal-importar-sessao').classList.remove('hidden');
+  document.getElementById('modal-sessao-erro').classList.add('hidden');
+  document.getElementById('modal-sessao-json').focus();
+}
+
+function fecharModalImportarSessao() {
+  document.getElementById('modal-importar-sessao').classList.add('hidden');
+}
+
+async function importarSessaoMercadoi() {
+  const btn  = document.getElementById('btn-salvar-sessao');
+  const erro = document.getElementById('modal-sessao-erro');
+  const txt  = document.getElementById('modal-sessao-json').value.trim();
+  erro.classList.add('hidden');
+
+  let cookies;
+  try {
+    cookies = JSON.parse(txt);
+    if (!Array.isArray(cookies)) throw new Error('Deve ser uma lista JSON (array).');
+  } catch (e) {
+    erro.textContent = 'JSON inválido: ' + e.message;
+    erro.classList.remove('hidden');
+    return;
+  }
+
+  btn.textContent = 'Importando...';
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/importar-sessao-mercadoi', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cookies }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      fecharModalImportarSessao();
+      toast(d.msg, 'ok');
+      await verificarSessaoMercadoi();
+    } else {
+      erro.textContent = d.msg || 'Erro ao importar.';
+      erro.classList.remove('hidden');
+    }
+  } catch (e) {
+    erro.textContent = 'Erro: ' + e;
+    erro.classList.remove('hidden');
+  } finally {
+    btn.textContent = 'Importar';
+    btn.disabled = false;
+  }
+}
+
+// Fecha modal de importação ao clicar fora
+document.getElementById('modal-importar-sessao')?.addEventListener('click', function(e) {
+  if (e.target === this) fecharModalImportarSessao();
+});
+
+// Verifica sessão na inicialização
+window.addEventListener('DOMContentLoaded', () => {
+  setTimeout(verificarSessaoMercadoi, 1500);
+});
+</script>
 
 </body>
 </html>

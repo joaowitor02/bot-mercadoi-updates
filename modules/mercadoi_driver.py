@@ -97,14 +97,26 @@ class MercadoiDriver:
     def __init__(self, base_url, profile_path=r"C:\chrome_bot_mercadoi", execution_id: str = "",
                  wp_user: str = "", wp_pass: str = ""):
         self.base_url = base_url
-        self.profile_path = profile_path
+        self.profile_path = self._normalizar_profile_path(profile_path)
         self.execution_id = execution_id
         self._wp_user = wp_user
         self._wp_pass = wp_pass
+        data_dir = os.environ.get("BOT_DATA_DIR") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self._cookies_file = os.path.join(data_dir, "mercadoi_session.json")
         self._playwright = None
         self._browser = None
         self._context = None
         self._page = None
+
+    @staticmethod
+    def _normalizar_profile_path(profile_path: str) -> str:
+        if sys.platform == "win32":
+            return profile_path
+
+        data_dir = os.environ.get("BOT_DATA_DIR", "/data")
+        if not profile_path or re.match(r"^[a-zA-Z]:\\", profile_path):
+            return os.path.join(data_dir, "mercadoi_profile")
+        return profile_path
 
     async def __aenter__(self):
         self._playwright = await async_playwright().start()
@@ -120,17 +132,30 @@ class MercadoiDriver:
             logger.info("Conectado ao Chrome do Mercadoi ja aberto na porta 9222")
         else:
             # Linux/VPS: lança Chromium headless
-            self._browser = await self._playwright.chromium.launch(
+            os.makedirs(self.profile_path, exist_ok=True)
+            self._context = await self._playwright.chromium.launch_persistent_context(
+                user_data_dir=self.profile_path,
                 headless=True,
-                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu",
-                      "--disable-setuid-sandbox", "--single-process"],
-            )
-            self._context = await self._browser.new_context(
                 viewport={"width": 1280, "height": 900},
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                locale="pt-BR",
+                timezone_id="America/Sao_Paulo",
+                args=[
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--disable-setuid-sandbox",
+                    "--disable-blink-features=AutomationControlled",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                ],
             )
-            self._page = await self._context.new_page()
-            logger.info("Browser headless iniciado para Mercadoi (VPS)")
+            await self._context.add_init_script(
+                "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+            )
+            pages = self._context.pages
+            self._page = pages[0] if pages else await self._context.new_page()
+            logger.info(f"Browser headless persistente iniciado para Mercadoi (perfil: {self.profile_path})")
         return self
 
     async def __aexit__(self, *args):
@@ -146,52 +171,136 @@ class MercadoiDriver:
         if self._playwright:
             await self._playwright.stop()
 
+    _SKIP_COOKIES = {"wordpress_test_cookie"}
+
     async def _garantir_login(self, page):
         await page.goto(f"{self.base_url}/create-a-listing/", timeout=30000)
         await page.wait_for_load_state("domcontentloaded", timeout=15000)
-        logado = await page.query_selector('a[href*="logout"], a[href*="dashboard"], .user-menu, #user-menu')
-        if logado:
+        if await page.query_selector('a[href*="logout"], a[href*="dashboard"], .user-menu, #user-menu, #prop_title'):
             return
 
-        if sys.platform != "win32" and self._wp_user and self._wp_pass:
-            logger.info("Fazendo login automatico via AJAX no Mercadoi...")
-            try:
-                resultado = await page.evaluate("""
-                    async ([user, pass_]) => {
-                        const sec = document.querySelector('#houzez_login_security');
-                        const ajaxUrl = window.ajaxurl || window.ajax_url || '/wp-admin/admin-ajax.php';
-                        const fd = new FormData();
-                        fd.append('action', 'houzez_ajax_login');
-                        fd.append('username', user);
-                        fd.append('password', pass_);
-                        fd.append('security', sec ? sec.value : '');
-                        const r = await fetch(ajaxUrl, {method:'POST', body:fd, credentials:'include'});
-                        const t = await r.text();
-                        return t;
-                    }
-                """, [self._wp_user, self._wp_pass])
-                logger.info(f"Resposta login AJAX: {str(resultado)[:100]}")
-                await page.reload()
-                await page.wait_for_load_state("domcontentloaded", timeout=15000)
-                logado = await page.query_selector('a[href*="logout"], a[href*="dashboard"], .user-menu, #user-menu, #prop_title')
-                if logado:
-                    logger.info("Login automatico realizado com sucesso")
-                    return
-                logger.warning("Login AJAX nao confirmou sessao")
-            except Exception as e:
-                logger.warning(f"Login automatico falhou: {e}")
-            raise Exception("Login automatico no Mercadoi falhou")
+        if sys.platform != "win32":
+            # Tenta cookies salvos independente de ter credenciais
+            if await self._carregar_sessao(page):
+                return
+            # Login automático se credenciais estiverem configuradas
+            if self._wp_user and self._wp_pass:
+                try:
+                    await self._fazer_login_httpx(page)
+                except Exception as e:
+                    logger.warning(f"Login via httpx falhou, tentando formulario do wp-login.php: {e}")
+                    await self._fazer_login_formulario(page)
+                return
+            raise Exception(
+                "Mercadoi nao autenticado no VPS. Opcoes: "
+                "(1) configure wordpress_xmlrpc_user/password para login automatico, ou "
+                "(2) exporte a sessao do Chrome Windows pelo painel e transfira mercadoi_session.json para /data/."
+            )
 
-        # Windows: aguarda login manual
-        logger.info("Nao logado. Abrindo pagina de login — aguardando ate 120s para login manual...")
+        logger.info("Aguardando login manual ate 120s...")
         await page.goto(f"{self.base_url}/login/", timeout=30000)
         for _ in range(60):
             await page.wait_for_timeout(2000)
-            logado = await page.query_selector('a[href*="logout"], a[href*="dashboard"], .user-menu, #user-menu')
-            if logado:
+            if await page.query_selector('a[href*="logout"], a[href*="dashboard"], .user-menu, #user-menu'):
                 logger.info("Login detectado, continuando...")
                 return
         raise Exception("Timeout aguardando login no Mercadoi")
+
+    async def _carregar_sessao(self, page) -> bool:
+        if not os.path.exists(self._cookies_file):
+            return False
+        try:
+            with open(self._cookies_file, encoding="utf-8") as f:
+                cookies = json.load(f)
+            filtrados = [c for c in cookies if c.get("name") not in self._SKIP_COOKIES]
+            await self._context.clear_cookies()
+            if filtrados:
+                await self._context.add_cookies(filtrados)
+            await page.goto(f"{self.base_url}/create-a-listing/", timeout=30000)
+            await page.wait_for_load_state("domcontentloaded", timeout=15000)
+            if await page.query_selector('a[href*="logout"], a[href*="dashboard"], .user-menu, #user-menu, #prop_title'):
+                logger.info("Sessao restaurada do arquivo de cookies")
+                return True
+            logger.info("Cookies expirados, fazendo novo login")
+        except Exception as e:
+            logger.warning(f"Erro ao carregar sessao: {e}")
+        return False
+
+    async def _fazer_login_httpx(self, page):
+        import httpx
+        from urllib.parse import urlparse
+        domain = urlparse(self.base_url).netloc
+        logger.info("Fazendo login via httpx...")
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
+            await client.get(f"{self.base_url}/wp-login.php")
+            await client.post(
+                f"{self.base_url}/wp-login.php",
+                data={
+                    "log": self._wp_user,
+                    "pwd": self._wp_pass,
+                    "wp-submit": "Log In",
+                    "redirect_to": f"{self.base_url}/create-a-listing/",
+                    "testcookie": "1",
+                },
+                headers={"Cookie": "wordpress_test_cookie=WP Cookie check"},
+            )
+        seen: set = set()
+        playwright_cookies = []
+        for k, v in client.cookies.items():
+            if k in self._SKIP_COOKIES or k in seen:
+                continue
+            seen.add(k)
+            playwright_cookies.append({"name": k, "value": v, "domain": domain, "path": "/"})
+        auth = [c for c in playwright_cookies if "wordpress_logged_in" in c["name"]]
+        if not auth:
+            raise Exception(f"Login httpx falhou — sem cookie auth. Obtidos: {list(seen)}")
+        logger.info(f"Cookie auth obtido: {[c['name'] for c in auth]}")
+        await self._context.clear_cookies()
+        await self._context.add_cookies(playwright_cookies)
+        await page.goto(f"{self.base_url}/create-a-listing/", timeout=30000)
+        await page.wait_for_load_state("domcontentloaded", timeout=15000)
+        if not await page.query_selector('a[href*="logout"], a[href*="dashboard"], .user-menu, #user-menu, #prop_title'):
+            raise Exception("Login httpx: sessao nao confirmada apos injecao de cookies")
+        try:
+            save = [c for c in await self._context.cookies() if c["name"] not in self._SKIP_COOKIES]
+            os.makedirs(os.path.dirname(self._cookies_file), exist_ok=True)
+            with open(self._cookies_file, "w", encoding="utf-8") as f:
+                json.dump(save, f)
+            logger.info(f"Sessao salva ({len(save)} cookies) em {self._cookies_file}")
+        except Exception as e:
+            logger.warning(f"Erro ao salvar sessao: {e}")
+        logger.info("Login realizado com sucesso")
+
+    async def _fazer_login_formulario(self, page):
+        logger.info("Fazendo login pelo formulario wp-login.php...")
+        await page.goto(f"{self.base_url}/wp-login.php", timeout=30000)
+        await page.wait_for_load_state("domcontentloaded", timeout=15000)
+        await page.fill("#user_login", self._wp_user)
+        await page.fill("#user_pass", self._wp_pass)
+        try:
+            await page.check("#rememberme", timeout=2000)
+        except Exception:
+            pass
+        await page.click("#wp-submit")
+        try:
+            await page.wait_for_load_state("networkidle", timeout=20000)
+        except Exception:
+            await page.wait_for_load_state("domcontentloaded", timeout=15000)
+
+        await page.goto(f"{self.base_url}/create-a-listing/", timeout=30000)
+        await page.wait_for_load_state("domcontentloaded", timeout=15000)
+        if not await page.query_selector('a[href*="logout"], a[href*="dashboard"], .user-menu, #user-menu, #prop_title'):
+            raise Exception("Login via formulario: sessao nao confirmada")
+
+        try:
+            save = [c for c in await self._context.cookies() if c["name"] not in self._SKIP_COOKIES]
+            os.makedirs(os.path.dirname(self._cookies_file), exist_ok=True)
+            with open(self._cookies_file, "w", encoding="utf-8") as f:
+                json.dump(save, f)
+            logger.info(f"Sessao salva ({len(save)} cookies) em {self._cookies_file}")
+        except Exception as e:
+            logger.warning(f"Erro ao salvar sessao: {e}")
+        logger.info("Login via formulario realizado com sucesso")
 
     async def preencher_e_salvar(self, dados, tipo_midia, arquivo_midia):
         page = self._page

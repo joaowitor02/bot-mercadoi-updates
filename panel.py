@@ -747,6 +747,13 @@ async def parar_bot():
 
 @app.get("/api/chrome-status")
 async def chrome_status():
+    if sys.platform != "win32":
+        return JSONResponse({
+            "ok": True,
+            "browser": "VPS: Chromium headless gerenciado pelo bot",
+            "managed": True,
+        })
+
     import httpx as _httpx
     try:
         async with _httpx.AsyncClient(timeout=2) as client:
@@ -772,6 +779,12 @@ _CHROME_PATHS = [
 async def abrir_chrome():
     import subprocess
     config = _load_config()
+    if sys.platform != "win32":
+        return JSONResponse({
+            "ok": True,
+            "msg": "No VPS o Chromium headless e aberto automaticamente durante o cadastro.",
+        })
+
     chrome_exe = config.get("chrome_path", "")
     if not chrome_exe or not os.path.exists(chrome_exe):
         chrome_exe = next((p for p in _CHROME_PATHS if os.path.exists(p)), "")
@@ -1317,6 +1330,87 @@ async def testar_telegram():
         return JSONResponse({"ok": False, "msg": "Falha ao enviar. Verifique o token e chat_id."}, status_code=400)
     except Exception as e:
         return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
+
+
+@app.post("/api/exportar-sessao-mercadoi")
+async def exportar_sessao_mercadoi():
+    """Conecta ao Chrome Windows (porta 9222) e salva os cookies do Mercadoi."""
+    if sys.platform != "win32":
+        return JSONResponse({"ok": False, "msg": "Export só disponível no Windows (Chrome local)."}, status_code=400)
+    try:
+        from playwright.async_api import async_playwright
+        cfg = _load_config()
+        site = cfg.get("mercadoi_url", "https://mercadoi.com.br").rstrip("/")
+        from urllib.parse import urlparse
+        domain = urlparse(site).netloc
+
+        async with async_playwright() as p:
+            try:
+                browser = await p.chromium.connect_over_cdp("http://localhost:9222")
+            except Exception:
+                return JSONResponse({"ok": False, "msg": "Chrome não encontrado na porta 9222. Abra o Chrome do Mercadoi antes."}, status_code=400)
+            if not browser.contexts:
+                return JSONResponse({"ok": False, "msg": "Chrome conectado mas sem contexto/aba aberta."}, status_code=500)
+            context = browser.contexts[0]
+            todos = await context.cookies()
+
+        filtrados = [c for c in todos if domain in c.get("domain", "")]
+        if not filtrados:
+            filtrados = todos  # salva tudo se nenhum for do domínio
+        _SKIP = {"wordpress_test_cookie"}
+        filtrados = [c for c in filtrados if c.get("name") not in _SKIP]
+
+        cookies_file = _DATA_DIR / "mercadoi_session.json"
+        cookies_file.write_text(
+            json.dumps(filtrados, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+        return JSONResponse({
+            "ok": True,
+            "msg": f"Sessão exportada: {len(filtrados)} cookies salvos.",
+            "arquivo": str(cookies_file),
+            "cookies": filtrados,
+        })
+    except Exception as e:
+        return JSONResponse({"ok": False, "msg": f"Erro: {e}"}, status_code=500)
+
+
+@app.get("/api/download-sessao-mercadoi")
+async def download_sessao_mercadoi():
+    """Baixa o arquivo mercadoi_session.json para transferir à VPS."""
+    f = _DATA_DIR / "mercadoi_session.json"
+    if not f.exists():
+        raise HTTPException(404, "Arquivo não encontrado. Execute o export primeiro.")
+    return FileResponse(str(f), filename="mercadoi_session.json", media_type="application/json")
+
+
+class ImportarSessaoRequest(BaseModel):
+    cookies: list
+
+
+@app.post("/api/importar-sessao-mercadoi")
+async def importar_sessao_mercadoi(body: ImportarSessaoRequest):
+    """Recebe cookies JSON e salva como mercadoi_session.json (uso no VPS)."""
+    try:
+        if not body.cookies:
+            return JSONResponse({"ok": False, "msg": "Lista de cookies vazia."}, status_code=400)
+        f = _DATA_DIR / "mercadoi_session.json"
+        f.write_text(json.dumps(body.cookies, indent=2, ensure_ascii=False), encoding="utf-8")
+        return JSONResponse({"ok": True, "msg": f"{len(body.cookies)} cookies importados com sucesso."})
+    except Exception as e:
+        return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
+
+
+@app.get("/api/sessao-mercadoi-status")
+async def sessao_mercadoi_status():
+    """Verifica se existe sessão salva e quantos cookies tem."""
+    f = _DATA_DIR / "mercadoi_session.json"
+    if not f.exists():
+        return JSONResponse({"existe": False, "cookies": 0})
+    try:
+        data = json.loads(f.read_text(encoding="utf-8"))
+        return JSONResponse({"existe": True, "cookies": len(data)})
+    except Exception:
+        return JSONResponse({"existe": False, "cookies": 0})
 
 
 class RemoverRequest(BaseModel):
