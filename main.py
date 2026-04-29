@@ -28,7 +28,7 @@ from modules.ocr_preco import extrair_preco_de_imagens
 logger = Logger("main")
 
 MAX_TENTATIVAS_MERCADOI = 3
-ESPERA_ENTRE_TENTATIVAS = 10  # segundos
+ESPERA_ENTRE_TENTATIVAS = 5  # segundos
 
 
 def _usar_wordpress_api(config: dict) -> bool:

@@ -67,8 +67,8 @@ class MediaResolver:
             if arquivos:
                 return resultado
             if tentativa < 2:
-                logger.warning(f"FastDL vazio na tentativa {tentativa}/2 — aguardando 5s...")
-                await asyncio.sleep(5)
+                logger.warning(f"FastDL vazio na tentativa {tentativa}/2 — aguardando 2s...")
+                await asyncio.sleep(2)
 
         logger.error("Todas as tentativas de download falharam")
         return "imagem", []
@@ -297,7 +297,7 @@ class MediaResolver:
                 }
                 """
             )
-            await page.wait_for_timeout(900)
+            await page.wait_for_timeout(500)
             iteracao += 1
 
             botoes = await self._coletar_botoes_imagem(page)

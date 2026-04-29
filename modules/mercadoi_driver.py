@@ -283,9 +283,9 @@ class MercadoiDriver:
             pass
         await page.click("#wp-submit")
         try:
-            await page.wait_for_load_state("networkidle", timeout=20000)
+            await page.wait_for_load_state("domcontentloaded", timeout=8000)
         except Exception:
-            await page.wait_for_load_state("domcontentloaded", timeout=15000)
+            pass
 
         await page.goto(f"{self.base_url}/create-a-listing/", timeout=30000)
         await page.wait_for_load_state("domcontentloaded", timeout=15000)
@@ -315,10 +315,13 @@ class MercadoiDriver:
         }
 
         try:
-            await page.goto(f"{self.base_url}/create-a-listing/", timeout=30000)
-            await page.wait_for_load_state("domcontentloaded", timeout=20000)
+            # Navega apenas se não estiver já na página de cadastro
+            listing_url = f"{self.base_url}/create-a-listing/"
+            if listing_url.rstrip("/") not in page.url:
+                await page.goto(listing_url, timeout=30000)
+                await page.wait_for_load_state("domcontentloaded", timeout=20000)
             try:
-                await page.wait_for_selector('#prop_title', timeout=15000)
+                await page.wait_for_selector('#prop_title', timeout=10000)
             except Exception:
                 logger.warning("Campo #prop_title demorou para aparecer, continuando mesmo assim")
 
@@ -852,7 +855,7 @@ class MercadoiDriver:
         await self._aguardar_opcoes_bairro(page)
         return "Joao Pessoa"
 
-    async def _aguardar_opcoes_bairro(self, page, timeout_s: int = 6):
+    async def _aguardar_opcoes_bairro(self, page, timeout_s: int = 3):
         """Aguarda o select #neighborhood ser populado via AJAX após seleção da cidade."""
         try:
             await page.wait_for_function(
@@ -976,9 +979,9 @@ class MercadoiDriver:
                 logger.warning(f"Erro de upload detectado na página: {erro_plupload}")
 
             ids = []
-            limite = max(esperados * 8, 20)  # mais iterações, mas cada uma mais curta
+            limite = max(esperados * 6, 16)
             for i in range(limite):
-                await page.wait_for_timeout(800)
+                await page.wait_for_timeout(300 if i < 6 else 500)
 
                 # Verifica campos ocultos (Mercadoi usa "propperty" com pp duplo, mas também testa variante)
                 ids = await page.evaluate("""
@@ -1054,7 +1057,7 @@ class MercadoiDriver:
     async def _salvar_rascunho(self, page):
         try:
             try:
-                await page.wait_for_selector('#save_as_draft', timeout=10000)
+                await page.wait_for_selector('#save_as_draft', timeout=5000)
             except Exception:
                 logger.warning("Timeout aguardando #save_as_draft, tentando mesmo assim")
 
@@ -1112,7 +1115,7 @@ class MercadoiDriver:
         """Publica o imóvel diretamente (sem rascunho) via AJAX submit_property."""
         try:
             try:
-                await page.wait_for_selector('#save_as_draft', timeout=10000)
+                await page.wait_for_selector('#save_as_draft', timeout=5000)
             except Exception:
                 logger.warning("Timeout aguardando form, tentando publicar mesmo assim")
 
