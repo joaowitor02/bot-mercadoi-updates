@@ -585,6 +585,7 @@ async def _rodar_bot(watch: bool = False, intervalo: int = 5):
             args += ["--watch", str(intervalo)]
         env = os.environ.copy()
         env["NODE_NO_WARNINGS"] = "1"
+        env["PYTHONUNBUFFERED"] = "1"
         proc = subprocess.Popen(
             args,
             cwd=str(BASE_DIR),
