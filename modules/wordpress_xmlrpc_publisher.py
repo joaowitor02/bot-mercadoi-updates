@@ -229,21 +229,34 @@ class WordPressXmlRpcPublisher:
                     logger.warning(f"[{self.execution_id}] Admin HTTP: login falhou")
                     return None
 
-                # 2. Captura nonce da página de upload
-                page = await client.get(nonce_url)
-                nonce = None
-                for pat in [
+                # 2. Captura nonce — tenta várias páginas até encontrar
+                nonce_pages = [
+                    f"{self._site_url}/wp-admin/media-new.php",
+                    f"{self._site_url}/wp-admin/",
+                    f"{self._site_url}/wp-admin/profile.php",
+                    f"{self._site_url}/wp-admin/post.php?post={post_id}&action=edit",
+                ]
+                nonce_patterns = [
                     r'"_wpnonce"\s*:\s*"([a-f0-9]+)"',
                     r'name="_wpnonce"\s+value="([a-f0-9]+)"',
-                    r'"nonce"\s*:\s*"([a-f0-9]+)"',
-                ]:
-                    m = _re.search(pat, page.text)
-                    if m:
-                        nonce = m.group(1)
+                    r'"nonce"\s*:\s*"([a-f0-9]{8,})"',
+                    r'wpApiSettings[^}]*"nonce"\s*:\s*"([a-f0-9]+)"',
+                    r'"wp_rest_nonce"\s*:\s*"([a-f0-9]+)"',
+                ]
+                nonce = None
+                for nurl in nonce_pages:
+                    page = await client.get(nurl)
+                    for pat in nonce_patterns:
+                        m = _re.search(pat, page.text)
+                        if m:
+                            nonce = m.group(1)
+                            logger.info(f"[{self.execution_id}] Admin HTTP: nonce obtido de {nurl.split('/')[-1]}")
+                            break
+                    if nonce:
                         break
 
                 if not nonce:
-                    logger.warning(f"[{self.execution_id}] Admin HTTP: nonce não encontrado")
+                    logger.warning(f"[{self.execution_id}] Admin HTTP: nonce não encontrado em nenhuma página")
                     return None
 
                 # 3. Upload
