@@ -4,6 +4,7 @@ O Chrome precisa estar logado no Instagram para acessar posts sem bloqueio.
 """
 
 import re
+import sys
 from playwright.async_api import async_playwright
 from modules.logger import Logger
 
@@ -23,6 +24,9 @@ async def extrair_via_chrome(url: str) -> dict:
     """
     if not _INSTAGRAM_URL_RE.search(url):
         return _falha(url, "url_invalida")
+
+    if sys.platform != "win32":
+        return _falha(url, "erro_rede")
 
     try:
         async with async_playwright() as p:
