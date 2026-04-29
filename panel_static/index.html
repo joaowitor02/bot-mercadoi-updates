@@ -71,10 +71,6 @@
         <span class="text-slate-300">•</span>
         <span id="status-hoje" class="text-slate-400"></span>
       </div>
-      <div id="chrome-pill" class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-400 cursor-default" title="Status do Chrome do Mercadoi">
-        <span id="chrome-dot" class="w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0"></span>
-        <span id="chrome-txt">Chrome</span>
-      </div>
       <div id="version-pill" class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-500 cursor-default" title="Versão do bot">
         <span id="version-txt">v—</span>
       </div>
@@ -182,25 +178,6 @@
 
   <!-- ===================== SEÇÃO: DASHBOARD ===================== -->
   <div id="section-dashboard" class="space-y-5">
-
-    <!-- Card de onboarding: conectar WordPress (visível quando não configurado) -->
-    <div id="card-conectar-wp" class="hidden bg-blue-50 border border-blue-200 rounded-2xl p-5">
-      <div class="flex items-start gap-4">
-        <div class="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center shrink-0">
-          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9"/>
-          </svg>
-        </div>
-        <div class="flex-1">
-          <h3 class="text-sm font-semibold text-blue-900">Conecte seu site WordPress</h3>
-          <p class="text-xs text-blue-700 mt-1">Para o bot publicar os imóveis automaticamente, informe os dados do seu site. Não é necessário instalar nada.</p>
-          <button onclick="abrirModalWP()"
-            class="mt-3 h-9 px-4 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl transition-colors">
-            Conectar agora
-          </button>
-        </div>
-      </div>
-    </div>
 
     <!-- Card: Sessão Mercadoi (VPS) -->
     <div id="card-sessao-vps" class="hidden bg-amber-50 border border-amber-200 rounded-2xl p-5">
@@ -621,29 +598,6 @@
         <p class="text-xs text-slate-400">Intervalo entre ciclos automáticos do Watch.</p>
       </div>
 
-      <!-- Acesso Remoto -->
-      <div class="space-y-2 bg-slate-50 rounded-xl p-4 border border-slate-100">
-        <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide">Acesso Remoto</label>
-        <div class="flex items-center gap-2 flex-wrap">
-          <span id="tunnel-badge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 text-slate-500">
-            <span class="w-1.5 h-1.5 rounded-full bg-slate-300"></span> Verificando...
-          </span>
-        </div>
-        <div id="tunnel-url-box" class="hidden items-center gap-2">
-          <input id="tunnel-url-input" type="text" readonly
-            class="flex-1 border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-700 font-mono bg-white focus:outline-none cursor-pointer"
-            onclick="this.select()" />
-          <button onclick="copiarTunnel()" class="h-7 px-2.5 border border-slate-200 hover:border-slate-300 text-slate-500 hover:text-slate-700 text-xs rounded-lg transition-colors" title="Copiar URL">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
-          </button>
-        </div>
-        <button id="btn-tunnel-baixar" onclick="baixarCloudflared()"
-          class="hidden h-8 px-3 bg-slate-700 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg transition-colors">
-          Baixar cloudflared e ativar
-        </button>
-        <p class="text-xs text-slate-400">Tunnel seguro para suporte remoto. URL enviada ao Telegram quando ativa.</p>
-      </div>
-
       <!-- Versão & Atualização -->
       <div class="space-y-3 sm:col-span-2 lg:col-span-3">
         <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide">Versão & Atualização</label>
@@ -776,10 +730,6 @@
           </div>
 
           <div class="space-y-2 flex flex-col justify-end">
-            <label class="flex items-center gap-2 cursor-pointer select-none">
-              <input type="checkbox" id="adv-usar-tunnel" class="w-4 h-4 rounded accent-brand-500" />
-              <span class="text-sm text-slate-600">Ativar tunnel automático</span>
-            </label>
             <label class="flex items-center gap-2 cursor-pointer select-none">
               <input type="checkbox" id="adv-usar-deepseek" class="w-4 h-4 rounded accent-brand-500" />
               <span class="text-sm text-slate-600">Usar API DeepSeek</span>
@@ -1286,52 +1236,6 @@ async function carregarPendentes() {
   } catch {}
 }
 
-async function atualizarChromeStatus() {
-  try {
-    const r = await fetch('/api/chrome-status');
-    const d = await r.json();
-    const pill = document.getElementById('chrome-pill');
-    const dot  = document.getElementById('chrome-dot');
-    const txt  = document.getElementById('chrome-txt');
-    pill.classList.remove('hidden');
-    pill.classList.add('flex');
-    if (d.ok) {
-      pill.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 cursor-default';
-      dot.className  = 'w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0';
-      txt.textContent = d.managed ? 'VPS OK' : 'Chrome OK';
-      pill.title = d.browser || 'Chrome conectado';
-      pill.onclick = null;
-    } else {
-      pill.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-red-50 text-red-500 cursor-pointer hover:bg-red-100 transition-colors';
-      dot.className  = 'w-1.5 h-1.5 rounded-full bg-red-400 shrink-0';
-      txt.textContent = 'Chrome offline — clique para abrir';
-      pill.title = 'Clique para abrir o Chrome automaticamente';
-      pill.onclick = abrirChrome;
-    }
-  } catch {}
-}
-
-async function abrirChrome() {
-  const pill = document.getElementById('chrome-pill');
-  const txt  = document.getElementById('chrome-txt');
-  txt.textContent = 'Abrindo Chrome...';
-  pill.onclick = null;
-  try {
-    const r = await fetch('/api/abrir-chrome', { method: 'POST' });
-    const d = await r.json();
-    if (d.ok) {
-      toast('Chrome iniciado — aguarde alguns segundos', 'ok');
-      setTimeout(atualizarChromeStatus, 4000);
-    } else {
-      toast(d.msg || d.detail || 'Erro ao abrir Chrome', 'erro');
-      atualizarChromeStatus();
-    }
-  } catch (e) {
-    toast('Erro ao conectar ao painel: ' + e.message, 'erro');
-    atualizarChromeStatus();
-  }
-}
-
 async function toggleWatch() {
   const btn = document.getElementById('btn-watch');
   btn.disabled = true;
@@ -1352,18 +1256,10 @@ async function toggleWatch() {
 
 async function atualizarStatus() {
   try {
-    const [r, rWP] = await Promise.all([
-      fetch('/api/status'),
-      fetch('/api/wordpress-status'),
-    ]);
-    const d   = await r.json();
-    const dWP = await rWP.json();
+    const r = await fetch('/api/status');
+    const d = await r.json();
     _botRodando = d.rodando;
     _watchAtivo = d.watch_ativo || false;
-
-    // Card de onboarding WordPress
-    const cardWP = document.getElementById('card-conectar-wp');
-    if (cardWP) cardWP.classList.toggle('hidden', dWP.conectado);
 
     const dot      = document.getElementById('dot');
     const txt      = document.getElementById('status-txt');
@@ -2016,7 +1912,6 @@ async function carregarConfig() {
     set('adv-version-url',        d.version_check_url);
     set('adv-update-zip-url',     d.update_zip_url);
     set('adv-whatsapp-default',   d.whatsapp_default);
-    setChk('adv-usar-tunnel',     d.usar_tunnel);
     setChk('adv-usar-deepseek',   d.usar_deepseek_api);
 
     // Link de distribuição: usa update_zip_url configurado ou placeholder
@@ -2327,7 +2222,6 @@ async function salvarAvancada() {
     version_check_url:     document.getElementById('adv-version-url').value,
     update_zip_url:        document.getElementById('adv-update-zip-url').value,
     whatsapp_default:      document.getElementById('adv-whatsapp-default').value,
-    usar_tunnel:           document.getElementById('adv-usar-tunnel').checked,
     usar_deepseek_api:     document.getElementById('adv-usar-deepseek').checked,
   };
   Object.keys(payload).forEach(k => {
@@ -2342,67 +2236,6 @@ async function salvarAvancada() {
     const d = await r.json();
     d.ok ? toast('Config avançada salva') : toast(d.msg || 'Erro ao salvar', 'erro');
   } catch { toast('Erro de conexão', 'erro'); }
-}
-
-async function verificarTunnel() {
-  try {
-    const r = await fetch('/api/tunnel');
-    if (r.status !== 200) return;
-    const d = await r.json();
-
-    const badge    = document.getElementById('tunnel-badge');
-    const urlBox   = document.getElementById('tunnel-url-box');
-    const urlInput = document.getElementById('tunnel-url-input');
-    const btnBaixar = document.getElementById('btn-tunnel-baixar');
-
-    if (d.ativo && d.url) {
-      badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-100 text-emerald-700';
-      badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Tunnel ativo';
-      urlInput.value = d.url;
-      urlBox.classList.remove('hidden');
-      urlBox.classList.add('flex');
-      if (btnBaixar) btnBaixar.classList.add('hidden');
-    } else if (d.cloudflared_presente) {
-      badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-amber-100 text-amber-700';
-      badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span> Iniciando tunnel...';
-      urlBox.classList.add('hidden');
-    } else {
-      badge.className = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 text-slate-500';
-      badge.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-slate-300"></span> Inativo';
-      urlBox.classList.add('hidden');
-      if (btnBaixar) { btnBaixar.classList.remove('hidden'); }
-    }
-  } catch {}
-}
-
-async function baixarCloudflared() {
-  const btn = document.getElementById('btn-tunnel-baixar');
-  if (btn) { btn.disabled = true; btn.textContent = 'Baixando (~8 MB)...'; }
-  try {
-    const r = await fetch('/api/tunnel/baixar', { method: 'POST' });
-    const d = await r.json();
-    if (d.ok) {
-      toast(d.msg);
-      setTimeout(verificarTunnel, 5000);
-      setTimeout(verificarTunnel, 12000);
-    } else {
-      toast(d.msg || 'Erro ao baixar', 'erro');
-      if (btn) { btn.disabled = false; btn.textContent = 'Baixar cloudflared e ativar'; }
-    }
-  } catch {
-    toast('Erro de conexão', 'erro');
-    if (btn) { btn.disabled = false; btn.textContent = 'Baixar cloudflared e ativar'; }
-  }
-}
-
-function copiarTunnel() {
-  const val = document.getElementById('tunnel-url-input').value;
-  if (!val) return;
-  navigator.clipboard.writeText(val).then(() => toast('URL copiada!')).catch(() => {
-    document.getElementById('tunnel-url-input').select();
-    document.execCommand('copy');
-    toast('URL copiada!');
-  });
 }
 
 async function verificarAtualizacao() {
