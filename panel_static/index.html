@@ -1294,17 +1294,17 @@ async function atualizarStatus() {
     }
     btnWatch.disabled = _botRodando && !_watchAtivo;
 
-    // Tempo médio
+    // Tempo médio (só admin)
     const tempoPill = document.getElementById('tempo-pill');
     const tempoTxt  = document.getElementById('tempo-txt');
-    if (d.tempo_medio) {
+    if (d.nivel === 'admin' && d.tempo_medio) {
       const min = Math.floor(d.tempo_medio / 60);
       const seg = d.tempo_medio % 60;
       tempoTxt.textContent = min > 0 ? `~${min}m${seg}s/pub` : `~${seg}s/pub`;
       tempoPill.classList.remove('hidden');
       tempoPill.classList.add('sm:flex');
     } else {
-      tempoTxt.textContent = '—';
+      tempoPill.classList.add('hidden');
     }
 
     const btnPausar = document.getElementById('btn-pausar');
