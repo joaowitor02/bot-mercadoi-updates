@@ -236,9 +236,8 @@ async def _extrair_e_baixar(url: str, config: dict) -> tuple:
                 pass
             return None, None, None, motivo
 
-        if not dados:
-            # API falhou por motivo transitório — tenta browser
-            # (mídia continua baixando em paralelo)
+        if not dados and sys.platform == "win32":
+            # Fallback browser — só funciona no Windows com Chrome configurado
             dados, motivo = await _via_browser(url, config)
 
         try:
