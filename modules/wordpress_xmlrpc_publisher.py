@@ -114,7 +114,20 @@ class WordPressXmlRpcPublisher:
             post_id = await self._run(self._sync_new_post, post_data)
             post_id = int(post_id)
         except xmlrpc.client.Fault as e:
-            return None, "", f"WordPress recusou a criação: {e.faultString}"
+            fault_lower = e.faultString.lower()
+            if "taxonom" in fault_lower or "term" in fault_lower:
+                # Taxonomia inválida ou sem permissão — tenta sem terms_names
+                logger.warning(f"[{self.execution_id}] Taxonomy rejeitada, tentando sem termos: {e.faultString}")
+                post_data_sem_termos = {k: v for k, v in post_data.items() if k != "terms_names"}
+                try:
+                    post_id = await self._run(self._sync_new_post, post_data_sem_termos)
+                    post_id = int(post_id)
+                except xmlrpc.client.Fault as e2:
+                    return None, "", f"WordPress recusou a criação: {e2.faultString}"
+                except Exception as e2:
+                    return None, "", f"Erro XML-RPC ao criar imóvel: {e2}"
+            else:
+                return None, "", f"WordPress recusou a criação: {e.faultString}"
         except Exception as e:
             return None, "", f"Erro XML-RPC ao criar imóvel: {e}"
 
