@@ -65,10 +65,9 @@ class WordPressXmlRpcPublisher:
             if validos:
                 ok, enviados, erros = await self._subir_imagens(post_id, validos)
                 if not ok and not enviados:
-                    resultado["status_erro"] = "erro_upload"
-                    resultado["mensagem"]    = f"Upload falhou: {'; '.join(erros)}"
-                    return resultado
-                if erros:
+                    # Sem permissão de upload — imóvel já criado, apenas avisa
+                    logger.warning(f"[{self.execution_id}] Upload sem permissão (401) — imóvel criado sem imagens. Conceda 'upload_files' ao usuário WordPress.")
+                elif erros:
                     logger.warning(f"[{self.execution_id}] Erros parciais no upload: {erros}")
                 logger.info(f"[{self.execution_id}] {enviados} imagem(ns) enviada(s)")
             else:
