@@ -303,6 +303,8 @@ async def processar_link(row: dict, sheet, config: dict):
     if olx_url_valida(url):
         logger.info(f"[{execution_id}] Fonte: OLX")
         dados, tipo_midia, arquivo_midia, motivo_falha = await _extrair_olx(url, config)
+        if dados:
+            dados["_fonte"] = "olx"
     else:
         dados, tipo_midia, arquivo_midia, motivo_falha = await _extrair_e_baixar(url, config)
 

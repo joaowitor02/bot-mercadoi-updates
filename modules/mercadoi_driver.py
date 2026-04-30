@@ -408,7 +408,8 @@ class MercadoiDriver:
 
             # DECIDE: publicar direto ou salvar rascunho
             publicar_direto = (
-                tipo_midia == "imagem"
+                dados.get("_fonte") != "olx"
+                and tipo_midia == "imagem"
                 and bool(dados.get("preco", "").strip())
                 and bool(dados.get("tipo_imovel", "").strip())
             )
