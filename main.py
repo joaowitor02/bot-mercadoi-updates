@@ -129,11 +129,13 @@ def _dados_invalidos(dados: dict) -> str:
 # ---------------------------------------------------------------------------
 
 _MOTIVO_MSGS = {
-    "url_invalida":    "URL não é um post válido do Instagram",
-    "nao_encontrado":  "Post não encontrado (link pode ter sido apagado)",
-    "acesso_restrito": "Instagram bloqueou o acesso (post privado ou conta restrita)",
-    "post_privado":    "Post privado ou sem descrição pública",
-    "erro_rede":       "Falha de rede ao acessar o Instagram",
+    "url_invalida":           "URL não reconhecida (use Instagram ou OLX)",
+    "nao_encontrado":         "Anúncio não encontrado (pode ter sido apagado)",
+    "acesso_restrito":        "Acesso bloqueado (post privado ou proteção do site)",
+    "post_privado":           "Post privado ou sem descrição pública",
+    "erro_rede":              "Falha de rede ao acessar o link",
+    "estrutura_desconhecida": "Não foi possível ler os dados da página",
+    "dados_insuficientes":    "Dados insuficientes para cadastrar o imóvel",
 }
 
 # Motivos que não adianta tentar via browser — erro definitivo de URL/acesso

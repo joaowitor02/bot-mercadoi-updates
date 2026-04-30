@@ -234,6 +234,7 @@ class OlxScraper:
     async def extrair(self, url: str) -> dict:
         """
         Extrai dados de um anúncio OLX.
+        Tenta httpx primeiro (rápido); se bloqueado pelo Cloudflare, usa Playwright headless.
         Retorna:
           ok=True  → {ok, dados, imagens_urls}
           ok=False → {ok, motivo}
@@ -242,28 +243,18 @@ class OlxScraper:
         if not url_valida(url):
             return {"ok": False, "motivo": "url_invalida"}
 
-        try:
-            async with httpx.AsyncClient(
-                timeout=20,
-                follow_redirects=True,
-                headers=_HEADERS,
-            ) as client:
-                r = await client.get(url)
+        # Tentativa 1: httpx (sem browser)
+        html = await self._fetch_httpx(url)
+        if html == "404":
+            return {"ok": False, "motivo": "nao_encontrado"}
 
-            if r.status_code == 404:
-                return {"ok": False, "motivo": "nao_encontrado"}
-            if r.status_code == 403:
-                return {"ok": False, "motivo": "acesso_restrito"}
-            if r.status_code != 200:
-                return {"ok": False, "motivo": "erro_rede"}
+        # Tentativa 2: Playwright headless (contorna Cloudflare)
+        if html in (None, "403"):
+            logger.info("OLX bloqueou HTTP — tentando Playwright headless...")
+            html = await self._fetch_playwright(url)
 
-            html = r.text
-
-        except httpx.TimeoutException:
-            return {"ok": False, "motivo": "erro_rede"}
-        except Exception as e:
-            logger.warning(f"Erro ao buscar OLX: {e}")
-            return {"ok": False, "motivo": "erro_rede"}
+        if not html:
+            return {"ok": False, "motivo": "acesso_restrito"}
 
         next_data = _extrair_next_data(html)
         if not next_data:
@@ -276,7 +267,6 @@ class OlxScraper:
             return {"ok": False, "motivo": "estrutura_desconhecida"}
 
         dados, imagens_urls = _montar_dados(ad, url)
-
         if not dados.get("titulo"):
             return {"ok": False, "motivo": "dados_insuficientes"}
 
@@ -286,6 +276,53 @@ class OlxScraper:
             f"{len(imagens_urls)} imagem(ns)"
         )
         return {"ok": True, "dados": dados, "imagens_urls": imagens_urls}
+
+    async def _fetch_httpx(self, url: str) -> str | None:
+        try:
+            async with httpx.AsyncClient(
+                timeout=20, follow_redirects=True, headers=_HEADERS,
+            ) as client:
+                r = await client.get(url)
+            if r.status_code == 404:
+                return "404"
+            if r.status_code in (403, 429):
+                return "403"
+            if r.status_code != 200:
+                return None
+            return r.text
+        except Exception as e:
+            logger.warning(f"OLX httpx falhou: {e}")
+            return None
+
+    async def _fetch_playwright(self, url: str) -> str | None:
+        try:
+            from playwright.async_api import async_playwright
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+                )
+                context = await browser.new_context(
+                    user_agent=_HEADERS["User-Agent"],
+                    locale="pt-BR",
+                    timezone_id="America/Sao_Paulo",
+                )
+                page = await context.new_page()
+                await page.goto(url, timeout=30000, wait_until="domcontentloaded")
+                # Aguarda __NEXT_DATA__ estar disponível
+                try:
+                    await page.wait_for_function(
+                        "document.getElementById('__NEXT_DATA__') !== null",
+                        timeout=10000,
+                    )
+                except Exception:
+                    pass
+                html = await page.content()
+                await browser.close()
+                return html
+        except Exception as e:
+            logger.warning(f"OLX Playwright falhou: {e}")
+            return None
 
     async def baixar_imagens(self, imagens_urls: list, downloads_path: str) -> list[str]:
         """Baixa imagens do OLX diretamente (sem Apify)."""
