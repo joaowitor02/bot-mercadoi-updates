@@ -351,10 +351,14 @@ async def processar_link(row: dict, sheet, config: dict):
 
     # --- ETAPA 3: Publicação no Mercadoi com retry ---
     if not arquivo_midia:
-        msg = "Nenhuma midia foi baixada para esta publicacao"
-        logger.error(f"[{execution_id}] {msg}")
-        status.erro("erro_download", msg)
-        return
+        # OLX: continua sem imagens (dados já extraídos da página pública)
+        if dados.get("_fonte") == "olx":
+            logger.warning(f"[{execution_id}] OLX sem imagens — continuando sem mídia")
+        else:
+            msg = "Nenhuma midia foi baixada para esta publicacao"
+            logger.error(f"[{execution_id}] {msg}")
+            status.erro("erro_download", msg)
+            return
 
     logger.info(f"[{execution_id}] Publicando no Mercadoi...")
     resultado = None

@@ -91,88 +91,156 @@ def _prop(properties: list, *nomes: str) -> str:
 
 
 def _extrair_next_data(html: str) -> dict | None:
-    m = re.search(
-        r'<script[^>]+id=["\']__NEXT_DATA__["\'][^>]*>\s*(\{.*?\})\s*</script>',
-        html, re.DOTALL
-    )
-    if not m:
+    # Tenta padrões diferentes do script tag (OLX pode variar)
+    for pattern in [
+        r'<script[^>]*id=["\']__NEXT_DATA__["\'][^>]*>\s*(\{.*?\})\s*</script>',
+        r'<script\s+id=["\']__NEXT_DATA__["\'][^>]*>(\{.*?\})</script>',
+        r'id=["\']__NEXT_DATA__["\'][^>]*>(\{[^<]+)<',
+    ]:
+        m = re.search(pattern, html, re.DOTALL)
+        if m:
+            try:
+                return json.loads(m.group(1))
+            except Exception:
+                continue
+    return None
+
+
+def _busca_recursiva_ad(obj, profundidade: int = 0) -> dict | None:
+    """Busca recursiva por objeto de anúncio no JSON do OLX."""
+    if profundidade > 8:
         return None
-    try:
-        return json.loads(m.group(1))
-    except Exception:
-        return None
+    if isinstance(obj, dict):
+        # Heurística: objeto de anúncio OLX sempre tem subject/title + body/description
+        tem_titulo = obj.get("subject") or obj.get("title")
+        tem_corpo = "body" in obj or "description" in obj or "params" in obj
+        if tem_titulo and tem_corpo and len(obj) > 3:
+            return obj
+        for v in obj.values():
+            result = _busca_recursiva_ad(v, profundidade + 1)
+            if result:
+                return result
+    elif isinstance(obj, list):
+        for item in obj[:5]:  # limita busca em listas longas
+            result = _busca_recursiva_ad(item, profundidade + 1)
+            if result:
+                return result
+    return None
 
 
 def _parse_ad(data: dict) -> dict | None:
     """Navega pela estrutura do __NEXT_DATA__ e retorna o objeto do anúncio."""
     pp = data.get("props", {}).get("pageProps", {})
 
-    # Tenta vários caminhos conhecidos
+    # Tenta caminhos conhecidos (ordem de probabilidade)
     for caminho in [
         lambda d: d.get("ad"),
         lambda d: d.get("adData", {}).get("ad"),
         lambda d: d.get("initialProps", {}).get("ad"),
         lambda d: d.get("data", {}).get("ad"),
         lambda d: d.get("listing"),
+        lambda d: d.get("adDetail"),
+        lambda d: d.get("pageData", {}).get("ad"),
+        lambda d: d.get("serverData", {}).get("ad"),
+        lambda d: d.get("props", {}).get("ad"),
     ]:
         try:
             ad = caminho(pp)
-            if ad and isinstance(ad, dict):
+            if ad and isinstance(ad, dict) and (ad.get("subject") or ad.get("title")):
                 return ad
         except Exception:
             continue
+
+    # Fallback: busca recursiva em todo o pageProps
+    ad = _busca_recursiva_ad(pp)
+    if ad:
+        logger.info("OLX: objeto de anúncio encontrado via busca recursiva")
+        return ad
+
+    # Log diagnóstico para facilitar correções futuras
+    chaves = list(pp.keys()) if isinstance(pp, dict) else type(pp).__name__
+    logger.warning(f"OLX __NEXT_DATA__ estrutura desconhecida. Chaves em pageProps: {chaves}")
     return None
 
 
+def _str(val) -> str:
+    """Extrai string de valor que pode ser dict, list ou primitivo."""
+    if isinstance(val, dict):
+        return str(val.get("label") or val.get("value") or val.get("name") or "").strip()
+    if isinstance(val, list):
+        return str(val[0]).strip() if val else ""
+    return str(val).strip() if val else ""
+
+
 def _montar_dados(ad: dict, url: str) -> dict:
-    props = ad.get("properties") or ad.get("params") or []
+    props = ad.get("properties") or ad.get("params") or ad.get("features") or []
 
-    titulo   = ad.get("subject") or ad.get("title") or ""
-    descricao = ad.get("body") or ad.get("description") or ""
+    titulo   = ad.get("subject") or ad.get("title") or ad.get("name") or ""
+    descricao = ad.get("body") or ad.get("description") or ad.get("text") or ""
 
-    # Preço
-    preco_raw = (
-        ad.get("price", {}) if isinstance(ad.get("price"), dict) else {}
+    # Preço — aceita dict ou valor direto
+    price_field = ad.get("price") or ad.get("priceValue") or {}
+    if isinstance(price_field, dict):
+        preco_raw = (
+            price_field.get("value")
+            or price_field.get("price")
+            or price_field.get("amount")
+            or ""
+        )
+    else:
+        preco_raw = price_field
+    preco = _limpar_preco(preco_raw)
+
+    # Operação — detecta aluguel por múltiplos campos
+    tipo_negocio = (
+        _str(ad.get("type"))
+        or _str(ad.get("adType"))
+        or _str(ad.get("businessType"))
+        or _str(ad.get("transactionType"))
+        or ad.get("listingType", "")
     )
-    preco_val = (
-        preco_raw.get("value")
-        or preco_raw.get("price")
-        or ad.get("priceValue")
-        or ad.get("price")
+    # Também verifica na URL
+    url_lower = url.lower()
+    eh_aluguel = (
+        "aluguel" in tipo_negocio.lower()
+        or "rent" in tipo_negocio.lower()
+        or "aluguel" in url_lower
+        or "/alugar/" in url_lower
+    )
+    operacao = "Em Aluguel" if eh_aluguel else "A Venda"
+
+    # Tipo de imóvel — combina categoria + subcategoria + título
+    cat = (
+        _str(ad.get("category"))
+        or _str(ad.get("categoryName"))
+        or _str(ad.get("categoryLabel"))
+        or _str(ad.get("subcategory"))
         or ""
     )
-    preco = _limpar_preco(preco_val)
-
-    # Operação
-    tipo_negocio = (
-        ad.get("type", {}).get("label", "") if isinstance(ad.get("type"), dict) else ""
-    ) or ad.get("adType") or ad.get("businessType") or ""
-    operacao = "Em Aluguel" if "aluguel" in tipo_negocio.lower() or "rent" in tipo_negocio.lower() else "A Venda"
-
-    # Tipo de imóvel
-    cat = (
-        ad.get("category", {}).get("name", "") if isinstance(ad.get("category"), dict) else ""
-    ) or ad.get("categoryName") or ""
     tipo_imovel = _normalizar_tipo(cat or titulo)
 
-    # Localização
+    # Localização — tenta location, address e campos de topo
     loc = ad.get("location") or ad.get("address") or {}
+    if not isinstance(loc, dict):
+        loc = {}
     cidade = (
         loc.get("municipality") or loc.get("city") or
-        loc.get("municipalityLabel") or loc.get("municipalityCode") or ""
+        loc.get("municipalityLabel") or loc.get("municipalityCode") or
+        ad.get("municipality") or ad.get("city") or ""
     )
     bairro = (
         loc.get("neighbourhood") or loc.get("district") or
-        loc.get("neighbourhoodLabel") or loc.get("zone") or ""
+        loc.get("neighbourhoodLabel") or loc.get("zone") or
+        ad.get("neighbourhood") or ad.get("district") or ""
     )
-    endereco = loc.get("address") or loc.get("street") or ""
+    endereco = loc.get("address") or loc.get("street") or ad.get("street") or ""
 
     # Características numéricas
     quartos  = _prop(props, "room", "quarto", "bedroom", "dormit")
     suites   = _prop(props, "suite")
     banheiros = _prop(props, "bathroom", "banheiro")
     vagas    = _prop(props, "garage", "vaga", "parking")
-    area     = _prop(props, "square_meter", "area", "m2", "tamanho")
+    area     = _prop(props, "square_meter", "area", "m2", "tamanho", "useful_area")
 
     # Corrige suites > quartos
     try:
