@@ -933,6 +933,36 @@ class MercadoiDriver:
             return False
         try:
             esperados = len(caminhos)
+            inicial = await self._contar_midias_anexadas(page)
+            alvo_final = inicial + esperados
+            logger.info(f"Galeria inicial: {inicial}; anexando {esperados} arquivo(s)")
+
+            # Alguns ambientes/plupload aceitam apenas parte dos arquivos quando
+            # mandamos uma selecao grande. Enviar em lotes evita perder os ultimos.
+            tamanho_lote = 3
+            for inicio in range(0, esperados, tamanho_lote):
+                lote = caminhos[inicio:inicio + tamanho_lote]
+                alvo_lote = inicial + inicio + len(lote)
+                if not await self._enviar_lote_upload(page, lote):
+                    return False
+
+                confirmados = await self._aguardar_uploads(page, alvo_lote, esperados=alvo_final)
+                if confirmados < alvo_lote:
+                    logger.warning(
+                        f"Lote de upload incompleto: {confirmados - inicial}/{inicio + len(lote)} "
+                        f"arquivo(s) confirmados"
+                    )
+                    break
+
+            confirmados_final = await self._aguardar_uploads(page, alvo_final, esperados=alvo_final)
+            recebidos = max(0, confirmados_final - inicial)
+            if confirmados_final >= alvo_final:
+                logger.info(f"Todos os arquivos confirmados na galeria ({recebidos}/{esperados})")
+                return True
+
+            logger.error(f"Upload incompleto: {recebidos}/{esperados} arquivo(s) confirmados")
+            return False
+
             enviado = False
             upload_btn = None
             for sel in ['#select_gallery_images', '#plupload-browse-button', 'a.plupload_add', '.plupload_add',
@@ -1042,6 +1072,97 @@ class MercadoiDriver:
             logger.error(f"Erro ao anexar midia: {e}")
             return False
 
+    async def _enviar_lote_upload(self, page, caminhos: list) -> bool:
+        enviado = False
+        upload_btn = None
+        for sel in ['#select_gallery_images', '#plupload-browse-button', 'a.plupload_add', '.plupload_add',
+                    'a[id*="browse"]', 'button[id*="browse"]', 'div[id*="browse"]',
+                    'a[id*="select"]', 'a[id*="upload"]', 'a[id*="gallery"]']:
+            upload_btn = await page.query_selector(sel)
+            if upload_btn:
+                logger.info(f"Usando botao de upload: {sel}")
+                break
+
+        if upload_btn:
+            try:
+                async with page.expect_file_chooser(timeout=5000) as fc_info:
+                    await upload_btn.click()
+                fc = await fc_info.value
+                await fc.set_files(caminhos)
+                enviado = True
+                logger.info(f"{len(caminhos)} arquivo(s) enviado(s) via file_chooser")
+            except Exception as e:
+                logger.warning(f"File chooser nao abriu, tentando input file direto: {e}")
+
+        if not enviado:
+            input_file = await self._localizar_input_upload(page)
+            if input_file:
+                await input_file.set_input_files(caminhos)
+                enviado = True
+                logger.info(f"{len(caminhos)} arquivo(s) enviado(s) via input file")
+            else:
+                logger.warning("Campo de upload nao encontrado")
+                return False
+
+        await page.wait_for_timeout(500)
+        erro_plupload = await page.evaluate("""
+            () => {
+                const errs = document.querySelectorAll(
+                    '.plupload_error, .moxie-shim-error, [class*="error"][class*="upload"], .plupload .error'
+                );
+                return Array.from(errs).map(e => e.innerText).filter(t => t).join(' | ');
+            }
+        """)
+        if erro_plupload:
+            logger.warning(f"Erro de upload detectado na pagina: {erro_plupload}")
+        return True
+
+    async def _contar_midias_anexadas(self, page) -> int:
+        dados = await page.evaluate("""
+            () => {
+                const idSels = [
+                    'input[name="propperty_image_ids[]"]',
+                    'input[name="property_image_ids[]"]',
+                    'input[name*="image_ids"]',
+                ];
+                const ids = new Set();
+                for (const s of idSels) {
+                    document.querySelectorAll(s).forEach(el => {
+                        const v = (el.value || '').trim();
+                        if (v && v !== '0') ids.add(v);
+                    });
+                }
+
+                const thumbSels = [
+                    '.fave_property_images .preview-item',
+                    '.fave_property_images img',
+                    '.property-gallery-upload img',
+                    'ul.fave_images_list li',
+                    '[class*="gallery"] .thumbnail',
+                    '[class*="upload"] img[src*="uploads"]',
+                ];
+                let thumbs = 0;
+                for (const s of thumbSels) {
+                    thumbs = Math.max(thumbs, document.querySelectorAll(s).length);
+                }
+                return {ids: ids.size, thumbs};
+            }
+        """)
+        ids = int(dados.get("ids") or 0)
+        thumbs = int(dados.get("thumbs") or 0)
+        return max(ids, thumbs)
+
+    async def _aguardar_uploads(self, page, alvo: int, esperados: int) -> int:
+        confirmados = 0
+        limite = max(esperados * 8, 24)
+        for i in range(limite):
+            await page.wait_for_timeout(300 if i < 6 else 500)
+            confirmados = await self._contar_midias_anexadas(page)
+            logger.info(f"Uploads concluidos: {confirmados}/{alvo}")
+            if confirmados >= alvo:
+                return confirmados
+        return confirmados
+
     async def _localizar_input_upload(self, page):
         try:
             handles = await page.query_selector_all('input[type="file"]')
@@ -1113,12 +1234,20 @@ class MercadoiDriver:
             return {"ok": False}
 
     async def _publicar(self, page):
-        """Publica o imóvel diretamente (sem rascunho) via AJAX submit_property."""
+        """Publica o imovel diretamente, usando o botao do formulario como caminho principal."""
         try:
             try:
                 await page.wait_for_selector('#save_as_draft', timeout=5000)
             except Exception:
                 logger.warning("Timeout aguardando form, tentando publicar mesmo assim")
+
+            # O envio normal pelo botao e o mesmo caminho usado pelo painel do
+            # Mercadoi. Em alguns ambientes o AJAX direto responde "0" e apenas
+            # adiciona ruido/tempo antes de cair neste fluxo.
+            via_botao = await self._publicar_via_botao(page)
+            if via_botao.get("ok"):
+                return via_botao
+            logger.warning("Publicacao via botao falhou, tentando AJAX submit_property")
 
             resultado = await page.evaluate("""
                 () => new Promise((resolve) => {

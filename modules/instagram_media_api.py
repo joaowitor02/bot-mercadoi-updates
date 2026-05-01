@@ -36,11 +36,15 @@ class ApifyMediaExtractor:
         Retorna dict compatível com InstagramScraper.extrair().
         """
         try:
-            item = await self._chamar_apify(url_instagram)
+            item = await self.obter_item(url_instagram)
         except Exception as e:
             logger.warning(f"Apify post: {e}")
             return {"ok": False, "motivo": "erro_rede"}
 
+        return self.post_from_item(item, url_instagram)
+
+    def post_from_item(self, item: dict | None, url_instagram: str) -> dict:
+        """Monta caption/perfil a partir de um item da Apify ja obtido."""
         if not item:
             return {"ok": False, "motivo": "nao_encontrado"}
 
@@ -68,11 +72,15 @@ class ApifyMediaExtractor:
         """
         logger.info(f"Apify: extraindo {url_instagram}")
         try:
-            item = await self._chamar_apify(url_instagram)
+            item = await self.obter_item(url_instagram)
         except Exception as e:
             logger.warning(f"Apify falhou: {e}")
             return "imagem", []
 
+        return await self.extrair_de_item(item, url_instagram)
+
+    async def extrair_de_item(self, item: dict | None, url_instagram: str = "") -> tuple[str, list[str]]:
+        """Extrai e baixa midia usando um item da Apify ja obtido."""
         if not item:
             logger.warning("Apify: nenhum resultado retornado")
             return "imagem", []
@@ -91,6 +99,10 @@ class ApifyMediaExtractor:
     # ------------------------------------------------------------------
     # Chamada à API Apify
     # ------------------------------------------------------------------
+
+    async def obter_item(self, url: str) -> dict | None:
+        """Executa uma unica chamada Apify e retorna o primeiro item do dataset."""
+        return await self._chamar_apify(url)
 
     async def _chamar_apify(self, url: str) -> dict | None:
         endpoint = APIFY_RUN_URL.format(actor=self.actor_id)

@@ -30,7 +30,7 @@ class MediaResolver:
         self.downloads_path = downloads_path
         self._config        = config or {}
 
-    async def resolver(self, url_instagram: str) -> tuple[str, list[str]]:
+    async def resolver(self, url_instagram: str, apify_item_task=None, skip_apify: bool = False) -> tuple[str, list[str]]:
         """
         Resolve mídia com fallback automático: Apify → yt-dlp → FastDL.
         Retorna (tipo_midia, lista_arquivos).
@@ -38,14 +38,22 @@ class MediaResolver:
         cfg = self._config
 
         # --- Tentativa 1: Apify API ---
-        if cfg.get("usar_apify") and cfg.get("apify_api_token", "").strip():
+        if not skip_apify and cfg.get("usar_apify") and cfg.get("apify_api_token", "").strip():
             logger.info("Tentativa 1: Apify API")
             extrator = ApifyMediaExtractor(
                 token          = cfg["apify_api_token"],
                 downloads_path = self.downloads_path,
                 actor_id       = cfg.get("apify_actor_id", ""),
             )
-            tipo, arquivos = await extrator.extrair(url_instagram)
+            if apify_item_task is not None:
+                try:
+                    item = await apify_item_task
+                    tipo, arquivos = await extrator.extrair_de_item(item, url_instagram)
+                except Exception as e:
+                    logger.warning(f"Apify compartilhado falhou: {e}")
+                    tipo, arquivos = "imagem", []
+            else:
+                tipo, arquivos = await extrator.extrair(url_instagram)
             if arquivos:
                 logger.info(f"Apify OK: {len(arquivos)} arquivo(s)")
                 return tipo, arquivos

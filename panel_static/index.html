@@ -80,6 +80,10 @@
         </svg>
         <span id="tempo-txt">—</span>
       </div>
+      <div id="worker-pill" class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 cursor-default pulse-dot" title="Workers processando agora">
+        <span class="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"></span>
+        <span id="worker-txt">—</span>
+      </div>
       <button id="btn-watch" onclick="toggleWatch()"
         class="hidden items-center gap-2 h-9 px-4 border border-slate-200 hover:border-slate-300 text-slate-600 hover:text-slate-800 text-sm font-medium rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -179,32 +183,6 @@
   <!-- ===================== SEÇÃO: DASHBOARD ===================== -->
   <div id="section-dashboard" class="space-y-5">
 
-    <!-- Card: Sessão Mercadoi (VPS) -->
-    <div id="card-sessao-vps" class="hidden bg-amber-50 border border-amber-200 rounded-2xl p-5">
-      <div class="flex items-start gap-4">
-        <div class="w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center shrink-0">
-          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
-          </svg>
-        </div>
-        <div class="flex-1">
-          <h3 class="text-sm font-semibold text-amber-900">Sessão do Mercadoi (VPS)</h3>
-          <p id="sessao-vps-status-txt" class="text-xs text-amber-700 mt-1">Verificando sessão salva...</p>
-          <div class="flex gap-2 mt-3">
-            <button id="btn-exportar-sessao" onclick="exportarSessaoMercadoi()" class="hidden h-9 px-4 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-xl transition-colors">
-              Exportar sessão (Windows)
-            </button>
-            <a id="btn-download-sessao" href="/api/download-sessao-mercadoi" class="hidden h-9 px-4 bg-slate-600 hover:bg-slate-700 text-white text-xs font-semibold rounded-xl transition-colors flex items-center">
-              Baixar arquivo
-            </a>
-            <button id="btn-importar-sessao" onclick="abrirModalImportarSessao()" class="hidden h-9 px-4 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-xl transition-colors">
-              Importar sessão (VPS)
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
 
       <div class="stat-card bg-white rounded-2xl border border-slate-100 p-5 flex flex-col gap-3">
@@ -285,6 +263,22 @@
 
     </div>
 
+    <!-- Diagnóstico -->
+    <div id="diagnostico-card" class="hidden bg-white rounded-2xl border border-slate-100 px-6 py-5">
+      <div class="flex items-center justify-between gap-3 mb-4">
+        <div>
+          <h2 class="text-sm font-semibold text-slate-800">Diagnóstico</h2>
+          <p class="text-xs text-slate-400">Status rápido dos serviços e limpeza</p>
+        </div>
+        <button onclick="limparArquivosAntigos()"
+          class="h-8 px-3 text-xs font-semibold text-slate-500 hover:text-brand-600 border border-slate-200 hover:border-brand-200 rounded-lg transition-colors">
+          Limpar antigos
+        </button>
+      </div>
+      <div id="diagnostico-grid" class="grid grid-cols-2 md:grid-cols-4 gap-2"></div>
+      <div id="diagnostico-extra" class="mt-3 text-xs text-slate-400"></div>
+    </div>
+
     <!-- Resumo Diário -->
     <div class="bg-white rounded-2xl border border-slate-100 px-6 py-5">
       <div class="flex items-center justify-between mb-4">
@@ -346,7 +340,7 @@
         </div>
         <div>
           <h2 class="text-sm font-semibold text-slate-800">Adicionar Links à Fila</h2>
-          <p class="text-xs text-slate-400">Cole um ou vários links do Instagram, um por linha</p>
+          <p class="text-xs text-slate-400">Cole um ou vários links do Instagram, OLX ou Órulo, um por linha</p>
         </div>
       </div>
 
@@ -356,7 +350,7 @@
             <div class="text-xs text-slate-300 leading-[1.625rem] font-mono">1</div>
           </div>
           <textarea id="textarea-urls" rows="5"
-            placeholder="https://www.instagram.com/p/ABC123/&#10;https://www.instagram.com/reel/XYZ789/&#10;https://www.olx.com.br/imoveis/..."
+            placeholder="https://www.instagram.com/p/ABC123/&#10;https://www.olx.com.br/imoveis/...&#10;https://www.orulo.com.br/s/abc123/share?jwt=..."
             class="flex-1 px-4 py-3 text-sm text-slate-700 resize-none focus:outline-none placeholder-slate-300 font-mono leading-[1.625rem]"
             oninput="atualizarContador()"
             onkeydown="if(event.ctrlKey&&event.key==='Enter') adicionarUrls()"></textarea>
@@ -431,11 +425,16 @@
     <div class="bg-white rounded-2xl border border-slate-100 overflow-hidden">
 
       <div class="px-6 py-3 border-b border-slate-100 flex flex-wrap items-center gap-3">
-        <div class="flex gap-1.5">
+        <div class="flex flex-wrap gap-1.5">
           <button onclick="setFiltro('todos')"       id="f-todos"       class="filtro-btn active px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-800 text-white">Todos</button>
           <button onclick="setFiltro('sucesso')"     id="f-sucesso"     class="filtro-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200">Sucesso</button>
           <button onclick="setFiltro('falha')"       id="f-falha"       class="filtro-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200">Falha</button>
           <button onclick="setFiltro('processando')" id="f-processando" class="filtro-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200">Andamento</button>
+          <span class="text-slate-200 self-center">|</span>
+          <button onclick="setFiltroOrigem('todas')"     id="fo-todas"     class="origem-btn active px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-800 text-white">Todas</button>
+          <button onclick="setFiltroOrigem('Instagram')" id="fo-instagram" class="origem-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200">📸 Instagram</button>
+          <button onclick="setFiltroOrigem('OLX')"       id="fo-olx"       class="origem-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200">OLX</button>
+          <button onclick="setFiltroOrigem('Órulo')"     id="fo-orulo"     class="origem-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200">Órulo</button>
         </div>
 
         <div class="flex gap-1.5">
@@ -729,6 +728,20 @@
               class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 font-mono focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent" />
           </div>
 
+          <div class="space-y-1">
+            <label class="block text-xs text-slate-400">Cache de extração (horas)</label>
+            <input id="adv-cache-ttl" type="number" min="0" max="168" step="1"
+              placeholder="12"
+              class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent" />
+          </div>
+
+          <div class="space-y-1">
+            <label class="block text-xs text-slate-400">Limpeza automática (dias)</label>
+            <input id="adv-limpeza-dias" type="number" min="0" max="365" step="1"
+              placeholder="15"
+              class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent" />
+          </div>
+
           <div class="space-y-2 flex flex-col justify-end">
             <label class="flex items-center gap-2 cursor-pointer select-none">
               <input type="checkbox" id="adv-usar-deepseek" class="w-4 h-4 rounded accent-brand-500" />
@@ -966,6 +979,7 @@ let _execucoes = [];
 let _execucoesVisiveis = [];
 let _botRodando = false;
 let _watchAtivo = false;
+let _isAdmin = false;
 let _toastTimer = null;
 let _mainTab = 'dashboard';
 
@@ -1001,20 +1015,58 @@ function setMainTab(tab) {
 // ---------------------------------------------------------------------------
 function badge(status) {
   const cfg = {
-    sucesso:     { cls: 'bg-emerald-100 text-emerald-700 ring-emerald-200', label: '✓ Sucesso' },
-    falha:       { cls: 'bg-red-100 text-red-600 ring-red-200',            label: '✗ Falha' },
-    processando: { cls: 'bg-amber-100 text-amber-700 ring-amber-200',      label: '⟳ Andamento' },
-    pendente:    { cls: 'bg-blue-100 text-blue-700 ring-blue-200',         label: 'Pendente' },
+    sucesso:        { cls: 'bg-emerald-100 text-emerald-700 ring-emerald-200', label: '✓ Sucesso' },
+    falha:          { cls: 'bg-red-100 text-red-600 ring-red-200',             label: '✗ Falha' },
+    processando:    { cls: 'bg-amber-100 text-amber-700 ring-amber-200',       label: '⟳ Processando' },
+    capturando:     { cls: 'bg-amber-100 text-amber-700 ring-amber-200',       label: '⟳ Capturando' },
+    baixando_midia: { cls: 'bg-amber-100 text-amber-700 ring-amber-200',       label: '⟳ Baixando mídia' },
+    enviando_wp:    { cls: 'bg-amber-100 text-amber-700 ring-amber-200',       label: '⟳ Enviando WP' },
+    pendente:       { cls: 'bg-blue-100 text-blue-700 ring-blue-200',          label: 'Pendente' },
+    duplicata:      { cls: 'bg-slate-100 text-slate-500 ring-slate-200',       label: 'Duplicata' },
+    erro_timeout:   { cls: 'bg-orange-100 text-orange-600 ring-orange-200',    label: '⏱ Timeout' },
   };
-  const d = cfg[status] || { cls: 'bg-slate-100 text-slate-500 ring-slate-200', label: status };
+  const d = cfg[status] || { cls: 'bg-red-100 text-red-600 ring-red-200', label: status };
   return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ring-1 ${d.cls}">${d.label}</span>`;
+}
+
+function origemBadge(origem) {
+  const cfg = {
+    'Instagram': { cls: 'bg-pink-50 text-pink-600',   label: '📸' },
+    'OLX':       { cls: 'bg-orange-50 text-orange-600', label: 'OLX' },
+    'Órulo':     { cls: 'bg-indigo-50 text-indigo-600', label: 'Órulo' },
+  };
+  const d = cfg[origem] || { cls: 'bg-slate-50 text-slate-400', label: origem || '?' };
+  return `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${d.cls}">${d.label}</span>`;
 }
 
 function urlCurta(url) {
   try {
-    const m = url.match(/instagram\.com\/(?:p|reel|tv)\/([^/?]+)/);
-    return m ? `…/${m[1]}` : url.slice(0, 35) + '…';
+    const ig = url.match(/instagram\.com\/(?:p|reel|tv)\/([^/?]+)/);
+    if (ig) return `…/${ig[1]}`;
+    const orulo = url.match(/orulo\.com\.br\/a\/([^/?]+)\/(\d+)/);
+    if (orulo) return `Órulo/${orulo[1]}/${orulo[2]}`;
+    const oruloB = url.match(/orulo\.com\.br\/buildings\/(\d+)/);
+    if (oruloB) return `Órulo/buildings/${oruloB[1]}`;
+    const oruloS = url.match(/orulo\.com\.br\/s\/([^/?]+)\/share/);
+    if (oruloS) return `Órulo/share/${oruloS[1]}`;
+    return url.slice(0, 35) + '…';
   } catch { return url; }
+}
+
+function fmtSeg(v) {
+  v = Number(v || 0);
+  if (!v) return '-';
+  const min = Math.floor(v / 60);
+  const seg = v % 60;
+  return min > 0 ? `${min}m${seg}s` : `${seg}s`;
+}
+
+function fmtBytes(v) {
+  v = Number(v || 0);
+  if (v < 1024) return `${v} B`;
+  if (v < 1024 * 1024) return `${Math.round(v / 1024)} KB`;
+  if (v < 1024 * 1024 * 1024) return `${Math.round(v / 1024 / 1024)} MB`;
+  return `${(v / 1024 / 1024 / 1024).toFixed(1)} GB`;
 }
 
 function logColor(txt) {
@@ -1092,11 +1144,12 @@ function renderResumoDiario(execs) {
   }).join('');
 }
 
+const _STATUS_ANDAMENTO = new Set(['processando','capturando','baixando_midia','enviando_wp']);
 function renderStats(execs) {
   document.getElementById('stat-total').textContent     = execs.length;
   document.getElementById('stat-sucesso').textContent   = execs.filter(e => e.status === 'sucesso').length;
   document.getElementById('stat-falha').textContent     = execs.filter(e => e.status === 'falha').length;
-  document.getElementById('stat-andamento').textContent = execs.filter(e => e.status === 'processando').length;
+  document.getElementById('stat-andamento').textContent = execs.filter(e => _STATUS_ANDAMENTO.has(e.status)).length;
 }
 
 function renderTabela(execs) {
@@ -1121,9 +1174,12 @@ function renderTabela(execs) {
         <span>${ex.inicio || ''}${ex.fim && ex.fim !== ex.inicio ? ' – ' + ex.fim : ''}</span>
       </td>
       <td class="px-4 py-4 max-w-xs">
-        <p class="font-medium text-slate-700 truncate text-sm">${esc(ex.titulo || '—')}</p>
+        <div class="flex items-center gap-1.5 mb-0.5">
+          ${ex.origem ? origemBadge(ex.origem) : ''}
+          <p class="font-medium text-slate-700 truncate text-sm">${esc(ex.titulo || '—')}</p>
+        </div>
         ${ex.url ? `<a href="${esc(ex.url)}" target="_blank" onclick="event.stopPropagation()"
-          class="text-xs text-slate-400 hover:text-brand-500 truncate block mt-0.5 transition-colors">${urlCurta(ex.url)}</a>` : ''}
+          class="text-xs text-slate-400 hover:text-brand-500 truncate block transition-colors">${urlCurta(ex.url)}</a>` : ''}
       </td>
       <td class="px-4 py-4 text-sm text-slate-500">
         ${ex.cidade || ex.bairro
@@ -1157,7 +1213,14 @@ function renderTabela(execs) {
               </svg>
               Post
             </a>` : ''}
-          ${ex.mercadoi_url ? `
+          ${ex.url_publica ? `
+            <a href="${esc(ex.url_publica)}" target="_blank" onclick="event.stopPropagation()"
+              class="inline-flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-800 font-medium transition-colors">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+              </svg>
+              Ver publicação
+            </a>` : ex.mercadoi_url ? `
             <a href="${esc(ex.mercadoi_url)}" target="_blank" onclick="event.stopPropagation()"
               class="inline-flex items-center gap-1 text-xs text-emerald-600 hover:text-emerald-800 font-medium transition-colors">
               <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1196,6 +1259,7 @@ function verDetalhes(i) {
     ['Bairro',   esc(ex.bairro) || '—'],
     ['URL',      ex.url ? `<a href="${esc(ex.url)}" target="_blank" class="text-brand-500 hover:underline text-xs break-all">${esc(ex.url)}</a>` : '—'],
   ];
+  rows.splice(rows.length - 1, 0, ['Tempos', `Total: ${fmtSeg(ex.tempo_seg)} · Captura: ${fmtSeg(ex.captura_seg)} · Mídia: ${fmtSeg(ex.midia_seg)} · Envio: ${fmtSeg(ex.publicacao_seg)}`]);
   if (ex.erros && ex.erros.length) {
     rows.push(['Erros', `<ul class="text-xs text-red-600 space-y-1 list-disc list-inside">${ex.erros.map(e=>`<li>${esc(e)}</li>`).join('')}</ul>`]);
   }
@@ -1236,6 +1300,49 @@ async function carregarPendentes() {
   } catch {}
 }
 
+async function carregarDiagnostico() {
+  if (!_isAdmin) return;
+  const grid = document.getElementById('diagnostico-grid');
+  const extra = document.getElementById('diagnostico-extra');
+  if (!grid || !extra) return;
+  try {
+    const r = await fetch('/api/diagnostico');
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.msg || 'erro');
+    grid.innerHTML = d.checks.map(c => `
+      <div class="rounded-xl border ${c.ok ? 'border-emerald-100 bg-emerald-50/60' : 'border-amber-100 bg-amber-50/70'} px-3 py-2">
+        <div class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full ${c.ok ? 'bg-emerald-500' : 'bg-amber-500'}"></span>
+          <span class="text-xs font-semibold ${c.ok ? 'text-emerald-700' : 'text-amber-700'}">${esc(c.nome)}</span>
+        </div>
+        <p class="text-[11px] text-slate-500 truncate mt-1" title="${esc(c.detalhe || '')}">${esc(c.detalhe || '')}</p>
+      </div>
+    `).join('');
+    const lim = d.limpeza || {};
+    const disco = d.disco || {};
+    const tempos = d.tempos || {};
+    const gargalo = tempos.gargalo ? ` · Gargalo: ${tempos.gargalo} (${fmtSeg(tempos[tempos.gargalo === 'mídia' ? 'midia' : tempos.gargalo])})` : '';
+    extra.textContent = `Disco livre: ${disco.livre_gb || 0} GB · Uso: ${disco.uso_pct || 0}% · Cache: ${d.cache_ttl_horas || 0}h · Antigos: ${lim.arquivos_antigos || 0} (${fmtBytes(lim.bytes_antigos || 0)})${gargalo}`;
+  } catch {
+    grid.innerHTML = '<div class="col-span-full text-xs text-red-500 bg-red-50 rounded-xl px-3 py-2">Não foi possível carregar o diagnóstico.</div>';
+    extra.textContent = '';
+  }
+}
+
+async function limparArquivosAntigos() {
+  if (!confirm('Limpar downloads, screenshots e cache antigos?')) return;
+  try {
+    const r = await fetch('/api/limpar-arquivos-antigos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dias: 15 }),
+    });
+    const d = await r.json();
+    d.ok ? toast(d.msg || 'Limpeza concluída') : toast(d.msg || 'Erro ao limpar', 'erro');
+    await carregarDiagnostico();
+  } catch { toast('Erro de conexão', 'erro'); }
+}
+
 async function toggleWatch() {
   const btn = document.getElementById('btn-watch');
   btn.disabled = true;
@@ -1258,6 +1365,7 @@ async function atualizarStatus() {
   try {
     const r = await fetch('/api/status');
     const d = await r.json();
+    const _wasRunning = _botRodando;
     _botRodando = d.rodando;
     _watchAtivo = d.watch_ativo || false;
 
@@ -1274,12 +1382,19 @@ async function atualizarStatus() {
 
     // Tab Configurações visível só para admin
     const navConfig = document.getElementById('nav-config');
-    if (d.nivel === 'admin') {
+    const diagnosticoCard = document.getElementById('diagnostico-card');
+    _isAdmin = d.nivel === 'admin';
+    if (_isAdmin) {
       navConfig.classList.remove('hidden');
       navConfig.classList.add('flex');
+      if (diagnosticoCard) {
+        diagnosticoCard.classList.remove('hidden');
+        if (!document.getElementById('diagnostico-grid')?.children.length) carregarDiagnostico();
+      }
     } else {
       navConfig.classList.add('hidden');
       navConfig.classList.remove('flex');
+      if (diagnosticoCard) diagnosticoCard.classList.add('hidden');
       if (_mainTab === 'config') setMainTab('dashboard');
     }
 
@@ -1307,6 +1422,17 @@ async function atualizarStatus() {
       tempoPill.classList.add('hidden');
     }
 
+    // Workers ativos
+    const workerPill = document.getElementById('worker-pill');
+    const workerTxt  = document.getElementById('worker-txt');
+    if (workerPill && d.workers_ativos > 0) {
+      workerTxt.textContent = `${d.workers_ativos} worker${d.workers_ativos > 1 ? 's' : ''}`;
+      workerPill.classList.remove('hidden');
+      workerPill.classList.add('sm:flex');
+    } else if (workerPill) {
+      workerPill.classList.add('hidden');
+    }
+
     const btnPausar = document.getElementById('btn-pausar');
     if (_botRodando) {
       dot.className   = 'w-2 h-2 rounded-full bg-emerald-500 pulse-dot shrink-0';
@@ -1322,6 +1448,13 @@ async function atualizarStatus() {
       btn.disabled    = false;
       btnTxt.textContent = 'Processar Agora';
       btnPausar.style.display = 'none';
+      // Bot acabou de terminar: faz uma última leitura do log e atualiza a tabela de execuções
+      if (_wasRunning) {
+        logCard.classList.remove('hidden');
+        await atualizarLogs();
+        await carregarExecucoes();
+        if (_mainTab === 'fila') await carregarFila();
+      }
     }
   } catch {}
 }
@@ -1369,6 +1502,9 @@ async function processarAgora() {
     const d = await r.json();
     if (d.ok) {
       toast('Bot iniciado com sucesso!');
+      // Exibe o card de log imediatamente sem esperar pelo próximo ciclo de status
+      const logCard = document.getElementById('log-card');
+      if (logCard) logCard.classList.remove('hidden');
       await atualizarStatus();
     } else {
       toast(d.msg, 'erro');
@@ -1582,6 +1718,7 @@ function atualizarContador() {
 // Filtros de status e período
 // ---------------------------------------------------------------------------
 let _filtroStatus = 'todos';
+let _filtroOrigem = 'todas';
 let _filtroDias   = 7;
 
 function setFiltro(status) {
@@ -1591,6 +1728,17 @@ function setFiltro(status) {
   });
   const btn = document.getElementById(`f-${status}`);
   if (btn) btn.className = 'filtro-btn active px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-800 text-white';
+  renderTabela(_execucoesFiltradas());
+}
+
+function setFiltroOrigem(origem) {
+  _filtroOrigem = origem;
+  document.querySelectorAll('.origem-btn').forEach(b => {
+    b.className = 'origem-btn px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-100 text-slate-500 hover:bg-slate-200';
+  });
+  const id = `fo-${origem.replace(/[^a-z]/gi,'').toLowerCase()}`;
+  const btn = document.getElementById(id);
+  if (btn) btn.className = 'origem-btn active px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-800 text-white';
   renderTabela(_execucoesFiltradas());
 }
 
@@ -1605,8 +1753,10 @@ function setPeriodo(dias) {
 }
 
 function _execucoesFiltradas() {
-  if (_filtroStatus === 'todos') return _execucoes;
-  return _execucoes.filter(e => e.status === _filtroStatus);
+  let lista = _execucoes;
+  if (_filtroStatus !== 'todos') lista = lista.filter(e => e.status === _filtroStatus);
+  if (_filtroOrigem !== 'todas') lista = lista.filter(e => (e.origem || '') === _filtroOrigem);
+  return lista;
 }
 
 // ---------------------------------------------------------------------------
@@ -1693,14 +1843,22 @@ function renderFila(items) {
     return;
   }
   const statusBadge = {
-    pendente:    'bg-blue-100 text-blue-700',
-    processando: 'bg-amber-100 text-amber-700',
+    pendente:        'bg-blue-100 text-blue-700',
+    processando:     'bg-amber-100 text-amber-700',
+    capturando:      'bg-amber-100 text-amber-700',
+    baixando_midia:  'bg-amber-100 text-amber-700',
+    enviando_wp:     'bg-amber-100 text-amber-700',
+  };
+  const statusLabel = {
+    pendente:       'Pendente',
+    processando:    'Processando',
+    capturando:     '⟳ Capturando',
+    baixando_midia: '⟳ Baixando',
+    enviando_wp:    '⟳ Enviando WP',
   };
   tbody.innerHTML = items.map(item => {
-    const cls = statusBadge[item.status] || 'bg-red-100 text-red-600';
-    const label = item.status === 'pendente' ? 'Pendente'
-                : item.status === 'processando' ? 'Processando'
-                : 'Erro';
+    const cls   = statusBadge[item.status] || 'bg-red-100 text-red-600';
+    const label = statusLabel[item.status] || 'Erro';
     const criado = item.criado_em ? item.criado_em.slice(0,16).replace('T',' ') : '—';
     const tentativas = (item.tentativas || 0);
     const tentativasHtml = tentativas > 0
@@ -1709,7 +1867,10 @@ function renderFila(items) {
     return `<tr class="border-b border-slate-50 row-hover">
       <td class="px-6 py-3.5 font-mono text-xs text-slate-400">${item.id}</td>
       <td class="px-4 py-3.5 max-w-xs">
-        <a href="${esc(item.url)}" target="_blank" class="text-xs text-brand-500 hover:underline truncate block max-w-xs">${esc(item.url)}</a>
+        <div class="flex items-center gap-1.5">
+          ${item.origem ? origemBadge(item.origem) : ''}
+          <a href="${esc(item.url)}" target="_blank" class="text-xs text-brand-500 hover:underline truncate block max-w-xs">${urlCurta(item.url)}</a>
+        </div>
       </td>
       <td class="px-4 py-3.5">
         <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ring-1 ${cls}">${label}</span>${tentativasHtml}
@@ -1720,6 +1881,10 @@ function renderFila(items) {
       <td class="px-4 py-3.5 text-xs text-slate-400 whitespace-nowrap">${criado}</td>
       <td class="px-4 py-3.5">
         <div class="flex items-center gap-2">
+          ${item.status !== 'processando' && item.status !== 'capturando' && item.status !== 'baixando_midia' && item.status !== 'enviando_wp' ? `
+          <button onclick="priorizarItem(${item.id})"
+            class="text-xs text-brand-600 hover:text-brand-800 font-medium transition-colors">Priorizar</button>
+          <span class="text-slate-200">|</span>` : ''}
           ${item.status !== 'pendente' && item.status !== 'processando' ? `
           <button onclick="reprocessar('${esc(item.url)}')"
             class="text-xs text-amber-600 hover:text-amber-800 font-medium transition-colors">Tentar novamente</button>
@@ -1746,6 +1911,24 @@ async function removerDaFila(id) {
       await Promise.all([carregarFila(), carregarPendentes()]);
     } else {
       toast(d.msg || 'Erro ao remover', 'erro');
+    }
+  } catch { toast('Erro de conexão', 'erro'); }
+}
+
+async function priorizarItem(id) {
+  try {
+    const r = await fetch('/api/priorizar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    if (r.status === 401) { window.location.href = '/login'; return; }
+    const d = await r.json();
+    if (d.ok) {
+      toast(d.msg || 'Item movido para o topo');
+      await Promise.all([carregarFila(), carregarPendentes()]);
+    } else {
+      toast(d.msg || 'Erro ao priorizar', 'erro');
     }
   } catch { toast('Erro de conexão', 'erro'); }
 }
@@ -1912,6 +2095,8 @@ async function carregarConfig() {
     set('adv-version-url',        d.version_check_url);
     set('adv-update-zip-url',     d.update_zip_url);
     set('adv-whatsapp-default',   d.whatsapp_default);
+    set('adv-cache-ttl',          d.cache_extracao_ttl_horas);
+    set('adv-limpeza-dias',       d.limpeza_auto_dias);
     setChk('adv-usar-deepseek',   d.usar_deepseek_api);
 
     // Link de distribuição: usa update_zip_url configurado ou placeholder
@@ -2222,6 +2407,8 @@ async function salvarAvancada() {
     version_check_url:     document.getElementById('adv-version-url').value,
     update_zip_url:        document.getElementById('adv-update-zip-url').value,
     whatsapp_default:      document.getElementById('adv-whatsapp-default').value,
+    cache_extracao_ttl_horas: Number(document.getElementById('adv-cache-ttl').value || 0),
+    limpeza_auto_dias:        Number(document.getElementById('adv-limpeza-dias').value || 0),
     usar_deepseek_api:     document.getElementById('adv-usar-deepseek').checked,
   };
   Object.keys(payload).forEach(k => {
@@ -2418,10 +2605,12 @@ async function init() {
   }, 8000);
 
   setInterval(async () => {
-    if (_botRodando) await atualizarLogs();
+    const logCard = document.getElementById('log-card');
+    if (logCard && !logCard.classList.contains('hidden')) await atualizarLogs();
   }, 2000);
 
   setInterval(carregarPendentes, 15000);
+  setInterval(() => { if (_isAdmin) carregarDiagnostico(); }, 60000);
 }
 
 document.addEventListener('DOMContentLoaded', init);
@@ -2577,42 +2766,7 @@ document.addEventListener('keydown', e => {
 let _isVPS = false;
 
 async function verificarSessaoMercadoi() {
-  try {
-    const [rChrome, rSessao] = await Promise.all([
-      fetch('/api/chrome-status'),
-      fetch('/api/sessao-mercadoi-status'),
-    ]);
-    const dChrome = await rChrome.json();
-    const dSessao = await rSessao.json();
-
-    _isVPS = dChrome.managed === true;  // managed=true significa VPS
-
-    const card = document.getElementById('card-sessao-vps');
-    const txt  = document.getElementById('sessao-vps-status-txt');
-    const btnExportar = document.getElementById('btn-exportar-sessao');
-    const btnDownload = document.getElementById('btn-download-sessao');
-    const btnImportar = document.getElementById('btn-importar-sessao');
-
-    // Mostra card sempre (útil para ambos os ambientes)
-    card.classList.remove('hidden');
-
-    if (dSessao.existe) {
-      txt.textContent = `Sessão salva: ${dSessao.cookies} cookie(s) — o bot pode autenticar automaticamente.`;
-    } else {
-      txt.textContent = 'Sem sessão salva. Configure credenciais no WordPress ou importe a sessão do Windows.';
-    }
-
-    if (_isVPS) {
-      btnImportar.classList.remove('hidden');
-      btnExportar.classList.add('hidden');
-      btnDownload.classList.add('hidden');
-    } else {
-      // Windows: permite exportar e baixar
-      btnExportar.classList.remove('hidden');
-      if (dSessao.existe) btnDownload.classList.remove('hidden');
-      btnImportar.classList.add('hidden');
-    }
-  } catch {}
+  return;
 }
 
 async function exportarSessaoMercadoi() {
@@ -2695,10 +2849,6 @@ document.getElementById('modal-importar-sessao')?.addEventListener('click', func
   if (e.target === this) fecharModalImportarSessao();
 });
 
-// Verifica sessão na inicialização
-window.addEventListener('DOMContentLoaded', () => {
-  setTimeout(verificarSessaoMercadoi, 1500);
-});
 </script>
 
 </body>

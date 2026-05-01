@@ -16,8 +16,8 @@ Analise a legenda de um post do Instagram sobre um imóvel e extraia os dados es
 REGRAS GERAIS:
 - Responda APENAS com JSON válido, sem texto adicional, sem markdown, sem blocos de código.
 - Nunca invente dados ausentes. Use string vazia "" para campos não informados.
-- Campos numéricos (quartos, suites, banheiros, vagas, area_m2) devem ter apenas dígitos ou "".
-- preco: apenas dígitos, sem R$, pontos ou vírgulas. Ex: "450000".
+- Campos numéricos (quartos, suites, banheiros, vagas, area_m2) devem ter apenas dígitos ou "". Se o valor for zero ou desconhecido use "" — nunca use "0".
+- preco: apenas dígitos, sem R$, pontos ou vírgulas. Ex: "450000". Se não informado use "". NUNCA use número de telefone, CRM ou CRECI como preço.
 - operacao: use exatamente "A Venda" ou "Em Aluguel".
 - tipo_imovel: ex: "Apartamento", "Casa", "Terreno", "Sala Comercial".
 - elevador: use "Sim", "Não" ou "".

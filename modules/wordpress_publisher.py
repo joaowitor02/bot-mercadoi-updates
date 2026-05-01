@@ -57,10 +57,13 @@ class WordPressPublisher:
             "mercadoi_url":   "",
         }
 
-        publicar_direto = (
-            tipo_midia == "imagem"
-            and bool(dados.get("preco", "").strip())
-            and bool(dados.get("tipo_imovel", "").strip())
+        fonte     = dados.get("_fonte", "")
+        tem_preco = bool(dados.get("preco", "").strip())
+        tem_tipo  = bool(dados.get("tipo_imovel", "").strip())
+        # Instagram: publica só com imagem + preço + tipo
+        # OLX/Órulo: publica com preço + tipo mesmo sem imagens
+        publicar_direto = tem_preco and tem_tipo and (
+            tipo_midia == "imagem" or fonte in ("olx", "orulo")
         )
 
         post_id, admin_url, public_url, err = await self._criar_imovel(dados, publicar=publicar_direto)

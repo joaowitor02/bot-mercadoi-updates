@@ -257,7 +257,7 @@ class DeepSeekParser:
         return ""
 
     def _extrair_preco_descricao(self, texto):
-        # 1) R$ 170.000,00 ou R$170000
+        # 1) R$ 170.000,00 ou R$170.000
         match = re.search(r'R\$\s*([\d.,]+)', texto, re.IGNORECASE)
         if match:
             return match.group(1)
@@ -268,10 +268,11 @@ class DeepSeekParser:
         )
         if match:
             return match.group(1)
-        # 3) número grande solto que parece preço (>= 50.000 ou >= 50000)
-        for m in re.finditer(r'\b(\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{2})?|\d{5,})\b', texto):
+        # 3) Número formatado com separador de milhar (ex: 350.000 ou 1.500.000).
+        # Não usa \d{5,} para evitar capturar CRM, CRECI, telefone ou outros códigos soltos.
+        for m in re.finditer(r'\b(\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{2})?)\b', texto):
             val = re.sub(r'[^\d]', '', m.group(1))
-            if len(val) >= 5:   # >= 10.000
+            if len(val) >= 5:  # pelo menos R$10.000
                 return m.group(1)
         return ""
 
@@ -336,9 +337,10 @@ class DeepSeekParser:
         apenas_digitos = re.sub(r'[^\d]', '', valor)
 
         # Sanidade: preço imobiliário BR entre 4 e 8 dígitos (R$1.000 a R$99.999.999)
+        # Mais de 8 dígitos → provavelmente telefone, CRECI ou código — descarta
         if apenas_digitos and apenas_digitos != '0':
             if len(apenas_digitos) > 8:
-                return apenas_digitos[:8]
+                return ""
             if len(apenas_digitos) >= 4:
                 return apenas_digitos
 

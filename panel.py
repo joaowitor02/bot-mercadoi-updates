@@ -11,6 +11,7 @@ import logging
 import os
 import re
 import secrets
+import shutil
 import subprocess
 import sys
 import threading
@@ -33,6 +34,8 @@ from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
+from modules.olx_scraper import normalizar_url as normalizar_olx_url, url_valida as olx_url_valida
+from modules.orulo_scraper import normalizar_url as normalizar_orulo_url, url_valida as orulo_url_valida
 
 app = FastAPI(title="Bot Mercadoi — Painel")
 
@@ -62,7 +65,7 @@ _ADMIN_API_PATHS = frozenset({
     "/api/config", "/api/config/senha", "/api/config/telegram",
     "/api/config/admin-senha", "/api/config/licenca", "/api/testar-telegram",
     "/api/tunnel/baixar", "/api/config/avancada", "/api/gerar-licenca",
-    "/api/config/wordpress",
+    "/api/config/wordpress", "/api/diagnostico", "/api/limpar-arquivos-antigos",
     # /api/atualizar e /api/conectar-wordpress são intencionais fora daqui
 })
 
@@ -530,8 +533,8 @@ def _execucoes_db(dias: int = 7) -> list[dict]:
         status_raw = (r.get("status") or "").lower()
         if status_raw in ("rascunho_salvo", "rascunho_salvo_sem_midia_video", "publicado"):
             status = "sucesso"
-        elif status_raw == "processando":
-            status = "processando"
+        elif status_raw in ("processando", "capturando", "baixando_midia", "enviando_wp"):
+            status = status_raw
         elif "erro" in status_raw:
             status = "falha"
         else:
@@ -559,6 +562,12 @@ def _execucoes_db(dias: int = 7) -> list[dict]:
             "arquivo_midia": r.get("arquivo_midia", ""),
             "resultado": r.get("resultado", ""),
             "mercadoi_url": r.get("mercadoi_url", ""),
+            "url_publica": r.get("url_publica", ""),
+            "origem": r.get("origem", "") or _fonte(r.get("url_instagram", "")),
+            "tempo_seg": int(r.get("tempo_seg") or 0),
+            "captura_seg": int(r.get("captura_seg") or 0),
+            "midia_seg": int(r.get("midia_seg") or 0),
+            "publicacao_seg": int(r.get("publicacao_seg") or 0),
         })
     itens.sort(key=lambda x: (x.get("data") or "", x.get("fim") or x.get("inicio") or "", x.get("row_id") or 0), reverse=True)
     return itens
@@ -572,6 +581,16 @@ _bot_rodando  = False
 _watch_ativo  = False
 _bot_processo = None
 _ultimo_log: list[str] = []
+
+
+def _tail_text_lines(path: Path, limit: int, max_bytes: int = 256 * 1024) -> list[str]:
+    """Le somente o fim de arquivos de log grandes."""
+    with path.open("rb") as f:
+        f.seek(0, os.SEEK_END)
+        size = f.tell()
+        f.seek(max(0, size - max_bytes))
+        data = f.read()
+    return data.decode("utf-8", errors="replace").splitlines()[-limit:]
 
 
 async def _rodar_bot(watch: bool = False, intervalo: int = 5):
@@ -678,29 +697,38 @@ async def status(request: Request):
     sem_auth = not _SENHA and not _ADMIN_SENHA
     nivel = _SESSION_TOKENS.get(token, "admin" if sem_auth else "")
 
-    tempo_medio = None
+    tempo_medio    = None
+    workers_ativos = 0
     try:
         db = _db_manager()
         with db._conn() as conn:
             row = conn.execute(
-                "SELECT AVG(tempo_seg) as media FROM imoveis "
+                "SELECT AVG(tempo_seg) as media FROM ("
+                "SELECT tempo_seg FROM imoveis "
                 "WHERE tempo_seg > 0 AND status IN "
                 "('rascunho_salvo','rascunho_salvo_sem_midia_video','publicado') "
                 "ORDER BY id DESC LIMIT 20"
+                ")"
             ).fetchone()
             if row and row["media"]:
                 tempo_medio = round(row["media"])
+            w = conn.execute(
+                "SELECT COUNT(*) as c FROM imoveis "
+                "WHERE status IN ('processando','capturando','baixando_midia','enviando_wp')"
+            ).fetchone()
+            workers_ativos = w["c"] if w else 0
     except Exception:
         pass
 
     return JSONResponse({
-        "rodando":      _bot_rodando,
-        "watch_ativo":  _watch_ativo,
-        "hoje":         date.today().isoformat(),
-        "autenticado":  bool(nivel),
-        "senha_ativa":  bool(_SENHA),
-        "nivel":        nivel,
-        "tempo_medio":  tempo_medio,
+        "rodando":        _bot_rodando,
+        "watch_ativo":    _watch_ativo,
+        "hoje":           date.today().isoformat(),
+        "autenticado":    bool(nivel),
+        "senha_ativa":    bool(_SENHA),
+        "nivel":          nivel,
+        "tempo_medio":    tempo_medio,
+        "workers_ativos": workers_ativos,
     })
 
 
@@ -845,6 +873,17 @@ async def abrir_chrome():
 
 @app.get("/api/logs/live")
 async def logs_live(ultimas: int = 80):
+    # Lê sempre do arquivo de log — o FileHandler faz flush() após cada linha,
+    # então o arquivo está sempre atualizado. Isso é mais confiável do que o
+    # stdout piped no Windows, que sofre de block-buffering mesmo com PYTHONUNBUFFERED.
+    hoje = date.today().strftime("%Y-%m-%d")
+    log_file = LOGS_DIR / f"{hoje}.log"
+    if log_file.exists():
+        try:
+            return JSONResponse(_tail_text_lines(log_file, max(1, min(ultimas, 300))))
+        except Exception:
+            pass
+    # Fallback: buffer de stdout (caso o arquivo ainda não exista)
     return JSONResponse(_ultimo_log[-ultimas:])
 
 
@@ -881,15 +920,23 @@ _INSTAGRAM_RE = re.compile(
     r"https?://(?:www\.)?instagram\.com/(?:p|reel|tv)/[A-Za-z0-9_-]+", re.IGNORECASE
 )
 _OLX_RE = re.compile(
-    r"https?://(?:[\w-]+\.)?olx\.com\.br/", re.IGNORECASE
+    r"^(?:https?://)?(?:[\w-]+\.)?olx\.com\.br(?:/|$)", re.IGNORECASE
 )
 
 def _url_suportada(url: str) -> bool:
-    return bool(_INSTAGRAM_RE.match(url) or _OLX_RE.match(url))
+    return bool(_INSTAGRAM_RE.match(url) or olx_url_valida(url) or orulo_url_valida(url))
+
+def _normalizar_url_entrada(url: str) -> str:
+    url = normalizar_olx_url(url.strip())
+    if orulo_url_valida(url):
+        return normalizar_orulo_url(url)
+    return url
 
 def _fonte(url: str) -> str:
     if _OLX_RE.match(url):
         return "OLX"
+    if orulo_url_valida(url):
+        return "Órulo"
     return "Instagram"
 
 
@@ -903,7 +950,7 @@ async def adicionar_url(body: AdicionarRequest):
     if _bot_rodando:
         return JSONResponse({"ok": False, "msg": "Aguarde o bot terminar antes de adicionar"}, status_code=409)
 
-    urls_raw = [u.strip() for u in body.urls if u.strip()]
+    urls_raw = [_normalizar_url_entrada(u) for u in body.urls if u.strip()]
     if not urls_raw:
         return JSONResponse({"ok": False, "msg": "Nenhuma URL informada"}, status_code=400)
 
@@ -911,10 +958,13 @@ async def adicionar_url(body: AdicionarRequest):
         sheet = _db_manager()
         _, rows = sheet._todas_as_linhas()
         existentes = {}
+        originais_existentes = {}
         for r in rows:
             url_existente = r.get("url_instagram", "").strip()
-            if url_existente and url_existente not in existentes:
-                existentes[url_existente] = r.get("status", "")
+            url_chave = _normalizar_url_entrada(url_existente)
+            if url_chave and url_chave not in existentes:
+                existentes[url_chave] = r.get("status", "")
+                originais_existentes[url_chave] = url_existente
     except Exception as e:
         return JSONResponse({"ok": False, "msg": f"Erro ao conectar à planilha: {e}"}, status_code=500)
 
@@ -931,7 +981,7 @@ async def adicionar_url(body: AdicionarRequest):
 
     for url in urls_raw:
         if not _url_suportada(url):
-            results.append({"url": url, "status": "invalida", "msg": "URL não é um post do Instagram ou anúncio do OLX"})
+            results.append({"url": url, "status": "invalida", "msg": "URL não é um post do Instagram, anúncio do OLX ou empreendimento do Órulo"})
             continue
         if url in adicionadas_agora:
             results.append({"url": url, "status": "duplicada", "msg": "Duplicada neste envio"})
@@ -948,7 +998,7 @@ async def adicionar_url(body: AdicionarRequest):
                     results.append({"url": url, "status": "erro", "msg": str(e)})
             elif _pode_reativar(status_existente):
                 try:
-                    sheet.resetar_url(url)
+                    sheet.resetar_url(originais_existentes.get(url, url))
                     adicionadas_agora.add(url)
                     results.append({"url": url, "status": "adicionada", "msg": "Reativada para reprocessamento"})
                 except Exception as e:
@@ -1068,6 +1118,8 @@ async def get_config():
             "usar_tunnel":              cfg.get("usar_tunnel", False),
             "usar_deepseek_api":        cfg.get("usar_deepseek_api", False),
             "whatsapp_default":         cfg.get("whatsapp_default", ""),
+            "cache_extracao_ttl_horas": cfg.get("cache_extracao_ttl_horas", 12),
+            "limpeza_auto_dias":        cfg.get("limpeza_auto_dias", 15),
         })
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
@@ -1216,6 +1268,8 @@ class ConfigAvancadaRequest(BaseModel):
     usar_tunnel:           bool | None = None
     usar_deepseek_api:     bool | None = None
     whatsapp_default:      str | None = None
+    cache_extracao_ttl_horas: int | None = None
+    limpeza_auto_dias:        int | None = None
 
 
 @app.post("/api/config/avancada")
@@ -1227,6 +1281,10 @@ async def salvar_config_avancada(body: ConfigAvancadaRequest):
         for k, v in campos.items():
             if isinstance(v, str):
                 campos[k] = v.strip()
+        if "cache_extracao_ttl_horas" in campos:
+            campos["cache_extracao_ttl_horas"] = max(0, min(int(campos["cache_extracao_ttl_horas"]), 168))
+        if "limpeza_auto_dias" in campos:
+            campos["limpeza_auto_dias"] = max(0, min(int(campos["limpeza_auto_dias"]), 365))
         cfg.update(campos)
         (BASE_DIR / "config.json").write_text(
             json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8"
@@ -1429,6 +1487,59 @@ class RemoverRequest(BaseModel):
     id: int
 
 
+def _contar_arquivos_antigos(pastas: list[Path], dias: int) -> tuple[int, int]:
+    limite = __import__("time").time() - (dias * 86400)
+    count = 0
+    bytes_total = 0
+    vistos: set[str] = set()
+    for pasta in pastas:
+        try:
+            pasta = pasta.resolve()
+        except Exception:
+            continue
+        if str(pasta) in vistos or not pasta.exists():
+            continue
+        vistos.add(str(pasta))
+        for raiz, _, arquivos in os.walk(pasta):
+            for nome in arquivos:
+                caminho = Path(raiz) / nome
+                try:
+                    st = caminho.stat()
+                    if st.st_mtime < limite:
+                        count += 1
+                        bytes_total += st.st_size
+                except Exception:
+                    pass
+    return count, bytes_total
+
+
+def _remover_arquivos_antigos(pastas: list[Path], dias: int) -> tuple[int, int]:
+    limite = __import__("time").time() - (dias * 86400)
+    count = 0
+    bytes_total = 0
+    vistos: set[str] = set()
+    for pasta in pastas:
+        try:
+            pasta = pasta.resolve()
+        except Exception:
+            continue
+        if str(pasta) in vistos or not pasta.exists():
+            continue
+        vistos.add(str(pasta))
+        for raiz, _, arquivos in os.walk(pasta):
+            for nome in arquivos:
+                caminho = Path(raiz) / nome
+                try:
+                    st = caminho.stat()
+                    if st.st_mtime < limite:
+                        bytes_total += st.st_size
+                        caminho.unlink()
+                        count += 1
+                except Exception:
+                    pass
+    return count, bytes_total
+
+
 @app.post("/api/remover")
 async def remover_item(body: RemoverRequest):
     if _bot_rodando:
@@ -1442,6 +1553,20 @@ async def remover_item(body: RemoverRequest):
         if cur.rowcount:
             return JSONResponse({"ok": True})
         return JSONResponse({"ok": False, "msg": "Item não encontrado"}, status_code=404)
+    except Exception as e:
+        return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
+
+
+@app.post("/api/priorizar")
+async def priorizar_item(body: RemoverRequest):
+    if _bot_rodando:
+        return JSONResponse({"ok": False, "msg": "Aguarde o bot terminar"}, status_code=409)
+    try:
+        db = _db_manager()
+        ok = db.priorizar_item(body.id)
+        if ok:
+            return JSONResponse({"ok": True, "msg": "Item movido para o topo da fila"})
+        return JSONResponse({"ok": False, "msg": "Item não encontrado ou já em processamento"}, status_code=404)
     except Exception as e:
         return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
 
@@ -1470,12 +1595,146 @@ async def limpar_erros():
         return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
 
 
+class LimpezaRequest(BaseModel):
+    dias: int = 15
+
+
+@app.post("/api/limpar-arquivos-antigos")
+async def limpar_arquivos_antigos(body: LimpezaRequest):
+    if _bot_rodando:
+        return JSONResponse({"ok": False, "msg": "Aguarde o bot terminar"}, status_code=409)
+    dias = max(1, min(int(body.dias or 15), 365))
+    try:
+        cfg = _load_config()
+        pastas = [
+            Path(cfg.get("downloads_path") or (_DATA_DIR / "downloads")),
+            _DATA_DIR / "downloads",
+            LOGS_DIR,
+            LOGS_DIR / "screenshots",
+        ]
+        arquivos, bytes_total = _remover_arquivos_antigos(pastas, dias)
+        cache = _db_manager().limpar_cache_expirado(max(1, min(dias, 3)))
+        return JSONResponse({
+            "ok": True,
+            "msg": f"{arquivos} arquivo(s) e {cache} cache(s) antigo(s) removido(s)",
+            "arquivos": arquivos,
+            "cache": cache,
+            "bytes": bytes_total,
+        })
+    except Exception as e:
+        return JSONResponse({"ok": False, "msg": str(e)}, status_code=500)
+
+
+@app.get("/api/diagnostico")
+async def diagnostico():
+    try:
+        cfg = _load_config()
+    except Exception as e:
+        return JSONResponse({"ok": False, "msg": f"config.json inválido: {e}"}, status_code=500)
+
+    checks = []
+
+    def add(nome: str, ok: bool, detalhe: str = ""):
+        checks.append({"nome": nome, "ok": bool(ok), "detalhe": detalhe})
+
+    db_ok = False
+    cache_count = 0
+    fila_count = 0
+    tempos = {"captura": 0, "midia": 0, "envio": 0, "gargalo": ""}
+    try:
+        db = _db_manager()
+        with db._conn() as conn:
+            fila_count = conn.execute("SELECT COUNT(*) AS c FROM imoveis WHERE status='pendente'").fetchone()["c"]
+            cache_count = conn.execute("SELECT COUNT(*) AS c FROM extracao_cache").fetchone()["c"]
+            row_t = conn.execute(
+                "SELECT AVG(captura_seg) AS captura, AVG(midia_seg) AS midia, AVG(publicacao_seg) AS envio "
+                "FROM (SELECT captura_seg, midia_seg, publicacao_seg FROM imoveis "
+                "WHERE tempo_seg > 0 AND status IN ('rascunho_salvo','rascunho_salvo_sem_midia_video','publicado') "
+                "ORDER BY id DESC LIMIT 20)"
+            ).fetchone()
+            if row_t:
+                tempos = {
+                    "captura": round(row_t["captura"] or 0),
+                    "midia": round(row_t["midia"] or 0),
+                    "envio": round(row_t["envio"] or 0),
+                    "gargalo": "",
+                }
+                pares = {"captura": tempos["captura"], "mídia": tempos["midia"], "envio": tempos["envio"]}
+                tempos["gargalo"] = max(pares, key=pares.get) if any(pares.values()) else ""
+        db_ok = True
+    except Exception as e:
+        add("Banco SQLite", False, str(e))
+    if db_ok:
+        add("Banco SQLite", True, f"{fila_count} pendente(s), {cache_count} cache(s)")
+
+    usar_wp = bool(cfg.get("usar_wordpress_api"))
+    xmlrpc_ok = bool(cfg.get("wordpress_xmlrpc_url") and cfg.get("wordpress_xmlrpc_user") and cfg.get("wordpress_xmlrpc_password"))
+    rest_ok = bool(cfg.get("wordpress_api_url") and (cfg.get("wordpress_api_key") or cfg.get("wordpress_app_password")))
+    add("WordPress", usar_wp and (xmlrpc_ok or rest_ok), "XML-RPC configurado" if xmlrpc_ok else ("REST configurado" if rest_ok else "não configurado"))
+
+    add("DeepSeek API", bool(cfg.get("deepseek_api_key")), "chave configurada" if cfg.get("deepseek_api_key") else "sem chave")
+    add("Apify", bool(cfg.get("usar_apify") and cfg.get("apify_api_token")), "ativo" if cfg.get("usar_apify") else "desativado")
+    add("OLX Worker", bool(cfg.get("olx_worker_url")), cfg.get("olx_worker_url", "")[:70])
+    add("Órulo", bool(cfg.get("orulo_email") and cfg.get("orulo_senha")), "login configurado" if cfg.get("orulo_email") else "sem login")
+
+    sessao = _DATA_DIR / "mercadoi_session.json"
+    cookies = 0
+    if sessao.exists():
+        try:
+            cookies = len(json.loads(sessao.read_text(encoding="utf-8")))
+        except Exception:
+            cookies = 0
+    add("Sessão Mercadoi", cookies > 0, f"{cookies} cookie(s)" if cookies else "sem arquivo de sessão")
+
+    downloads = Path(cfg.get("downloads_path") or (_DATA_DIR / "downloads"))
+    add("Downloads", downloads.exists(), str(downloads))
+
+    try:
+        usage = shutil.disk_usage(str(_DATA_DIR))
+        disco = {
+            "total_gb": round(usage.total / (1024**3), 1),
+            "livre_gb": round(usage.free / (1024**3), 1),
+            "uso_pct": round((usage.used / usage.total) * 100),
+        }
+    except Exception:
+        disco = {"total_gb": 0, "livre_gb": 0, "uso_pct": 0}
+
+    dias_limpeza = int(cfg.get("limpeza_auto_dias", 15) or 15)
+    antigos, bytes_antigos = _contar_arquivos_antigos(
+        [downloads, _DATA_DIR / "downloads", LOGS_DIR, LOGS_DIR / "screenshots"],
+        max(1, dias_limpeza),
+    )
+
+    return JSONResponse({
+        "ok": True,
+        "checks": checks,
+        "disco": disco,
+        "limpeza": {
+            "dias": dias_limpeza,
+            "arquivos_antigos": antigos,
+            "bytes_antigos": bytes_antigos,
+        },
+        "cache_ttl_horas": int(cfg.get("cache_extracao_ttl_horas", 12) or 0),
+        "tempos": tempos,
+    })
+
+
 @app.get("/api/fila")
 async def listar_fila():
     """Retorna todos os itens pendentes e com erro para exibição na fila."""
     try:
         db = _db_manager()
-        _, rows = db._todas_as_linhas()
+        _EM_ANDAMENTO = {"pendente", "processando", "capturando", "baixando_midia", "enviando_wp"}
+        with db._conn() as conn:
+            rows = [
+                db._to_dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM imoveis "
+                    "WHERE status IN ('pendente','processando','capturando','baixando_midia','enviando_wp') "
+                    "OR status LIKE 'erro%' "
+                    "ORDER BY prioridade DESC, id DESC"
+                ).fetchall()
+            ]
         fila = [
             {
                 "id":            r["_row_index"],
@@ -1486,9 +1745,11 @@ async def listar_fila():
                 "criado_em":     r.get("criado_em", ""),
                 "atualizado_em": r.get("atualizado_em", ""),
                 "mercadoi_url":  r.get("mercadoi_url", ""),
+                "origem":        r.get("origem", "") or _fonte(r.get("url_instagram", "")),
+                "prioridade":    int(r.get("prioridade") or 0),
             }
             for r in rows
-            if r.get("status", "") in ("pendente", "processando")
+            if r.get("status", "") in _EM_ANDAMENTO
             or "erro" in r.get("status", "").lower()
         ]
         return JSONResponse({"count": len(fila), "items": fila})
@@ -1671,4 +1932,5 @@ if __name__ == "__main__":
     print("  Bot Mercadoi — Painel")
     print("  Acesse: http://localhost:8000")
     print("=" * 50)
-    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="warning")
+    host = "127.0.0.1" if sys.platform == "win32" else "0.0.0.0"
+    uvicorn.run(app, host=host, port=8000, log_level="warning")

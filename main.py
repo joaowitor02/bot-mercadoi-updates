@@ -9,6 +9,7 @@ import sys
 import json
 import os
 import uuid
+import time
 import httpx
 from modules.database_manager import DatabaseManager
 from modules.instagram_scraper import InstagramScraper
@@ -24,7 +25,8 @@ from modules.status_writer import StatusWriter
 from modules.logger import Logger
 from modules.notificador import notificar
 from modules.ocr_preco import extrair_preco_de_imagens
-from modules.olx_scraper import OlxScraper, url_valida as olx_url_valida
+from modules.olx_scraper import OlxScraper, normalizar_url as normalizar_olx_url, url_valida as olx_url_valida
+from modules.orulo_scraper import OruloScraper, normalizar_url as normalizar_orulo_url, url_valida as orulo_url_valida
 
 logger = Logger("main")
 
@@ -60,11 +62,32 @@ def _validar_dados(dados: dict) -> dict:
     Sanitiza campos numéricos para corrigir valores absurdos da IA.
     Regras baseadas em limites do mundo real para imóveis residenciais.
     """
+    import re as _re
+
     def to_int(v):
         try:
             return int(str(v).strip())
         except Exception:
             return None
+
+    # Normaliza "0" (ou "0.0", "00" etc.) → "" para campos numéricos.
+    # A IA às vezes retorna 0 quando o campo não existe em vez de deixar vazio.
+    _CAMPOS_ZERO = ["quartos", "suites", "banheiros", "vagas",
+                    "area_m2", "area_terreno", "preco", "condominio", "ano_construcao"]
+    for campo in _CAMPOS_ZERO:
+        v = dados.get(campo)
+        if isinstance(v, str) and _re.match(r'^\s*0+\s*$', v):
+            dados[campo] = ""
+        elif isinstance(v, (int, float)) and v == 0:
+            dados[campo] = ""
+
+    # Valida preço: mais de 8 dígitos → telefone ou CRECI, não preço
+    preco_raw = dados.get("preco", "")
+    if isinstance(preco_raw, str):
+        apenas_digitos = _re.sub(r'[^\d]', '', preco_raw)
+        if len(apenas_digitos) > 8:
+            logger.warning(f"Preço suspeito ({preco_raw!r}) — descartado (muitos dígitos, provável telefone ou CRM)")
+            dados["preco"] = ""
 
     quartos = to_int(dados.get("quartos"))
     suites = to_int(dados.get("suites"))
@@ -129,12 +152,13 @@ def _dados_invalidos(dados: dict) -> str:
 # ---------------------------------------------------------------------------
 
 _MOTIVO_MSGS = {
-    "url_invalida":           "URL não reconhecida (use Instagram ou OLX)",
+    "url_invalida":           "URL não reconhecida (use Instagram, OLX ou Órulo)",
     "nao_encontrado":         "Anúncio não encontrado (pode ter sido apagado)",
     "acesso_restrito":        "Acesso bloqueado (post privado ou proteção do site)",
     "post_privado":           "Post privado ou sem descrição pública",
     "erro_rede":              "Falha de rede ao acessar o link",
     "estrutura_desconhecida": "Não foi possível ler os dados da página",
+    "cadastro_orulo_incompleto": "Órulo pediu atualização cadastral antes de liberar o imóvel",
     "dados_insuficientes":    "Dados insuficientes para cadastrar o imóvel",
 }
 
@@ -142,19 +166,40 @@ _MOTIVO_MSGS = {
 _MOTIVOS_DEFINITIVOS = {"url_invalida", "nao_encontrado"}
 
 
-async def _via_api(url: str, config: dict) -> tuple[dict | None, str]:
+async def _via_api(url: str, config: dict, apify_item_task=None) -> tuple[dict | None, str]:
     """
     Extrai legenda via Chrome (já logado no Instagram) e processa com DeepSeek API.
     Retorna (dados, motivo_falha). motivo_falha é '' em caso de sucesso.
     """
-    # Tenta extrair via Chrome primeiro (logado no Instagram, sem bloqueio)
-    post = await extrair_via_chrome(url)
+    post = {"ok": False, "motivo": "erro_rede"}
+
+    # Quando a Apify ja foi acionada para baixar midia, reaproveita o mesmo
+    # resultado para a legenda e evita tentar Chrome/HTTP antes dela.
+    if apify_item_task is not None:
+        from modules.instagram_media_api import ApifyMediaExtractor
+        apify = ApifyMediaExtractor(
+            token=config["apify_api_token"],
+            downloads_path=config["downloads_path"],
+            actor_id=config.get("apify_actor_id", ""),
+        )
+        try:
+            item = await apify_item_task
+            post = apify.post_from_item(item, url)
+            if post.get("ok"):
+                logger.info("Apify compartilhado: legenda obtida sem chamada extra")
+        except Exception as e:
+            logger.warning(f"Apify compartilhado para caption falhou: {e}")
+
+    # Tenta extrair via Chrome primeiro apenas onde esse caminho existe.
+    if not post.get("ok") and sys.platform == "win32":
+        post = await extrair_via_chrome(url)
 
     # Fallback: scraper HTTP (funciona para posts públicos sem login)
     if not post.get("ok"):
         motivo = post.get("motivo", "erro_rede")
         if motivo not in ("url_invalida",):
-            logger.info(f"Chrome scraper falhou ({motivo}), tentando HTTP scraper...")
+            origem_falha = "Chrome scraper" if sys.platform == "win32" else "Extração inicial"
+            logger.info(f"{origem_falha} falhou ({motivo}), tentando HTTP scraper...")
             scraper = InstagramScraper()
             post = await scraper.extrair(url)
 
@@ -169,7 +214,15 @@ async def _via_api(url: str, config: dict) -> tuple[dict | None, str]:
                 downloads_path=config["downloads_path"],
                 actor_id=config.get("apify_actor_id", ""),
             )
-            post = await apify.extrair_post(url)
+            if apify_item_task is not None:
+                try:
+                    item = await apify_item_task
+                    post = apify.post_from_item(item, url)
+                except Exception as e:
+                    logger.warning(f"Apify compartilhado para caption falhou: {e}")
+                    post = {"ok": False, "motivo": "erro_rede"}
+            else:
+                post = await apify.extrair_post(url)
 
     if not post.get("ok"):
         return None, post.get("motivo", "erro_rede")
@@ -225,13 +278,25 @@ async def _extrair_e_baixar(url: str, config: dict) -> tuple:
     media = MediaResolver(config["downloads_path"], config)
 
     if usar_api:
+        apify_item_task = None
+        if config.get("usar_apify") and config.get("apify_api_token", "").strip():
+            from modules.instagram_media_api import ApifyMediaExtractor
+            apify = ApifyMediaExtractor(
+                token=config["apify_api_token"],
+                downloads_path=config["downloads_path"],
+                actor_id=config.get("apify_actor_id", ""),
+            )
+            apify_item_task = asyncio.create_task(apify.obter_item(url))
+
         # Dispara download de mídia ao mesmo tempo que a extração API
-        med_task = asyncio.create_task(media.resolver(url))
-        dados, motivo = await _via_api(url, config)
+        med_task = asyncio.create_task(media.resolver(url, apify_item_task=apify_item_task))
+        dados, motivo = await _via_api(url, config, apify_item_task=apify_item_task)
 
         if not dados and motivo in _MOTIVOS_DEFINITIVOS:
             # URL inválida/não encontrada — cancela download
             med_task.cancel()
+            if apify_item_task and not apify_item_task.done():
+                apify_item_task.cancel()
             try:
                 await med_task
             except asyncio.CancelledError:
@@ -272,7 +337,11 @@ async def _extrair_e_baixar(url: str, config: dict) -> tuple:
 
 async def _extrair_olx(url: str, config: dict) -> tuple:
     """Extrai dados e baixa imagens de um anúncio OLX."""
-    scraper = OlxScraper()
+    scraper = OlxScraper(
+        zenrows_key=config.get("zenrows_api_key", ""),
+        scraperapi_key=config.get("scraperapi_key", ""),
+        worker_url=config.get("olx_worker_url", ""),
+    )
     resultado = await scraper.extrair(url)
     if not resultado.get("ok"):
         return None, None, None, resultado.get("motivo", "erro_rede")
@@ -289,26 +358,84 @@ async def _extrair_olx(url: str, config: dict) -> tuple:
     return dados, tipo_midia, arquivo_midia, ""
 
 
+async def _extrair_orulo(url: str, config: dict) -> tuple:
+    """Extrai dados e baixa imagens de um empreendimento do Órulo."""
+    scraper = OruloScraper(
+        email=config.get("orulo_email", ""),
+        senha=config.get("orulo_senha", ""),
+        profile_path=config.get("orulo_profile_path", ""),
+    )
+    resultado = await scraper.extrair(url)
+    if not resultado.get("ok"):
+        return None, None, None, resultado.get("motivo", "erro_rede")
+
+    dados = resultado["dados"]
+    imagens_urls = resultado.get("imagens_urls", [])
+
+    arquivo_midia = []
+    if imagens_urls:
+        arquivo_midia = await scraper.baixar_imagens(
+            imagens_urls, config.get("downloads_path", "")
+        )
+
+    tipo_midia = "imagem" if arquivo_midia else None
+    return dados, tipo_midia, arquivo_midia, ""
+
+
+async def _midia_instagram(url: str, config: dict) -> tuple:
+    media = MediaResolver(config["downloads_path"], config)
+    tipo_midia, arquivo_midia = await media.resolver(url)
+    return tipo_midia, arquivo_midia
+
+
 async def processar_link(row: dict, sheet, config: dict):
-    url = row["url_instagram"]
+    url = normalizar_olx_url(row["url_instagram"])
+    if orulo_url_valida(url):
+        url = normalizar_orulo_url(url)
     row_index = row["_row_index"]
     execution_id = str(uuid.uuid4())[:8].upper()
 
     logger.info(f"[{execution_id}] === Iniciando: {url} ===")
-    _inicio = __import__("time").time()
-    sheet.atualizar_status(row_index, "processando")
+    _inicio = time.time()
+    _t_etapa = _inicio
+    sheet.atualizar_status(row_index, "capturando")
     sheet.atualizar_campo(row_index, "id_execucao", execution_id)
 
     status = StatusWriter(sheet, row_index)
 
+    cache_ttl = int(config.get("cache_extracao_ttl_horas", 12) or 0)
+
     # --- ETAPA 1+2: Extração e download (rota por fonte) ---
-    if olx_url_valida(url):
+    if orulo_url_valida(url):
+        logger.info(f"[{execution_id}] Fonte: Órulo")
+        sheet.atualizar_campo(row_index, "origem", "Órulo")
+        dados, tipo_midia, arquivo_midia, motivo_falha = await _extrair_orulo(url, config)
+        if dados:
+            dados["_fonte"] = "orulo"
+    elif olx_url_valida(url):
         logger.info(f"[{execution_id}] Fonte: OLX")
+        sheet.atualizar_campo(row_index, "origem", "OLX")
         dados, tipo_midia, arquivo_midia, motivo_falha = await _extrair_olx(url, config)
         if dados:
             dados["_fonte"] = "olx"
     else:
-        dados, tipo_midia, arquivo_midia, motivo_falha = await _extrair_e_baixar(url, config)
+        sheet.atualizar_campo(row_index, "origem", "Instagram")
+        cache = sheet.obter_cache(url, cache_ttl) if cache_ttl > 0 else None
+        if cache and cache.get("dados"):
+            logger.info(f"[{execution_id}] Cache de extracao usado para Instagram ({cache.get('atualizado_em', '')})")
+            dados = cache["dados"]
+            dados["_fonte"] = "instagram"
+            motivo_falha = ""
+            tipo_midia, arquivo_midia = await _midia_instagram(url, config)
+        else:
+            dados, tipo_midia, arquivo_midia, motivo_falha = await _extrair_e_baixar(url, config)
+            if dados:
+                cache_dados = dict(dados)
+                cache_dados.pop("_fonte", None)
+                sheet.salvar_cache(url, "Instagram", cache_dados)
+
+    captura_seg = int(time.time() - _t_etapa)
+    sheet.atualizar_campo(row_index, "captura_seg", str(captura_seg))
 
     if not dados or not dados.get("titulo"):
         msg_final = _MOTIVO_MSGS.get(motivo_falha, "Não foi possível extrair dados do imóvel")
@@ -327,6 +454,11 @@ async def processar_link(row: dict, sheet, config: dict):
     if not dados.get("url_publicacao"):
         dados["url_publicacao"] = url
 
+    # --- Melhoria: whatsapp_default como fallback de contato ---
+    if not dados.get("whatsapp_url") and config.get("whatsapp_default", "").strip():
+        dados["whatsapp_url"] = config["whatsapp_default"].strip()
+        logger.info(f"[{execution_id}] WhatsApp: usando padrão do config")
+
     sheet.atualizar_campo(row_index, "titulo_gerado", dados.get("titulo", ""))
     logger.info(f"[{execution_id}] Título: {dados.get('titulo', '')[:70]}")
 
@@ -336,30 +468,40 @@ async def processar_link(row: dict, sheet, config: dict):
         if val:
             logger.info(f"[{execution_id}]   {campo}: {val}")
 
+    _t_etapa = time.time()
+    sheet.atualizar_status(row_index, "baixando_midia")
     sheet.atualizar_campo(row_index, "tipo_midia", tipo_midia or "")
     sheet.atualizar_campo(
         row_index, "arquivo_midia",
         f"{len(arquivo_midia)} arquivo(s)" if arquivo_midia else ""
     )
 
-    # --- OCR de preço nas imagens (se não veio no texto) ---
-    if not dados.get("preco") and arquivo_midia:
+    # --- OCR de preço: fallback se vazio, ou validador se parece incompleto ---
+    preco_atual = dados.get("preco", "")
+    preco_curto = preco_atual and len(preco_atual) < 4  # ex: "350" quando deveria ser "350000"
+    if (not preco_atual or preco_curto) and arquivo_midia:
         preco_ocr = extrair_preco_de_imagens(arquivo_midia)
-        if preco_ocr:
+        if preco_ocr and (not preco_atual or len(preco_ocr) > len(preco_atual)):
             dados["preco"] = preco_ocr
-            logger.info(f"[{execution_id}] Preço obtido via OCR: {preco_ocr}")
+            acao = "corrigido" if preco_curto else "obtido"
+            logger.info(f"[{execution_id}] Preço {acao} via OCR: {preco_ocr}")
+
+    midia_seg = int(time.time() - _t_etapa)
+    sheet.atualizar_campo(row_index, "midia_seg", str(midia_seg))
 
     # --- ETAPA 3: Publicação no Mercadoi com retry ---
     if not arquivo_midia:
-        # OLX: continua sem imagens (dados já extraídos da página pública)
-        if dados.get("_fonte") == "olx":
-            logger.warning(f"[{execution_id}] OLX sem imagens — continuando sem mídia")
+        # OLX / Órulo: continua sem imagens (dados já extraídos da página pública)
+        if dados.get("_fonte") in ("olx", "orulo"):
+            logger.warning(f"[{execution_id}] {dados['_fonte'].upper()} sem imagens — continuando sem mídia")
         else:
             msg = "Nenhuma midia foi baixada para esta publicacao"
             logger.error(f"[{execution_id}] {msg}")
             status.erro("erro_download", msg)
             return
 
+    _t_etapa = time.time()
+    sheet.atualizar_status(row_index, "enviando_wp")
     logger.info(f"[{execution_id}] Publicando no Mercadoi...")
     resultado = None
 
@@ -431,14 +573,17 @@ async def processar_link(row: dict, sheet, config: dict):
                     await asyncio.sleep(ESPERA_ENTRE_TENTATIVAS)
 
     if resultado and resultado["sucesso"]:
+        publicacao_seg = int(time.time() - _t_etapa)
+        sheet.atualizar_campo(row_index, "publicacao_seg", str(publicacao_seg))
         sheet.atualizar_campo(row_index, "cidade_aplicada", resultado.get("cidade_aplicada", ""))
         sheet.atualizar_campo(row_index, "bairro_aplicado", resultado.get("bairro_aplicado", ""))
         mercadoi_url = resultado.get("mercadoi_url", "")
         sheet.atualizar_campo(row_index, "mercadoi_url", mercadoi_url)
+        sheet.atualizar_campo(row_index, "url_publica", resultado.get("url_publica", ""))
         # Define status: publicado diretamente ou rascunho
         msg = resultado.get("mensagem", "")
         status_final = "publicado" if "Publicado" in msg else "rascunho_salvo"
-        tempo_total = int(__import__("time").time() - _inicio)
+        tempo_total = int(time.time() - _inicio)
         sheet.atualizar_campo(row_index, "tempo_seg", str(tempo_total))
         status.sucesso(status_final, msg)
         logger.info(f"[{execution_id}] Sucesso! ({tempo_total}s)")
@@ -450,6 +595,8 @@ async def processar_link(row: dict, sheet, config: dict):
         if arquivo_midia:
             logger.info(f"[{execution_id}] {len(arquivo_midia)} arquivo(s) de mídia removido(s)")
     else:
+        publicacao_seg = int(time.time() - _t_etapa)
+        sheet.atualizar_campo(row_index, "publicacao_seg", str(publicacao_seg))
         msg = resultado.get("mensagem", "") if resultado else "resultado nulo"
         screenshot = resultado.get("screenshot_path", "") if resultado else ""
         if screenshot:
@@ -476,6 +623,56 @@ async def _verificar_chrome() -> bool:
         return False
 
 
+def _limpar_arquivos_antigos(config: dict, data_dir: str, db: DatabaseManager) -> None:
+    dias = int(config.get("limpeza_auto_dias", 15) or 0)
+    if dias <= 0:
+        return
+    agora = time.time()
+    limite = agora - (dias * 86400)
+    pastas = [
+        config.get("downloads_path", ""),
+        os.path.join(data_dir, "downloads"),
+        os.path.join(data_dir, "logs"),
+        os.path.join(data_dir, "logs", "screenshots"),
+    ]
+    removidos = 0
+    vistos = set()
+    for pasta in pastas:
+        if not pasta or pasta in vistos or not os.path.isdir(pasta):
+            continue
+        vistos.add(pasta)
+        for raiz, _, arquivos in os.walk(pasta):
+            for nome in arquivos:
+                caminho = os.path.join(raiz, nome)
+                try:
+                    if os.path.getmtime(caminho) < limite:
+                        os.remove(caminho)
+                        removidos += 1
+                except Exception:
+                    pass
+    try:
+        removidos += db.limpar_cache_expirado(max(1, min(dias, 3)))
+    except Exception:
+        pass
+    if removidos:
+        logger.info(f"Limpeza automática: {removidos} arquivo/cache antigo removido(s)")
+
+
+def _categoria_falha(status: str, msg: str) -> str:
+    texto = f"{status} {msg}".lower()
+    if "extracao" in texto or "extra" in texto or "ler os dados" in texto:
+        return "extração"
+    if "download" in texto or "midia" in texto or "mídia" in texto:
+        return "mídia"
+    if "timeout" in texto:
+        return "timeout"
+    if "wordpress" in texto or "xml-rpc" in texto or "api" in texto:
+        return "WordPress"
+    if "login" in texto or "autentic" in texto or "sess" in texto:
+        return "login"
+    return "publicação"
+
+
 async def executar_ciclo(config: dict):
     """Lê pendentes e processa. Retorna o número de itens processados."""
     base_dir  = os.path.dirname(os.path.abspath(__file__))
@@ -497,7 +694,9 @@ async def executar_ciclo(config: dict):
 
     db_path   = config.get("db_path", os.path.join(data_dir, "botmercadoi.db"))
     db = DatabaseManager(db_path)
+    _limpar_arquivos_antigos(config, data_dir, db)
 
+    db.resetar_timeout(minutos=10)
     db.resetar_travados()
     pendentes = db.listar_pendentes()
 
@@ -563,19 +762,23 @@ async def executar_ciclo(config: dict):
             url_m = r.get("mercadoi_url", "")
             linhas.append(f"  ✅ <a href='{url_m}'>{titulo}</a>" if url_m else f"  ✅ {titulo}")
         for r in falhas_list[:5]:
-            linhas.append(f"  ❌ {r.get('url_instagram','')[:50]}")
+            cat = _categoria_falha(r.get("status", ""), r.get("mensagem_erro", ""))
+            motivo = (r.get("mensagem_erro") or r.get("status", "") or "falha")[:70]
+            linhas.append(f"  ❌ [{cat}] {r.get('url_instagram','')[:45]} — {motivo}")
         mais_suc = f"\n  (+ {len(sucessos_list)-10} outros)" if len(sucessos_list) > 10 else ""
         mais_err = f"\n  (+ {len(falhas_list)-5} outros erros)" if len(falhas_list) > 5 else ""
         corpo = "\n".join(linhas) + mais_suc + mais_err
+        tempos = [int(r.get("tempo_seg") or 0) for r in sucessos_list if int(r.get("tempo_seg") or 0) > 0]
+        tempo_txt = f"\n⏱️ Média: {sum(tempos)//len(tempos)}s/pub" if tempos else ""
         if falhas_list:
             msg = (
                 f"⚠️ <b>Bot Mercadoi</b> — Ciclo concluído\n"
-                f"✅ {sucessos} publicado(s)  |  ❌ {len(falhas_list)} falha(s)\n\n"
+                f"✅ {sucessos} publicado(s)  |  ❌ {len(falhas_list)} falha(s){tempo_txt}\n\n"
                 f"{corpo}"
             )
         else:
             msg = (
-                f"✅ <b>Bot Mercadoi</b> — {total} imóvel(is) publicado(s)!\n\n"
+                f"✅ <b>Bot Mercadoi</b> — {total} imóvel(is) publicado(s)!{tempo_txt}\n\n"
                 f"{corpo}"
             )
         await notificar(config, msg)

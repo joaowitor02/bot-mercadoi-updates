@@ -44,15 +44,19 @@ class WordPressXmlRpcPublisher:
             "bairro_aplicado":"",
             "status_erro":    "",
             "mercadoi_url":   "",
+            "url_publica":    "",
         }
 
-        publicar_direto = (
-            tipo_midia == "imagem"
-            and bool(dados.get("preco", "").strip())
-            and bool(dados.get("tipo_imovel", "").strip())
+        fonte     = dados.get("_fonte", "")
+        tem_preco = bool(dados.get("preco", "").strip())
+        tem_tipo  = bool(dados.get("tipo_imovel", "").strip())
+        # Instagram: publica só com imagem + preço + tipo
+        # OLX/Órulo: publica com preço + tipo mesmo sem imagens
+        publicar_direto = tem_preco and tem_tipo and (
+            tipo_midia == "imagem" or fonte in ("olx", "orulo")
         )
 
-        post_id, admin_url, err = await self._criar_imovel(dados, publicar=publicar_direto)
+        post_id, admin_url, url_publica, err = await self._criar_imovel(dados, publicar=publicar_direto)
         if err:
             resultado["status_erro"] = "erro_preenchimento"
             resultado["mensagem"]    = err
@@ -75,6 +79,7 @@ class WordPressXmlRpcPublisher:
 
         resultado["sucesso"]         = True
         resultado["mercadoi_url"]    = admin_url
+        resultado["url_publica"]     = url_publica
         resultado["cidade_aplicada"] = dados.get("cidade_extraida", "")
         resultado["bairro_aplicado"] = dados.get("bairro_extraido", "")
         resultado["mensagem"]        = "Publicado" if publicar_direto else "Rascunho salvo"
@@ -84,7 +89,7 @@ class WordPressXmlRpcPublisher:
     # Criar imóvel via wp.newPost
     # ------------------------------------------------------------------
 
-    async def _criar_imovel(self, dados: dict, publicar: bool) -> tuple[int | None, str, str]:
+    async def _criar_imovel(self, dados: dict, publicar: bool) -> tuple[int | None, str, str, str]:
         def _s(key: str) -> str:
             v = dados.get(key, "")
             return v.strip() if isinstance(v, str) else str(v or "").strip()
@@ -122,18 +127,26 @@ class WordPressXmlRpcPublisher:
                     post_id = await self._run(self._sync_new_post, post_data_sem_termos)
                     post_id = int(post_id)
                 except xmlrpc.client.Fault as e2:
-                    return None, "", f"WordPress recusou a criação: {e2.faultString}"
+                    return None, "", "", f"WordPress recusou a criação: {e2.faultString}"
                 except Exception as e2:
-                    return None, "", f"Erro XML-RPC ao criar imóvel: {e2}"
+                    return None, "", "", f"Erro XML-RPC ao criar imóvel: {e2}"
             else:
-                return None, "", f"WordPress recusou a criação: {e.faultString}"
+                return None, "", "", f"WordPress recusou a criação: {e.faultString}"
         except Exception as e:
-            return None, "", f"Erro XML-RPC ao criar imóvel: {e}"
+            return None, "", "", f"Erro XML-RPC ao criar imóvel: {e}"
 
         await self._geocode_and_save(post_id, dados)
 
-        admin_url = f"{self._site_url}/wp-admin/post.php?post={post_id}&action=edit"
-        return post_id, admin_url, ""
+        admin_url  = f"{self._site_url}/wp-admin/post.php?post={post_id}&action=edit"
+        url_publica = ""
+        try:
+            info = await self._run(
+                lambda pid=post_id: self._proxy().wp.getPost(0, self._user, self._pass, pid, ["link"])
+            )
+            url_publica = info.get("link", "")
+        except Exception:
+            pass
+        return post_id, admin_url, url_publica, ""
 
     def _sync_new_post(self, post_data: dict) -> str:
         return self._proxy().wp.newPost(0, self._user, self._pass, post_data)
@@ -146,32 +159,35 @@ class WordPressXmlRpcPublisher:
     # ------------------------------------------------------------------
 
     async def _subir_imagens(self, post_id: int, caminhos: list) -> tuple[bool, int, list]:
-        uploaded_ids = []
-        errors       = []
-        _usar_admin_http = False  # ativa fallback se XML-RPC retornar 401
+        uploaded_ids  = []
+        errors        = []
+        xmlrpc_falhos = []  # imagens que receberam 401 do XML-RPC
 
+        # Fase 1: tenta XML-RPC para todas as imagens
         for caminho in caminhos:
-            att_id = None
             try:
-                if not _usar_admin_http:
-                    att_id = await self._run(self._sync_upload_file, caminho, post_id)
+                att_id = await self._run(self._sync_upload_file, caminho, post_id)
+                uploaded_ids.append(int(att_id))
             except xmlrpc.client.Fault as e:
                 if "401" in str(e.faultCode) or "permiss" in e.faultString.lower():
-                    logger.info(f"[{self.execution_id}] XML-RPC 401 — alternando para upload via Admin HTTP")
-                    _usar_admin_http = True
+                    # Sem permissão via XML-RPC — acumula para fallback em lote
+                    xmlrpc_falhos.append(caminho)
                 else:
                     errors.append(f"{os.path.basename(caminho)}: {e.faultString}")
             except Exception as e:
                 errors.append(f"{os.path.basename(caminho)}: {e}")
 
-            if att_id is None and _usar_admin_http:
-                att_id = await self._upload_via_admin_http(post_id, caminho)
-                if att_id is None:
-                    errors.append(f"{os.path.basename(caminho)}: admin HTTP falhou")
+        # Fase 2: todos os falhos em UMA ÚNICA sessão admin HTTP
+        # (login único + nonce único — evita re-autenticar a cada arquivo)
+        if xmlrpc_falhos:
+            logger.info(
+                f"[{self.execution_id}] XML-RPC 401 — {len(xmlrpc_falhos)} imagem(ns) via Admin HTTP (sessão única)"
+            )
+            admin_ids, admin_errors = await self._upload_lote_admin_http(post_id, xmlrpc_falhos)
+            uploaded_ids.extend(admin_ids)
+            errors.extend(admin_errors)
 
-            if att_id is not None:
-                uploaded_ids.append(att_id)
-
+        # Fase 3: vincula todas as imagens enviadas ao post
         if uploaded_ids:
             edit_data = {
                 "wp_post_thumbnail": str(uploaded_ids[0]),
@@ -198,20 +214,25 @@ class WordPressXmlRpcPublisher:
         })
         return int(result["id"])
 
-    async def _upload_via_admin_http(self, post_id: int, caminho: str) -> int | None:
+    async def _upload_lote_admin_http(
+        self, post_id: int, caminhos: list
+    ) -> tuple[list, list]:
         """
-        Upload via sessão HTTP do WP Admin — mesmo fluxo que o browser usa.
-        Funciona quando XML-RPC retorna 401 por falta de upload_files no role.
+        Faz upload de várias imagens via WP Admin HTTP em UMA ÚNICA sessão
+        (login + nonce feitos apenas uma vez). Evita re-autenticar a cada arquivo.
+        Retorna (lista_de_att_ids, lista_de_erros).
         """
         import re as _re
         login_url  = f"{self._site_url}/wp-login.php"
-        nonce_url  = f"{self._site_url}/wp-admin/media-new.php"
         upload_url = f"{self._site_url}/wp-admin/async-upload.php"
+
+        att_ids = []
+        errors  = []
 
         try:
             async with httpx.AsyncClient(
                 follow_redirects=True,
-                timeout=60,
+                timeout=90,
                 cookies={"wordpress_test_cookie": "WP Cookie check"},
             ) as client:
                 # 1. Login
@@ -227,7 +248,7 @@ class WordPressXmlRpcPublisher:
                 chk = await client.get(f"{self._site_url}/wp-admin/")
                 if "wp-login.php" in str(chk.url):
                     logger.warning(f"[{self.execution_id}] Admin HTTP: login falhou")
-                    return None
+                    return [], [f"{os.path.basename(c)}: login falhou" for c in caminhos]
 
                 # 2. Captura nonce — tenta várias páginas até encontrar
                 nonce_pages = [
@@ -250,41 +271,50 @@ class WordPressXmlRpcPublisher:
                         m = _re.search(pat, page.text)
                         if m:
                             nonce = m.group(1)
-                            logger.info(f"[{self.execution_id}] Admin HTTP: nonce obtido de {nurl.split('/')[-1]}")
+                            logger.info(
+                                f"[{self.execution_id}] Admin HTTP: nonce obtido de {nurl.split('/')[-1]}"
+                            )
                             break
                     if nonce:
                         break
 
                 if not nonce:
-                    logger.warning(f"[{self.execution_id}] Admin HTTP: nonce não encontrado em nenhuma página")
-                    return None
+                    logger.warning(f"[{self.execution_id}] Admin HTTP: nonce não encontrado")
+                    return [], [f"{os.path.basename(c)}: nonce não encontrado" for c in caminhos]
 
-                # 3. Upload
-                with open(caminho, "rb") as fh:
-                    img_bytes = fh.read()
-
-                resp = await client.post(
-                    upload_url,
-                    data={"_wpnonce": nonce, "action": "upload-attachment", "post_id": str(post_id)},
-                    files={"async-upload": (os.path.basename(caminho), img_bytes, "image/jpeg")},
-                )
-
-                if resp.status_code == 200:
+                # 3. Upload de cada imagem reusando a mesma sessão e nonce
+                for caminho in caminhos:
                     try:
-                        data = resp.json()
-                        att_id = (data.get("data") or {}).get("id") or data.get("id")
-                        if att_id:
-                            logger.info(f"[{self.execution_id}] Admin HTTP: upload OK id={att_id}")
-                            return int(att_id)
-                    except Exception:
-                        pass
+                        with open(caminho, "rb") as fh:
+                            img_bytes = fh.read()
 
-                logger.warning(f"[{self.execution_id}] Admin HTTP: resposta inesperada {resp.status_code}")
+                        resp = await client.post(
+                            upload_url,
+                            data={"_wpnonce": nonce, "action": "upload-attachment", "post_id": str(post_id)},
+                            files={"async-upload": (os.path.basename(caminho), img_bytes, "image/jpeg")},
+                        )
+
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            att_id = (data.get("data") or {}).get("id") or data.get("id")
+                            if att_id:
+                                logger.info(
+                                    f"[{self.execution_id}] Admin HTTP: upload OK "
+                                    f"{os.path.basename(caminho)} id={att_id}"
+                                )
+                                att_ids.append(int(att_id))
+                                continue
+                        errors.append(
+                            f"{os.path.basename(caminho)}: HTTP {resp.status_code}"
+                        )
+                    except Exception as e:
+                        errors.append(f"{os.path.basename(caminho)}: {e}")
 
         except Exception as e:
             logger.warning(f"[{self.execution_id}] Admin HTTP upload falhou: {e}")
+            errors.extend([f"{os.path.basename(c)}: sessão falhou — {e}" for c in caminhos if not any(os.path.basename(c) in err for err in errors)])
 
-        return None
+        return att_ids, errors
 
     # ------------------------------------------------------------------
     # Geocoding via Nominatim
