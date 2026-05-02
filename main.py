@@ -32,6 +32,7 @@ logger = Logger("main")
 
 MAX_TENTATIVAS_MERCADOI = 3
 ESPERA_ENTRE_TENTATIVAS = 5  # segundos
+SALVAR_TUDO_COMO_RASCUNHO = True
 
 
 def _usar_wordpress_api(config: dict) -> bool:
@@ -400,6 +401,8 @@ async def _publicar_com_retry(
     execution_id: str,
 ) -> dict | None:
     """Publica/salva um imovel usando o destino configurado."""
+    if SALVAR_TUDO_COMO_RASCUNHO:
+        dados["_forcar_rascunho"] = True
     resultado = None
 
     if _usar_wordpress_api(config):
@@ -540,6 +543,10 @@ async def processar_link(row: dict, sheet, config: dict):
         dados["whatsapp_url"] = config["whatsapp_default"].strip()
         logger.info(f"[{execution_id}] WhatsApp: usando padrão do config")
 
+    if SALVAR_TUDO_COMO_RASCUNHO:
+        dados["_forcar_rascunho"] = True
+        logger.info(f"[{execution_id}] Modo rascunho ativo: publicacao direta desativada")
+
     sheet.atualizar_campo(row_index, "titulo_gerado", dados.get("titulo", ""))
     logger.info(f"[{execution_id}] Título: {dados.get('titulo', '')[:70]}")
 
@@ -679,6 +686,8 @@ async def processar_link(row: dict, sheet, config: dict):
                     dados_extra["url_publicacao"] = url
                 if not dados_extra.get("whatsapp_url") and config.get("whatsapp_default", "").strip():
                     dados_extra["whatsapp_url"] = config["whatsapp_default"].strip()
+                if SALVAR_TUDO_COMO_RASCUNHO:
+                    dados_extra["_forcar_rascunho"] = True
                 dados_extra = _validar_dados(dados_extra)
                 motivo_extra = _dados_invalidos(dados_extra)
                 if motivo_extra:

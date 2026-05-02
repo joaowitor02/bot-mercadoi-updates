@@ -50,9 +50,10 @@ class WordPressXmlRpcPublisher:
         fonte     = dados.get("_fonte", "")
         tem_preco = bool(dados.get("preco", "").strip())
         tem_tipo  = bool(dados.get("tipo_imovel", "").strip())
+        forcar_rascunho = bool(dados.get("_forcar_rascunho"))
         # Instagram: publica só com imagem + preço + tipo
         # OLX/Órulo: publica com preço + tipo mesmo sem imagens
-        publicar_direto = tem_preco and tem_tipo and (
+        publicar_direto = (not forcar_rascunho) and tem_preco and tem_tipo and (
             tipo_midia == "imagem" or fonte in ("olx", "orulo")
         )
 
