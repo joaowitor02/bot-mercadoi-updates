@@ -12,6 +12,7 @@ import os
 import re
 import sys
 import tempfile
+import html as html_lib
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 import httpx
@@ -140,11 +141,18 @@ class OruloScraper:
         if not dados.get("titulo"):
             return {"ok": False, "motivo": "estrutura_desconhecida"}
 
+        dados_variacoes = dados.pop("_dados_variacoes", [])
+
         logger.info(
             f"Orulo: '{dados['titulo'][:70]}' | preco={dados['preco']} | "
-            f"{len(imagens_urls)} foto(s)"
+            f"{len(imagens_urls)} foto(s) | {len(dados_variacoes) or 1} publicacao(oes)"
         )
-        return {"ok": True, "dados": dados, "imagens_urls": imagens_urls}
+        return {
+            "ok": True,
+            "dados": dados,
+            "dados_variacoes": dados_variacoes,
+            "imagens_urls": imagens_urls,
+        }
 
     async def baixar_imagens(self, urls: list, downloads_path: str) -> list:
         """Baixa ate 12 imagens e retorna lista de caminhos locais."""
@@ -279,17 +287,20 @@ class OruloScraper:
         else:
             titulo = og_title or self._titulo_texto(html)
 
-        preco = self._extrair_preco(html)
-        area = self._extrair_num_range(html, r"m[²2]")
-        quartos = self._extrair_num_range(html, r"quarto")
-        suites = self._extrair_num_range(html, r"su[ií]te")
-        banheiros = self._extrair_num_range(html, r"banheiro")
-        vagas = self._extrair_num_range(html, r"vaga")
+        tipologias = self._extrair_tipologias(html, tipo_imovel)
+        tipologia_base = tipologias[0] if tipologias else {}
 
-        resumo = self._resumo_tipologias(html)
+        preco = tipologia_base.get("preco") or self._extrair_preco(html)
+        area = tipologia_base.get("area_m2") or self._extrair_num_range(html, r"m[²2]")
+        quartos = tipologia_base.get("quartos") or self._extrair_num_range(html, r"quarto")
+        suites = tipologia_base.get("suites") or self._extrair_num_range(html, r"su[ií]te")
+        banheiros = tipologia_base.get("banheiros") or self._extrair_num_range(html, r"banheiro")
+        vagas = tipologia_base.get("vagas") or self._extrair_num_range(html, r"vaga")
+
+        resumo = self._resumo_tipologias(tipologias, html)
         descricao = "\n\n".join(p for p in [og_desc, resumo] if p).strip()
 
-        return {
+        dados = {
             "titulo": titulo,
             "descricao_util": descricao,
             "tipo_imovel": tipo_imovel,
@@ -314,6 +325,12 @@ class OruloScraper:
             "instagram_url": "",
             "caracteristicas": [],
         }
+        if tipologias:
+            dados["_dados_variacoes"] = [
+                self._montar_dados_tipologia(dados, t, i + 1, len(tipologias))
+                for i, t in enumerate(tipologias)
+            ]
+        return dados
 
     # ------------------------------------------------------------------
     # Helpers de parsing
@@ -427,7 +444,25 @@ class OruloScraper:
             return "Em Construção"
         return ""
 
-    def _resumo_tipologias(self, html: str) -> str:
+    def _resumo_tipologias(self, tipologias: list, html: str) -> str:
+        if tipologias:
+            linhas = ["Tipologias disponiveis:"]
+            for t in tipologias[:6]:
+                partes = []
+                if t.get("area_m2"):
+                    partes.append(f"{self._fmt_area(t['area_m2'])} m2")
+                if t.get("quartos"):
+                    partes.append(self._plural(t["quartos"], "quarto", "quartos"))
+                if t.get("banheiros"):
+                    partes.append(self._plural(t["banheiros"], "banheiro", "banheiros"))
+                if t.get("vagas"):
+                    partes.append(self._plural(t["vagas"], "vaga", "vagas"))
+                if t.get("preco"):
+                    partes.append(f"a partir de {self._fmt_moeda(t['preco'])}")
+                if partes:
+                    linhas.append("- " + ", ".join(partes))
+            return "\n".join(linhas)
+
         areas = re.findall(
             r'class=["\'][^"\']*list_value[^"\']*["\'][^>]*>'
             r"\s*([\d]+(?:\s*a\s*[\d]+)?)\s*</div>"
@@ -441,6 +476,163 @@ class OruloScraper:
             return ""
         linhas = ["Areas disponiveis:"] + [f"- {a} m2" for a in areas[:5]]
         return "\n".join(linhas)
+
+    def _extrair_tipologias(self, html: str, tipo_padrao: str) -> list:
+        texto = self._texto_visivel(html)
+        if "Tipologias" not in texto and "tipologias" not in texto:
+            return []
+
+        tipos_pos = []
+        for tipo in _TIPOS:
+            for m in re.finditer(rf"(?im)^\s*{re.escape(tipo)}\s*$", texto):
+                tipos_pos.append((m.start(), tipo))
+        tipos_pos.sort()
+
+        def tipo_para(pos: int) -> str:
+            escolhido = tipo_padrao
+            for p, tipo in tipos_pos:
+                if p <= pos:
+                    escolhido = tipo
+                else:
+                    break
+            return escolhido or tipo_padrao
+
+        padrao_linha = re.compile(
+            r"R\$\s*([\d.,]+)\s+"
+            r"(\d+(?:[,.]\d+)?)\s+"
+            r"(\d+)\s+"
+            r"(\d+)\s+"
+            r"(\d+)",
+            re.IGNORECASE,
+        )
+
+        tipologias = []
+        vistos = set()
+        for m in padrao_linha.finditer(texto):
+            item = {
+                "tipo_imovel": tipo_para(m.start()),
+                "preco": self._somente_digitos(m.group(1)),
+                "area_m2": self._normalizar_area(m.group(2)),
+                "quartos": self._normalizar_inteiro(m.group(3)),
+                "suites": "",
+                "banheiros": self._normalizar_inteiro(m.group(4)),
+                "vagas": self._normalizar_inteiro(m.group(5)),
+            }
+            chave = (
+                item["tipo_imovel"], item["preco"], item["area_m2"],
+                item["quartos"], item["banheiros"], item["vagas"],
+            )
+            if item["preco"] and chave not in vistos:
+                vistos.add(chave)
+                tipologias.append(item)
+
+        return tipologias
+
+    def _montar_dados_tipologia(self, base: dict, tipologia: dict, indice: int, total: int) -> dict:
+        dados = dict(base)
+        dados.pop("_dados_variacoes", None)
+        for campo in ["tipo_imovel", "preco", "area_m2", "quartos", "suites", "banheiros", "vagas"]:
+            if tipologia.get(campo) is not None:
+                dados[campo] = tipologia.get(campo, "")
+
+        dados["titulo"] = self._titulo_tipologia(base, tipologia)
+        dados["descricao_util"] = self._descricao_tipologia(base, tipologia, indice, total)
+        return dados
+
+    def _titulo_tipologia(self, base: dict, tipologia: dict) -> str:
+        nome = base.get("titulo", "").strip()
+        partes = []
+        if tipologia.get("area_m2"):
+            partes.append(f"{self._fmt_area(tipologia['area_m2'])}m2")
+        if tipologia.get("quartos"):
+            partes.append(self._plural(tipologia["quartos"], "quarto", "quartos"))
+        resumo = ", ".join(partes)
+        return f"{nome} - {resumo}" if nome and resumo else nome
+
+    def _descricao_tipologia(self, base: dict, tipologia: dict, indice: int, total: int) -> str:
+        tipo = tipologia.get("tipo_imovel") or base.get("tipo_imovel") or "Imovel"
+        local = ", ".join(
+            p for p in [
+                base.get("bairro_extraido", "").strip(),
+                base.get("cidade_extraida", "").strip(),
+            ] if p
+        )
+
+        linhas = []
+        if local:
+            linhas.append(f"{tipo} em empreendimento localizado em {local}.")
+        else:
+            linhas.append(f"{tipo} em empreendimento com tipologias disponiveis para venda.")
+
+        detalhes = []
+        if tipologia.get("area_m2"):
+            detalhes.append(f"{self._fmt_area(tipologia['area_m2'])} m2")
+        if tipologia.get("quartos"):
+            detalhes.append(self._plural(tipologia["quartos"], "quarto", "quartos"))
+        if tipologia.get("banheiros"):
+            detalhes.append(self._plural(tipologia["banheiros"], "banheiro", "banheiros"))
+        if tipologia.get("vagas"):
+            detalhes.append(self._plural(tipologia["vagas"], "vaga de garagem", "vagas de garagem"))
+        if detalhes:
+            linhas.append("Esta opcao conta com " + ", ".join(detalhes) + ".")
+
+        if tipologia.get("preco"):
+            linhas.append(f"Valor a partir de {self._fmt_moeda(tipologia['preco'])}.")
+
+        if base.get("estagio_imovel"):
+            linhas.append(f"Estagio do empreendimento: {base['estagio_imovel']}.")
+
+        if total > 1:
+            linhas.append(
+                f"Tipologia {indice} de {total} disponivel neste empreendimento. "
+                "As fotos podem representar o empreendimento, areas comuns ou unidade decorada."
+            )
+
+        linhas.append("Consulte disponibilidade, condicoes comerciais e detalhes atualizados.")
+        return "\n\n".join(linhas)
+
+    def _texto_visivel(self, html: str) -> str:
+        texto = re.sub(r"(?is)<script.*?</script>|<style.*?</style>", "\n", html)
+        texto = re.sub(r"(?i)<br\s*/?>|</p>|</div>|</li>|</tr>|</h\d>", "\n", texto)
+        texto = re.sub(r"<[^>]+>", " ", texto)
+        texto = html_lib.unescape(texto)
+        texto = re.sub(r"[ \t\r\f\v]+", " ", texto)
+        texto = re.sub(r"\n\s+", "\n", texto)
+        return texto
+
+    def _somente_digitos(self, valor: str) -> str:
+        return re.sub(r"[^\d]", "", valor or "")
+
+    def _normalizar_area(self, valor: str) -> str:
+        nums = re.findall(r"\d+", valor or "")
+        return nums[0] if nums else ""
+
+    def _normalizar_inteiro(self, valor: str) -> str:
+        nums = re.findall(r"\d+", valor or "")
+        if not nums:
+            return ""
+        n = int(nums[0])
+        return str(n) if n > 0 else ""
+
+    def _fmt_area(self, valor: str) -> str:
+        return str(valor or "").strip().replace(".", ",")
+
+    def _fmt_moeda(self, valor: str) -> str:
+        digitos = self._somente_digitos(valor)
+        if not digitos:
+            return ""
+        partes = []
+        while digitos:
+            partes.append(digitos[-3:])
+            digitos = digitos[:-3]
+        return "R$ " + ".".join(reversed(partes))
+
+    def _plural(self, valor: str, singular: str, plural: str) -> str:
+        try:
+            n = int(str(valor).strip())
+        except Exception:
+            n = 0
+        return f"{n} {singular if n == 1 else plural}" if n else ""
 
     def _extrair_imagens(self, html: str) -> list:
         encontradas = re.findall(

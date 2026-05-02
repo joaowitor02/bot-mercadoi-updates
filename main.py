@@ -370,6 +370,10 @@ async def _extrair_orulo(url: str, config: dict) -> tuple:
         return None, None, None, resultado.get("motivo", "erro_rede")
 
     dados = resultado["dados"]
+    dados_variacoes = resultado.get("dados_variacoes") or []
+    if dados_variacoes:
+        dados = dados_variacoes[0]
+        dados["_publicacoes_orulo"] = dados_variacoes
     imagens_urls = resultado.get("imagens_urls", [])
 
     arquivo_midia = []
@@ -386,6 +390,83 @@ async def _midia_instagram(url: str, config: dict) -> tuple:
     media = MediaResolver(config["downloads_path"], config)
     tipo_midia, arquivo_midia = await media.resolver(url)
     return tipo_midia, arquivo_midia
+
+
+async def _publicar_com_retry(
+    dados: dict,
+    tipo_midia: str,
+    arquivo_midia: list,
+    config: dict,
+    execution_id: str,
+) -> dict | None:
+    """Publica/salva um imovel usando o destino configurado."""
+    resultado = None
+
+    if _usar_wordpress_api(config):
+        modo = "Application Password" if config.get("wordpress_wp_user") else "API Key"
+        logger.info(f"[{execution_id}] Usando WordPress REST API ({modo})")
+        publisher = WordPressPublisher(
+            api_url=config["wordpress_api_url"],
+            api_key=config.get("wordpress_api_key", ""),
+            wp_user=config.get("wordpress_wp_user", ""),
+            wp_app_password=config.get("wordpress_app_password", ""),
+            execution_id=execution_id,
+        )
+        for tentativa in range(1, MAX_TENTATIVAS_MERCADOI + 1):
+            if tentativa > 1:
+                logger.info(f"[{execution_id}] Tentativa {tentativa}/{MAX_TENTATIVAS_MERCADOI}...")
+            resultado = await publisher.preencher_e_salvar(dados, tipo_midia, arquivo_midia)
+            if resultado["sucesso"]:
+                break
+            if tentativa < MAX_TENTATIVAS_MERCADOI:
+                logger.warning(
+                    f"[{execution_id}] Falhou: {resultado.get('mensagem', '')}. "
+                    f"Aguardando {ESPERA_ENTRE_TENTATIVAS}s..."
+                )
+                await asyncio.sleep(ESPERA_ENTRE_TENTATIVAS)
+    elif _usar_wordpress_xmlrpc(config):
+        logger.info(f"[{execution_id}] Usando WordPress XML-RPC")
+        publisher = WordPressXmlRpcPublisher(
+            site_url=config["wordpress_xmlrpc_url"],
+            wp_user=config["wordpress_xmlrpc_user"],
+            wp_password=config["wordpress_xmlrpc_password"],
+            execution_id=execution_id,
+        )
+        for tentativa in range(1, MAX_TENTATIVAS_MERCADOI + 1):
+            if tentativa > 1:
+                logger.info(f"[{execution_id}] Tentativa {tentativa}/{MAX_TENTATIVAS_MERCADOI}...")
+            resultado = await publisher.preencher_e_salvar(dados, tipo_midia, arquivo_midia)
+            if resultado["sucesso"]:
+                break
+            if tentativa < MAX_TENTATIVAS_MERCADOI:
+                logger.warning(
+                    f"[{execution_id}] Falhou: {resultado.get('mensagem', '')}. "
+                    f"Aguardando {ESPERA_ENTRE_TENTATIVAS}s..."
+                )
+                await asyncio.sleep(ESPERA_ENTRE_TENTATIVAS)
+    else:
+        logger.info(f"[{execution_id}] Usando Playwright (modo legado)")
+        async with MercadoiDriver(
+            config["mercadoi_url"],
+            config.get("mercadoi_profile_path", r"C:\chrome_bot_mercadoi"),
+            execution_id=execution_id,
+            wp_user=config.get("wordpress_xmlrpc_user", "") or config.get("wordpress_wp_user", ""),
+            wp_pass=config.get("wordpress_xmlrpc_password", "") or config.get("wordpress_app_password", ""),
+        ) as driver:
+            for tentativa in range(1, MAX_TENTATIVAS_MERCADOI + 1):
+                if tentativa > 1:
+                    logger.info(f"[{execution_id}] Tentativa {tentativa}/{MAX_TENTATIVAS_MERCADOI}...")
+                resultado = await driver.preencher_e_salvar(dados, tipo_midia, arquivo_midia)
+                if resultado["sucesso"]:
+                    break
+                if tentativa < MAX_TENTATIVAS_MERCADOI:
+                    logger.warning(
+                        f"[{execution_id}] Falhou: {resultado.get('mensagem', '')}. "
+                        f"Aguardando {ESPERA_ENTRE_TENTATIVAS}s..."
+                    )
+                    await asyncio.sleep(ESPERA_ENTRE_TENTATIVAS)
+
+    return resultado
 
 
 async def processar_link(row: dict, sheet, config: dict):
@@ -585,8 +666,53 @@ async def processar_link(row: dict, sheet, config: dict):
         status_final = "publicado" if "Publicado" in msg else "rascunho_salvo"
         tempo_total = int(time.time() - _inicio)
         sheet.atualizar_campo(row_index, "tempo_seg", str(tempo_total))
-        status.sucesso(status_final, msg)
-        logger.info(f"[{execution_id}] Sucesso! ({tempo_total}s)")
+        falha_extra_msg = ""
+        extras_orulo = dados.get("_publicacoes_orulo") or []
+        if len(extras_orulo) > 1:
+            logger.info(f"[{execution_id}] Orulo: publicando mais {len(extras_orulo) - 1} tipologia(s)")
+            urls_extra = []
+            falhas_extra = []
+            for idx, dados_extra in enumerate(extras_orulo[1:], 2):
+                dados_extra = dict(dados_extra)
+                dados_extra["_fonte"] = "orulo"
+                if not dados_extra.get("url_publicacao"):
+                    dados_extra["url_publicacao"] = url
+                if not dados_extra.get("whatsapp_url") and config.get("whatsapp_default", "").strip():
+                    dados_extra["whatsapp_url"] = config["whatsapp_default"].strip()
+                dados_extra = _validar_dados(dados_extra)
+                motivo_extra = _dados_invalidos(dados_extra)
+                if motivo_extra:
+                    falhas_extra.append(f"{idx}/{len(extras_orulo)}: {motivo_extra}")
+                    continue
+                logger.info(
+                    f"[{execution_id}] Orulo tipologia {idx}/{len(extras_orulo)}: "
+                    f"{dados_extra.get('titulo', '')[:70]}"
+                )
+                resultado_extra = await _publicar_com_retry(
+                    dados_extra, tipo_midia, arquivo_midia, config, execution_id
+                )
+                if resultado_extra and resultado_extra.get("sucesso"):
+                    if resultado_extra.get("mercadoi_url"):
+                        urls_extra.append(resultado_extra["mercadoi_url"])
+                else:
+                    erro_extra = resultado_extra.get("mensagem", "") if resultado_extra else "resultado nulo"
+                    falhas_extra.append(f"{idx}/{len(extras_orulo)}: {erro_extra}")
+
+            if urls_extra:
+                todos_urls = [u for u in [mercadoi_url] + urls_extra if u]
+                sheet.atualizar_campo(row_index, "mercadoi_url", " | ".join(todos_urls))
+            if falhas_extra:
+                msg = f"{msg}; {1 + len(urls_extra)}/{len(extras_orulo)} publicacoes concluidas; falhas: {'; '.join(falhas_extra)}"
+                falha_extra_msg = msg
+            else:
+                msg = f"{msg}: {len(extras_orulo)} publicacoes"
+
+        if falha_extra_msg:
+            status.erro("erro_preenchimento", falha_extra_msg)
+            logger.error(f"[{execution_id}] Falha parcial no Orulo: {falha_extra_msg}")
+        else:
+            status.sucesso(status_final, msg)
+            logger.info(f"[{execution_id}] Sucesso! ({tempo_total}s)")
         for arq in arquivo_midia:
             try:
                 os.remove(arq)
