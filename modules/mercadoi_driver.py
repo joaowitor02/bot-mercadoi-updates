@@ -339,8 +339,13 @@ class MercadoiDriver:
             await self._preencher_editor(page, conteudo)
 
             # TIPO DE IMOVEL
-            tipo_imovel = self._normalizar_tipo_imovel(dados.get("tipo_imovel", ""))
-            await self._selecionar_tipo_imovel(page, tipo_imovel)
+            tipos_imovel = dados.get("tipo_imovel_lista") or []
+            if isinstance(tipos_imovel, str):
+                tipos_imovel = [p.strip() for p in tipos_imovel.split(",") if p.strip()]
+            tipos_imovel = [self._normalizar_tipo_imovel(t) for t in tipos_imovel] or [
+                self._normalizar_tipo_imovel(dados.get("tipo_imovel", ""))
+            ]
+            await self._selecionar_tipos_imovel(page, tipos_imovel)
 
             # OPERACAO
             operacao = dados.get("operacao", "").strip() or "A Venda"
@@ -595,6 +600,56 @@ class MercadoiDriver:
                 logger.warning(f"Erro ao selecionar tipo '{tipo_imovel}' por value: {e}")
 
         return await self._selecionar_por_texto(page, '#prop_type', tipo_imovel)
+
+    async def _selecionar_tipos_imovel(self, page, tipos_imovel: list) -> bool:
+        tipos = list(dict.fromkeys([t for t in tipos_imovel if t]))
+        if len(tipos) <= 1:
+            return await self._selecionar_tipo_imovel(page, tipos[0] if tipos else "Apartamento")
+        try:
+            resultado = await page.evaluate("""
+                ({tipos}) => {
+                    const sel = document.querySelector('#prop_type');
+                    if (!sel) return {ok: false, motivo: 'elemento nao encontrado'};
+                    const norm = t => t.toLowerCase()
+                        .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
+                        .replace(/[\\s.]+/g, ' ').trim()
+                        .replace(/^[-\\s]+/, '');
+                    const alvos = tipos.map(norm);
+                    const matches = [];
+                    for (const alvo of alvos) {
+                        let melhor = null;
+                        for (const op of sel.options) {
+                            const t = norm(op.text);
+                            if (t === alvo || t.includes(alvo) || alvo.includes(t)) {
+                                melhor = op; break;
+                            }
+                        }
+                        if (melhor && !matches.some(op => op.value === melhor.value)) {
+                            matches.push(melhor);
+                        }
+                    }
+                    if (!matches.length) return {ok: false, motivo: 'opcoes nao encontradas'};
+                    const valores = matches.map(op => op.value);
+                    if (sel.multiple) {
+                        for (const op of sel.options) op.selected = valores.includes(op.value);
+                    } else {
+                        sel.value = valores[0];
+                    }
+                    sel.dispatchEvent(new Event('input', {bubbles: true}));
+                    sel.dispatchEvent(new Event('change', {bubbles: true}));
+                    if (window.jQuery) {
+                        window.jQuery(sel).val(sel.multiple ? valores : valores[0]).trigger('change');
+                    }
+                    return {ok: true, textos: matches.map(op => op.text), multiple: sel.multiple};
+                }
+            """, {"tipos": tipos})
+            if resultado and resultado.get("ok"):
+                logger.info(f"Selecionado(s) tipo(s) de imovel: {', '.join(resultado.get('textos', []))}")
+                return True
+            logger.info(f"Nao selecionou tipos {tipos}: {resultado}")
+        except Exception as e:
+            logger.warning(f"Erro ao selecionar multiplos tipos {tipos}: {e}")
+        return await self._selecionar_tipo_imovel(page, tipos[0])
 
     async def _selecionar_subtipo_imovel(self, page, tipo_imovel: str) -> bool:
         """Seleciona subtipo de imóvel (Apto. Flat, Apto. Duplex, etc.) pelo texto visível."""

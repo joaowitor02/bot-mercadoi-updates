@@ -15,10 +15,16 @@ import tempfile
 import html as html_lib
 import asyncio
 import hashlib
+from io import BytesIO
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 import httpx
 from modules.logger import Logger
+
+try:
+    from PIL import Image
+except Exception:  # pragma: no cover - Pillow pode nao estar disponivel
+    Image = None
 
 try:
     from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
@@ -55,7 +61,8 @@ _MAX_IMAGENS = 20
 
 _TIPOS = [
     "Apartamento Cobertura", "Apartamento Duplex", "Apto. Cobertura", "Apto. Duplex",
-    "Cobertura", "Duplex", "Apartamento", "Casa", "Terreno", "Studio", "Flat",
+    "Cobertura Duplex", "Duplex Cobertura", "Cobertura", "Duplex",
+    "Apartamento", "Casa", "Terreno", "Studio", "Flat",
     "Sala Comercial", "Loja", "Galpao", "Lote",
 ]
 
@@ -78,6 +85,17 @@ _AMENIDADES = [
     ("Sauna", ["sauna"]),
     ("Solarium", ["solarium"]),
     ("Deck", ["deck"]),
+]
+
+_TERMOS_PLANTA = [
+    "planta", "plantas", "floorplan", "floor plan", "floor_plan",
+    "blueprint", "unit plan", "unit_plan", "implantacao", "implantaÃ§Ã£o",
+    "layout", "typology", "tipologia",
+]
+
+_TERMOS_GALERIA = [
+    "ver fotos", "galeria", "gallery", "photos", "photo", "foto", "fotos",
+    "carousel", "fachada", "facade", "building", "empreendimento", "banner",
 ]
 
 _ORULO_CLIENT_ID = "TKYZFTALAu1tshVidMJdV15BKz97ghBs_xaoarFpCiY"
@@ -195,9 +213,10 @@ class OruloScraper:
                     if r.status_code != 200 or not r.content:
                         return None
                     digest = hashlib.sha1(r.content).hexdigest()
+                    visual_hash = self._imagem_hash_visual(r.content)
                     ext = img_url.split(".")[-1].split("?")[0].lower()
                     ext = ext if ext in ("jpg", "jpeg", "png", "webp") else "jpg"
-                    return idx, img_url, r.content, digest, ext
+                    return idx, img_url, r.content, digest, visual_hash, ext
                 except Exception as e:
                     logger.warning(f"Orulo: falha ao baixar imagem {img_url[:60]}: {e}")
                     return None
@@ -210,11 +229,16 @@ class OruloScraper:
             )
 
         ordem_salva = 1
+        vistos_visuais = []
         for item in sorted([r for r in resultados if r], key=lambda r: r[0]):
-            _, _, conteudo, digest, ext = item
+            _, _, conteudo, digest, visual_hash, ext = item
             if digest in vistos_hash:
                 continue
+            if visual_hash and any(self._hash_parecido(visual_hash, h) for h in vistos_visuais):
+                continue
             vistos_hash.add(digest)
+            if visual_hash:
+                vistos_visuais.append(visual_hash)
             nome = f"orulo_{digest[:10]}_{ordem_salva:02d}.{ext}"
             caminho = os.path.join(downloads_path, nome)
             with open(caminho, "wb") as fh:
@@ -326,7 +350,8 @@ class OruloScraper:
         og_desc = self._meta(html, "og:description") or self._meta(html, "description")
 
         tipo_imovel, endereco, bairro, cidade = self._parse_og_title(og_title)
-        tipo_imovel = self._normalizar_tipo_orulo(tipo_imovel, og_title)
+        tipos_imovel_lista = self._tipos_orulo(tipo_imovel, og_title)
+        tipo_imovel = tipos_imovel_lista[0] if tipos_imovel_lista else "Apartamento"
 
         nome_emp = self._nome_empreendimento(html)
         if nome_emp:
@@ -354,6 +379,7 @@ class OruloScraper:
             "titulo": titulo,
             "descricao_util": descricao,
             "tipo_imovel": tipo_imovel,
+            "tipo_imovel_lista": tipos_imovel_lista,
             "operacao": "A Venda",
             "preco": preco,
             "quartos": quartos,
@@ -550,24 +576,31 @@ class OruloScraper:
         return achadas
 
     def _normalizar_tipo_orulo(self, tipo: str, contexto: str = "") -> str:
+        tipos = self._tipos_orulo(tipo, contexto)
+        return tipos[0] if tipos else "Apartamento"
+
+    def _tipos_orulo(self, tipo: str, contexto: str = "") -> list:
         texto = self._normalizar_texto(f"{tipo} {contexto}")
+        tipos = []
         if "cobertura" in texto:
-            return "Apto. Cobertura"
+            tipos.append("Apto. Cobertura")
         if "duplex" in texto:
-            return "Apto. Duplex"
+            tipos.append("Apto. Duplex")
+        if tipos:
+            return tipos
         if "flat" in texto:
-            return "Apto. Flat"
+            return ["Apto. Flat"]
         if "garden" in texto:
-            return "Apto. Garden"
+            return ["Apto. Garden"]
         if "studio" in texto or "apart" in texto or "apto" in texto:
-            return "Apartamento"
+            return ["Apartamento"]
         if "casa" in texto:
-            return "Casa"
+            return ["Casa"]
         if "terreno" in texto or "lote" in texto:
-            return "Terreno"
+            return ["Terreno"]
         if "sala" in texto or "comercial" in texto or "loja" in texto:
-            return "Sala Comercial"
-        return tipo.strip() or "Apartamento"
+            return ["Sala Comercial"]
+        return [tipo.strip() or "Apartamento"]
 
     def _extrair_tipologias(self, html: str, tipo_padrao: str) -> list:
         texto = self._texto_visivel(html)
@@ -589,6 +622,15 @@ class OruloScraper:
                     break
             return self._normalizar_tipo_orulo(escolhido or tipo_padrao, escolhido)
 
+        def tipos_para(pos: int) -> list:
+            escolhido = tipo_padrao
+            for p, tipo in tipos_pos:
+                if p <= pos:
+                    escolhido = tipo
+                else:
+                    break
+            return self._tipos_orulo(escolhido or tipo_padrao, escolhido)
+
         padrao_linha = re.compile(
             r"R\$\s*([\d.,]+)\s+"
             r"(\d+(?:[,.]\d+)?)\s+"
@@ -603,6 +645,7 @@ class OruloScraper:
         for m in padrao_linha.finditer(texto):
             item = {
                 "tipo_imovel": tipo_para(m.start()),
+                "tipo_imovel_lista": tipos_para(m.start()),
                 "preco": self._somente_digitos(m.group(1)),
                 "area_m2": self._normalizar_area(m.group(2)),
                 "quartos": self._normalizar_inteiro(m.group(3)),
@@ -625,7 +668,7 @@ class OruloScraper:
         dados.pop("_dados_variacoes", None)
         dados.pop("_tipologias_resumo", None)
         dados.pop("_empreendimento_resumo", None)
-        for campo in ["tipo_imovel", "preco", "area_m2", "quartos", "suites", "banheiros", "vagas"]:
+        for campo in ["tipo_imovel", "tipo_imovel_lista", "preco", "area_m2", "quartos", "suites", "banheiros", "vagas"]:
             if tipologia.get(campo) is not None:
                 dados[campo] = tipologia.get(campo, "")
 
@@ -756,21 +799,71 @@ class OruloScraper:
             saida.append(limpa)
         return saida
 
+    def _imagem_eh_planta(self, url: str, contexto: str = "") -> bool:
+        texto = self._normalizar_texto(f"{url} {contexto}")
+        return any(self._normalizar_texto(t) in texto for t in _TERMOS_PLANTA)
+
+    def _pontuar_imagem(self, url: str, contexto: str, ordem: int) -> tuple:
+        texto = self._normalizar_texto(f"{url} {contexto}")
+        score = 0
+        if any(self._normalizar_texto(t) in texto for t in _TERMOS_GALERIA):
+            score += 20
+        if any(self._normalizar_texto(t) in texto for t in ["fachada", "facade", "building", "empreendimento", "cover"]):
+            score += 10
+        if any(self._normalizar_texto(t) in texto for t in ["thumb", "thumbnail", "small"]):
+            score -= 2
+        return (-score, ordem)
+
+    def _contexto_tag_imagem(self, html: str, inicio: int, fim: int) -> str:
+        tag_ini = html.rfind("<", 0, inicio)
+        tag_fim = html.find(">", fim)
+        if tag_ini < 0:
+            tag_ini = max(0, inicio - 60)
+        if tag_fim < 0:
+            tag_fim = min(len(html), fim + 60)
+        anterior = html[max(0, tag_ini - 70):tag_ini]
+        return anterior + html[tag_ini:tag_fim + 1]
+
+
+    def _imagem_hash_visual(self, conteudo: bytes) -> str:
+        if Image is None:
+            return ""
+        try:
+            img = Image.open(BytesIO(conteudo)).convert("L").resize((8, 8))
+            pixels = list(img.getdata())
+            media = sum(pixels) / len(pixels)
+            return "".join("1" if p >= media else "0" for p in pixels)
+        except Exception:
+            return ""
+
+    def _hash_parecido(self, a: str, b: str) -> bool:
+        if not a or not b or len(a) != len(b):
+            return False
+        distancia = sum(1 for x, y in zip(a, b) if x != y)
+        return distancia <= 3
+
     def _extrair_imagens(self, html: str) -> list:
         html_img = html_lib.unescape(html or "").replace("\\/", "/")
-        encontradas = re.findall(
+        padrao = re.compile(
             r"https://static\.orulo\.com\.br/images/[^\"'\s)]+?\.(?:jpeg|jpg|png|webp)(?:\?\d+)?",
-            html_img,
+            re.IGNORECASE,
         )
-        urls = []
-        for u in encontradas:
+        candidatos = []
+        for ordem, m in enumerate(padrao.finditer(html_img)):
+            u = m.group(0)
             base = u.split("?")[0]
-            if base not in urls:
-                urls.append(base)
+            contexto = html_img[max(0, m.start() - 350):m.end() + 350]
+            contexto_planta = self._contexto_tag_imagem(html_img, m.start(), m.end())
+            if self._imagem_eh_planta(base, contexto_planta):
+                continue
+            candidatos.append((self._pontuar_imagem(base, contexto, ordem), base))
+
+        candidatos.sort(key=lambda item: item[0])
+        urls = self._deduplicar_urls_imagem([u for _, u in candidatos])
 
         if not urls:
             og = self._meta(html, "og:image")
-            if og:
+            if og and not self._imagem_eh_planta(og):
                 urls.append(og.split("?")[0])
 
         return self._deduplicar_urls_imagem(urls)[:_MAX_IMAGENS]

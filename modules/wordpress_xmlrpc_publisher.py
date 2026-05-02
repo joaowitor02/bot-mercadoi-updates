@@ -97,9 +97,13 @@ class WordPressXmlRpcPublisher:
 
         content       = _build_content(dados)
         custom_fields = _build_custom_fields(dados, content)
+        tipo_lista = dados.get("tipo_imovel_lista") or []
+        if isinstance(tipo_lista, str):
+            tipo_lista = [p.strip() for p in tipo_lista.split(",") if p.strip()]
 
         terms_names: dict = {}
-        if _s("tipo_imovel"):      terms_names["property-type"]    = [_s("tipo_imovel")]
+        if tipo_lista:             terms_names["property-type"]    = list(dict.fromkeys(tipo_lista))
+        elif _s("tipo_imovel"):    terms_names["property-type"]    = [_s("tipo_imovel")]
         if _s("operacao"):         terms_names["property-status"]   = [_s("operacao") or "A Venda"]
         if _s("cidade_extraida"):  terms_names["property-city"]     = [_s("cidade_extraida")]
         if _s("bairro_extraido"):  terms_names["property-area"]     = [_s("bairro_extraido")]

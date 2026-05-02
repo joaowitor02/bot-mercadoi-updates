@@ -106,10 +106,15 @@ class WordPressPublisher:
             v = dados.get(key, "")
             return v.strip() if isinstance(v, str) else str(v or "").strip()
 
+        tipo_lista = dados.get("tipo_imovel_lista") or []
+        if isinstance(tipo_lista, str):
+            tipo_lista = [p.strip() for p in tipo_lista.split(",") if p.strip()]
+
         payload = {
             "titulo":          _s("titulo"),
             "descricao":       _s("descricao_util"),
             "tipo_imovel":     _s("tipo_imovel"),
+            "tipo_imovel_lista": tipo_lista,
             "operacao":        _s("operacao") or "A Venda",
             "preco":           _s("preco"),
             "condominio":      _s("condominio"),
