@@ -182,6 +182,13 @@ class OruloScraper:
             dados = self._extrair_dados(html, url)
             imagens_urls = self._extrair_imagens(html)
 
+        if dados.get("titulo") and len(imagens_urls) < _MAX_IMAGENS:
+            galeria_urls = await self._fetch_galeria_imagens(url)
+            if galeria_urls:
+                imagens_urls = self._deduplicar_urls_imagem(
+                    galeria_urls + imagens_urls
+                )[:_MAX_IMAGENS]
+
         if not dados.get("titulo"):
             return {"ok": False, "motivo": "estrutura_desconhecida"}
 
@@ -277,6 +284,100 @@ class OruloScraper:
         if not html:
             return {"ok": False, "motivo": "acesso_restrito"}
         return {"ok": True, "html": html}
+
+    async def _fetch_galeria_imagens(self, url: str) -> list:
+        """Abre a galeria "Ver fotos" e coleta imagens carregadas no modal."""
+        if async_playwright is None:
+            return []
+
+        os.makedirs(self.profile_path, exist_ok=True)
+        try:
+            async with async_playwright() as p:
+                context = await p.chromium.launch_persistent_context(
+                    user_data_dir=self.profile_path,
+                    headless=True,
+                    viewport={"width": 1365, "height": 900},
+                    user_agent=_HEADERS["User-Agent"],
+                    locale="pt-BR",
+                    args=["--no-sandbox", "--disable-dev-shm-usage"] if sys.platform != "win32" else [],
+                )
+                page = context.pages[0] if context.pages else await context.new_page()
+                try:
+                    await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+                    await self._networkidle(page)
+
+                    html = await page.content()
+                    if self._pagina_login(page.url, html):
+                        if not (self.email and self.senha):
+                            return []
+                        await self._login(page)
+                        await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+                        await self._networkidle(page)
+
+                    if self._cadastro_incompleto(page.url, await page.title(), await page.content()):
+                        return []
+
+                    if not await self._abrir_modal_fotos(page):
+                        logger.info("Orulo: botao 'Ver fotos' nao encontrado; usando fotos iniciais")
+                        return []
+
+                    urls = await self._coletar_urls_imagens_page(page)
+                    urls = self._filtrar_urls_imagens(urls)
+                    if urls:
+                        logger.info(f"Orulo: galeria expandida com {len(urls)} foto(s)")
+                    return urls
+                finally:
+                    await context.close()
+        except Exception as e:
+            logger.warning(f"Orulo: falha ao abrir galeria de fotos: {e}")
+            return []
+
+    async def _abrir_modal_fotos(self, page) -> bool:
+        seletores = [
+            'text=/Ver\\s+fotos/i',
+            'button:has-text("Ver fotos")',
+            'a:has-text("Ver fotos")',
+            '[aria-label*="foto" i]',
+            '[class*="gallery" i]',
+        ]
+        for sel in seletores:
+            try:
+                loc = page.locator(sel).first
+                if await loc.count():
+                    await loc.click(timeout=5000)
+                    await page.wait_for_timeout(1500)
+                    await self._networkidle(page)
+                    return True
+            except Exception:
+                continue
+        return False
+
+    async def _coletar_urls_imagens_page(self, page) -> list:
+        return await page.evaluate(r"""
+            () => {
+                const urls = [];
+                const add = (value) => {
+                    if (!value) return;
+                    String(value).split(',').forEach(part => {
+                        const raw = part.trim().split(/\s+/)[0];
+                        if (raw) urls.push(raw);
+                    });
+                };
+                document.querySelectorAll('img, source').forEach(el => {
+                    add(el.currentSrc || el.src || el.getAttribute('src'));
+                    add(el.getAttribute('srcset'));
+                    add(el.getAttribute('data-src'));
+                    add(el.getAttribute('data-srcset'));
+                    add(el.getAttribute('data-original'));
+                });
+                document.querySelectorAll('[style]').forEach(el => {
+                    const style = el.getAttribute('style') || '';
+                    const matches = style.matchAll(/url\(["']?([^"')]+)["']?\)/g);
+                    for (const m of matches) add(m[1]);
+                });
+                return urls;
+            }
+        """)
 
     async def _abrir_logado(self, page, url: str) -> str:
         await page.goto(url, wait_until="domcontentloaded", timeout=60000)
@@ -798,6 +899,17 @@ class OruloScraper:
             vistos.add(chave)
             saida.append(limpa)
         return saida
+
+    def _filtrar_urls_imagens(self, urls: list) -> list:
+        filtradas = []
+        for url in urls or []:
+            limpa = html_lib.unescape(str(url)).replace("\\/", "/").split("?")[0]
+            if not re.search(r"https://static\.orulo\.com\.br/images/.+\.(?:jpeg|jpg|png|webp)$", limpa, re.IGNORECASE):
+                continue
+            if self._imagem_eh_planta(limpa):
+                continue
+            filtradas.append(limpa)
+        return self._deduplicar_urls_imagem(filtradas)[:_MAX_IMAGENS]
 
     def _imagem_eh_planta(self, url: str, contexto: str = "") -> bool:
         texto = self._normalizar_texto(f"{url} {contexto}")
