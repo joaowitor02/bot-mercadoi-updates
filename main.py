@@ -366,6 +366,7 @@ async def _extrair_orulo(url: str, config: dict) -> tuple:
         email=config.get("orulo_email", ""),
         senha=config.get("orulo_senha", ""),
         profile_path=config.get("orulo_profile_path", ""),
+        gallery_cache_ttl_horas=int(config.get("orulo_gallery_cache_ttl_horas", 12) or 0),
     )
     resultado = await scraper.extrair(url)
     if not resultado.get("ok"):
@@ -677,6 +678,7 @@ async def processar_link(row: dict, sheet, config: dict):
         sheet.atualizar_campo(row_index, "tempo_seg", str(tempo_total))
         falha_extra_msg = ""
         extras_orulo = dados.get("_publicacoes_orulo") or []
+        media_ids_reuso = resultado.get("media_ids") or []
         if len(extras_orulo) > 1:
             logger.info(f"[{execution_id}] Orulo: publicando mais {len(extras_orulo) - 1} tipologia(s)")
             urls_extra = []
@@ -691,6 +693,8 @@ async def processar_link(row: dict, sheet, config: dict):
                     dados_extra["whatsapp_url"] = config["whatsapp_default"].strip()
                 if SALVAR_TUDO_COMO_RASCUNHO:
                     dados_extra["_forcar_rascunho"] = True
+                if media_ids_reuso and _usar_wordpress_xmlrpc(config):
+                    dados_extra["_wp_media_ids"] = media_ids_reuso
                 dados_extra = _validar_dados(dados_extra)
                 dados_extra = aplicar_tipos_imovel(dados_extra)
                 motivo_extra = _dados_invalidos(dados_extra)
@@ -701,6 +705,7 @@ async def processar_link(row: dict, sheet, config: dict):
                     f"[{execution_id}] Orulo tipologia {idx}/{len(extras_orulo)}: "
                     f"{dados_extra.get('titulo', '')[:70]}"
                 )
+                _t_extra = time.time()
                 resultado_extra = await _publicar_com_retry(
                     dados_extra, tipo_midia, arquivo_midia, config, execution_id
                 )
@@ -721,7 +726,7 @@ async def processar_link(row: dict, sheet, config: dict):
                             tempo_seg=tempo_total,
                             captura_seg=captura_seg,
                             midia_seg=midia_seg,
-                            publicacao_seg=int(time.time() - _t_etapa),
+                            publicacao_seg=int(time.time() - _t_extra),
                         )
                     except Exception as e:
                         logger.warning(f"[{execution_id}] Falha ao registrar historico extra {idx}: {e}")
@@ -744,7 +749,10 @@ async def processar_link(row: dict, sheet, config: dict):
             logger.error(f"[{execution_id}] Falha parcial no Orulo: {falha_extra_msg}")
         else:
             status.sucesso(status_final, msg)
-            logger.info(f"[{execution_id}] Sucesso! ({tempo_total}s)")
+            logger.info(
+                f"[{execution_id}] Sucesso! ({tempo_total}s) | "
+                f"captura={captura_seg}s midia={midia_seg}s publicacao={publicacao_seg}s"
+            )
         for arq in arquivo_midia:
             try:
                 os.remove(arq)

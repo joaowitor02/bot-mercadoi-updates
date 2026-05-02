@@ -15,6 +15,8 @@ import tempfile
 import html as html_lib
 import asyncio
 import hashlib
+import json
+import time
 from io import BytesIO
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
@@ -127,13 +129,20 @@ def normalizar_url(url: str) -> str:
 
 
 class OruloScraper:
-    def __init__(self, email: str = "", senha: str = "", profile_path: str = ""):
+    def __init__(
+        self,
+        email: str = "",
+        senha: str = "",
+        profile_path: str = "",
+        gallery_cache_ttl_horas: int = 12,
+    ):
         self.email = (email or "").strip()
         self.senha = (senha or "").strip()
         self.profile_path = (
             profile_path
             or os.path.join(tempfile.gettempdir(), "orulo_browser_profile")
         )
+        self.gallery_cache_ttl_horas = max(0, int(gallery_cache_ttl_horas or 0))
 
     async def extrair(self, url: str) -> dict:
         """Scrapa pagina de empreendimento e retorna dados + imagens."""
@@ -183,7 +192,13 @@ class OruloScraper:
             imagens_urls = self._extrair_imagens(html)
 
         if dados.get("titulo") and len(imagens_urls) < _MAX_IMAGENS:
-            galeria_urls = await self._fetch_galeria_imagens(url)
+            galeria_urls = self._obter_cache_galeria(url)
+            if galeria_urls:
+                logger.info(f"Orulo: galeria em cache com {len(galeria_urls)} foto(s)")
+            else:
+                galeria_urls = await self._fetch_galeria_imagens(url)
+                if galeria_urls:
+                    self._salvar_cache_galeria(url, galeria_urls)
             if galeria_urls:
                 imagens_urls = self._deduplicar_urls_imagem(
                     galeria_urls + imagens_urls
@@ -284,6 +299,59 @@ class OruloScraper:
         if not html:
             return {"ok": False, "motivo": "acesso_restrito"}
         return {"ok": True, "html": html}
+
+    def _gallery_cache_path(self) -> str:
+        return os.path.join(self.profile_path, "orulo_gallery_cache.json")
+
+    def _gallery_cache_key(self, url: str) -> str:
+        return hashlib.sha1(normalizar_url(url).encode("utf-8", errors="ignore")).hexdigest()
+
+    def _obter_cache_galeria(self, url: str) -> list:
+        if self.gallery_cache_ttl_horas <= 0:
+            return []
+        path = self._gallery_cache_path()
+        try:
+            if not os.path.exists(path):
+                return []
+            with open(path, "r", encoding="utf-8") as fh:
+                cache = json.load(fh)
+            item = cache.get(self._gallery_cache_key(url)) or {}
+            if not item:
+                return []
+            idade = time.time() - float(item.get("ts") or 0)
+            if idade > self.gallery_cache_ttl_horas * 3600:
+                return []
+            urls = item.get("urls") or []
+            return self._deduplicar_urls_imagem(urls)[:_MAX_IMAGENS]
+        except Exception:
+            return []
+
+    def _salvar_cache_galeria(self, url: str, urls: list) -> None:
+        if self.gallery_cache_ttl_horas <= 0 or not urls:
+            return
+        try:
+            os.makedirs(self.profile_path, exist_ok=True)
+            path = self._gallery_cache_path()
+            cache = {}
+            if os.path.exists(path):
+                try:
+                    with open(path, "r", encoding="utf-8") as fh:
+                        cache = json.load(fh)
+                except Exception:
+                    cache = {}
+            cache[self._gallery_cache_key(url)] = {
+                "ts": time.time(),
+                "urls": self._deduplicar_urls_imagem(urls)[:_MAX_IMAGENS],
+            }
+            limite = time.time() - (max(self.gallery_cache_ttl_horas, 1) * 3600 * 4)
+            cache = {
+                k: v for k, v in cache.items()
+                if float((v or {}).get("ts") or 0) >= limite
+            }
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(cache, fh, ensure_ascii=False)
+        except Exception as e:
+            logger.debug(f"Orulo: falha ao salvar cache da galeria: {e}")
 
     async def _fetch_galeria_imagens(self, url: str) -> list:
         """Abre a galeria "Ver fotos" e coleta imagens carregadas no modal."""

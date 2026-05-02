@@ -47,6 +47,7 @@ class WordPressXmlRpcPublisher:
             "status_erro":    "",
             "mercadoi_url":   "",
             "url_publica":    "",
+            "media_ids":      [],
         }
 
         fonte     = dados.get("_fonte", "")
@@ -67,10 +68,19 @@ class WordPressXmlRpcPublisher:
 
         logger.info(f"[{self.execution_id}] Imóvel criado: id={post_id} url={admin_url}")
 
-        if arquivo_midia:
+        media_ids_reuso = self._normalizar_media_ids(dados.get("_wp_media_ids"))
+        if media_ids_reuso:
+            ok, enviados, erros = await self._vincular_imagens_existentes(post_id, media_ids_reuso)
+            if erros:
+                logger.warning(f"[{self.execution_id}] Erro ao reaproveitar imagens: {erros}")
+            if ok:
+                resultado["media_ids"] = media_ids_reuso
+                logger.info(f"[{self.execution_id}] {enviados} imagem(ns) reaproveitada(s)")
+        elif arquivo_midia:
             validos = [f for f in arquivo_midia if os.path.exists(f)]
             if validos:
-                ok, enviados, erros = await self._subir_imagens(post_id, validos)
+                ok, enviados, erros, media_ids = await self._subir_imagens(post_id, validos)
+                resultado["media_ids"] = media_ids
                 if not ok and not enviados:
                     # Sem permissão de upload — imóvel já criado, apenas avisa
                     logger.warning(f"[{self.execution_id}] Upload sem permissão (401) — imóvel criado sem imagens. Conceda 'upload_files' ao usuário WordPress.")
@@ -165,7 +175,7 @@ class WordPressXmlRpcPublisher:
     # Upload de imagens
     # ------------------------------------------------------------------
 
-    async def _subir_imagens(self, post_id: int, caminhos: list) -> tuple[bool, int, list]:
+    async def _subir_imagens(self, post_id: int, caminhos: list) -> tuple[bool, int, list, list]:
         uploaded_ids  = []
         errors        = []
         xmlrpc_falhos = []  # imagens que receberam 401 do XML-RPC
@@ -208,7 +218,42 @@ class WordPressXmlRpcPublisher:
             except Exception as e:
                 logger.warning(f"[{self.execution_id}] Erro ao vincular imagens ao imóvel: {e}")
 
-        return bool(uploaded_ids), len(uploaded_ids), errors
+        return bool(uploaded_ids), len(uploaded_ids), errors, uploaded_ids
+
+    async def _vincular_imagens_existentes(self, post_id: int, media_ids: list) -> tuple[bool, int, list]:
+        ids = self._normalizar_media_ids(media_ids)
+        if not ids:
+            return False, 0, []
+        edit_data = {
+            "wp_post_thumbnail": str(ids[0]),
+            "custom_fields": [
+                {"key": "fave_property_images", "value": ",".join(map(str, ids))}
+            ],
+        }
+        try:
+            await self._run(self._sync_edit_post, post_id, edit_data)
+            return True, len(ids), []
+        except Exception as e:
+            logger.warning(f"[{self.execution_id}] Erro ao vincular imagens ao imovel: {e}")
+            return False, 0, [str(e)]
+
+    @staticmethod
+    def _normalizar_media_ids(media_ids) -> list[int]:
+        if not media_ids:
+            return []
+        if isinstance(media_ids, str):
+            partes = media_ids.replace("|", ",").split(",")
+        else:
+            partes = list(media_ids)
+        ids = []
+        for item in partes:
+            try:
+                media_id = int(str(item).strip())
+            except Exception:
+                continue
+            if media_id > 0 and media_id not in ids:
+                ids.append(media_id)
+        return ids
 
     def _sync_upload_file(self, caminho: str, post_id: int) -> int:
         with open(caminho, "rb") as fh:
