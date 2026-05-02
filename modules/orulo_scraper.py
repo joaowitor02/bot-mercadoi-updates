@@ -90,7 +90,7 @@ _AMENIDADES = [
 _TERMOS_PLANTA = [
     "planta", "plantas", "floorplan", "floor plan", "floor_plan",
     "blueprint", "unit plan", "unit_plan", "implantacao", "implantaÃ§Ã£o",
-    "layout", "typology", "tipologia",
+    "layout", "typology", "tipologia", "pavimento", "pavimentos",
 ]
 
 _TERMOS_GALERIA = [
@@ -824,6 +824,21 @@ class OruloScraper:
         anterior = html[max(0, tag_ini - 70):tag_ini]
         return anterior + html[tag_ini:tag_fim + 1]
 
+    def _inicio_secao_plantas(self, html: str) -> int:
+        marcadores = [
+            r"<h[1-6][^>]*>\s*Plantas\b",
+            r">\s*Plantas\s*<",
+            r">\s*Mais plantas\s*<",
+            r"\bfloor[_-]?plan",
+            r"class=[\"'][^\"']*(?:plant|floor)",
+        ]
+        posicoes = []
+        for pat in marcadores:
+            m = re.search(pat, html, re.IGNORECASE)
+            if m:
+                posicoes.append(m.start())
+        return min(posicoes) if posicoes else -1
+
 
     def _imagem_hash_visual(self, conteudo: bytes) -> str:
         if Image is None:
@@ -844,12 +859,15 @@ class OruloScraper:
 
     def _extrair_imagens(self, html: str) -> list:
         html_img = html_lib.unescape(html or "").replace("\\/", "/")
+        inicio_plantas = self._inicio_secao_plantas(html_img)
         padrao = re.compile(
             r"https://static\.orulo\.com\.br/images/[^\"'\s)]+?\.(?:jpeg|jpg|png|webp)(?:\?\d+)?",
             re.IGNORECASE,
         )
         candidatos = []
         for ordem, m in enumerate(padrao.finditer(html_img)):
+            if inicio_plantas >= 0 and m.start() >= inicio_plantas:
+                continue
             u = m.group(0)
             base = u.split("?")[0]
             contexto = html_img[max(0, m.start() - 350):m.end() + 350]
