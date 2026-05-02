@@ -542,7 +542,7 @@ def _execucoes_db(dias: int = 7) -> list[dict]:
 
         inicio = (r.get("criado_em") or "")[11:19]
         fim_hora = fim[11:19] if "T" in fim else (fim[11:19] if len(fim) >= 19 else "")
-        itens.append({
+        item = {
             "execution_id": r.get("id_execucao") or str(r.get("_row_index", "")),
             "row_id": r.get("_row_index"),
             "inicio": inicio,
@@ -568,7 +568,20 @@ def _execucoes_db(dias: int = 7) -> list[dict]:
             "captura_seg": int(r.get("captura_seg") or 0),
             "midia_seg": int(r.get("midia_seg") or 0),
             "publicacao_seg": int(r.get("publicacao_seg") or 0),
-        })
+        }
+
+        mercadoi_links = [u.strip() for u in (item["mercadoi_url"] or "").split("|") if u.strip()]
+        publica_links = [u.strip() for u in (item["url_publica"] or "").split("|") if u.strip()]
+        if status == "sucesso" and (len(mercadoi_links) > 1 or len(publica_links) > 1):
+            total_links = max(len(mercadoi_links), len(publica_links))
+            for idx in range(total_links):
+                extra = dict(item)
+                extra["execution_id"] = f"{item['execution_id']}-{idx + 1}"
+                extra["mercadoi_url"] = mercadoi_links[idx] if idx < len(mercadoi_links) else ""
+                extra["url_publica"] = publica_links[idx] if idx < len(publica_links) else ""
+                itens.append(extra)
+        else:
+            itens.append(item)
     itens.sort(key=lambda x: (x.get("data") or "", x.get("fim") or x.get("inicio") or "", x.get("row_id") or 0), reverse=True)
     return itens
 

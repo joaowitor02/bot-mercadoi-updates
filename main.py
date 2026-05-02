@@ -681,6 +681,7 @@ async def processar_link(row: dict, sheet, config: dict):
             logger.info(f"[{execution_id}] Orulo: publicando mais {len(extras_orulo) - 1} tipologia(s)")
             urls_extra = []
             falhas_extra = []
+            publicacoes_extra_ok = 0
             for idx, dados_extra in enumerate(extras_orulo[1:], 2):
                 dados_extra = dict(dados_extra)
                 dados_extra["_fonte"] = "orulo"
@@ -704,6 +705,26 @@ async def processar_link(row: dict, sheet, config: dict):
                     dados_extra, tipo_midia, arquivo_midia, config, execution_id
                 )
                 if resultado_extra and resultado_extra.get("sucesso"):
+                    publicacoes_extra_ok += 1
+                    msg_extra = resultado_extra.get("mensagem", "")
+                    status_extra = "publicado" if "Publicado" in msg_extra else "rascunho_salvo"
+                    try:
+                        sheet.registrar_publicacao_extra(
+                            base_row_index=row_index,
+                            dados=dados_extra,
+                            resultado=resultado_extra,
+                            status=status_extra,
+                            execution_id=f"{execution_id}-{idx}",
+                            origem="Ã“rulo",
+                            tipo_midia=tipo_midia or "",
+                            arquivo_midia=f"{len(arquivo_midia)} arquivo(s)" if arquivo_midia else "",
+                            tempo_seg=tempo_total,
+                            captura_seg=captura_seg,
+                            midia_seg=midia_seg,
+                            publicacao_seg=int(time.time() - _t_etapa),
+                        )
+                    except Exception as e:
+                        logger.warning(f"[{execution_id}] Falha ao registrar historico extra {idx}: {e}")
                     if resultado_extra.get("mercadoi_url"):
                         urls_extra.append(resultado_extra["mercadoi_url"])
                 else:
@@ -711,10 +732,9 @@ async def processar_link(row: dict, sheet, config: dict):
                     falhas_extra.append(f"{idx}/{len(extras_orulo)}: {erro_extra}")
 
             if urls_extra:
-                todos_urls = [u for u in [mercadoi_url] + urls_extra if u]
-                sheet.atualizar_campo(row_index, "mercadoi_url", " | ".join(todos_urls))
+                logger.info(f"[{execution_id}] {len(urls_extra)} link(s) extra(s) do Mercadoi registrados no historico")
             if falhas_extra:
-                msg = f"{msg}; {1 + len(urls_extra)}/{len(extras_orulo)} publicacoes concluidas; falhas: {'; '.join(falhas_extra)}"
+                msg = f"{msg}; {1 + publicacoes_extra_ok}/{len(extras_orulo)} publicacoes concluidas; falhas: {'; '.join(falhas_extra)}"
                 falha_extra_msg = msg
             else:
                 msg = f"{msg}: {len(extras_orulo)} publicacoes"

@@ -296,6 +296,60 @@ class DatabaseManager:
                 conn.commit()
         logger.debug(f"Campo '{campo}' atualizado (id {row_index}): {valor}")
 
+    def registrar_publicacao_extra(
+        self,
+        base_row_index: int,
+        dados: dict,
+        resultado: dict,
+        status: str,
+        execution_id: str,
+        origem: str = "Ã“rulo",
+        tipo_midia: str = "",
+        arquivo_midia: str = "",
+        tempo_seg: int = 0,
+        captura_seg: int = 0,
+        midia_seg: int = 0,
+        publicacao_seg: int = 0,
+    ) -> int:
+        """Cria uma linha concluida no historico para publicacoes extras do mesmo link."""
+        with self._lock:
+            with self._conn() as conn:
+                base = conn.execute(
+                    "SELECT url_instagram FROM imoveis WHERE id=?",
+                    (base_row_index,),
+                ).fetchone()
+                url = (base["url_instagram"] if base else "") or dados.get("url_publicacao", "")
+                cur = conn.execute(
+                    "INSERT INTO imoveis ("
+                    "url_instagram, status, titulo_gerado, tipo_midia, arquivo_midia, "
+                    "cidade_aplicada, bairro_aplicado, fim_processamento, resultado, "
+                    "mensagem_erro, id_execucao, mercadoi_url, url_publica, origem, "
+                    "tempo_seg, captura_seg, midia_seg, publicacao_seg"
+                    ") VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'), ?, '', ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        url,
+                        status,
+                        dados.get("titulo", ""),
+                        tipo_midia or "",
+                        arquivo_midia or "",
+                        resultado.get("cidade_aplicada", "") or dados.get("cidade_extraida", ""),
+                        resultado.get("bairro_aplicado", "") or dados.get("bairro_extraido", ""),
+                        resultado.get("mensagem", ""),
+                        execution_id,
+                        resultado.get("mercadoi_url", ""),
+                        resultado.get("url_publica", ""),
+                        origem,
+                        int(tempo_seg or 0),
+                        int(captura_seg or 0),
+                        int(midia_seg or 0),
+                        int(publicacao_seg or 0),
+                    ),
+                )
+                conn.commit()
+                row_id = cur.lastrowid
+        logger.info(f"Publicacao extra registrada no historico (id {row_id})")
+        return row_id
+
     # ------------------------------------------------------------------
     # Cache leve de extracao
     # ------------------------------------------------------------------
