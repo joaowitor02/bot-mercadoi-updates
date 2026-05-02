@@ -11,6 +11,7 @@ import xmlrpc.client
 import httpx
 from urllib.parse import urlparse
 from modules.logger import Logger
+from modules.property_types import aplicar_tipos_imovel
 
 logger = Logger("wordpress_xmlrpc_publisher")
 
@@ -37,6 +38,7 @@ class WordPressXmlRpcPublisher:
     # ------------------------------------------------------------------
 
     async def preencher_e_salvar(self, dados: dict, tipo_midia: str, arquivo_midia: list) -> dict:
+        dados = aplicar_tipos_imovel(dict(dados or {}))
         resultado = {
             "sucesso":        False,
             "mensagem":       "",

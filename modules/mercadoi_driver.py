@@ -10,6 +10,7 @@ import re
 from urllib.parse import urljoin
 from playwright.async_api import async_playwright
 from modules.logger import Logger
+from modules.property_types import aplicar_tipos_imovel
 
 logger = Logger("mercadoi_driver")
 
@@ -303,6 +304,7 @@ class MercadoiDriver:
         logger.info("Login via formulario realizado com sucesso")
 
     async def preencher_e_salvar(self, dados, tipo_midia, arquivo_midia):
+        dados = aplicar_tipos_imovel(dict(dados or {}))
         page = self._page
         await self._garantir_login(page)
         resultado = {

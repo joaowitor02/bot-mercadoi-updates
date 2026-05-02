@@ -6,6 +6,7 @@ quando os dados estao dentro da descricao.
 
 import re
 from modules.logger import Logger
+from modules.property_types import aplicar_tipos_imovel
 
 logger = Logger("deepseek_parser")
 
@@ -190,6 +191,7 @@ class DeepSeekParser:
                 dados[k] = ""
 
         logger.debug(f"Dados extraídos: {dados}")
+        dados = aplicar_tipos_imovel(dados)
         return dados
 
     def _extrair_bloco_descricao(self, texto):

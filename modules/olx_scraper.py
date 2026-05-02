@@ -10,6 +10,7 @@ import asyncio
 import html as html_lib
 import httpx
 from modules.logger import Logger
+from modules.property_types import normalizar_tipo_imovel
 
 logger = Logger("olx_scraper")
 
@@ -67,11 +68,7 @@ def normalizar_url(url: str) -> str:
 
 
 def _normalizar_tipo(texto: str) -> str:
-    t = texto.lower().strip()
-    for chave, valor in _TIPO_MAP.items():
-        if chave in t:
-            return valor
-    return "Apartamento"
+    return normalizar_tipo_imovel(texto)
 
 
 def _limpar_preco(valor) -> str:

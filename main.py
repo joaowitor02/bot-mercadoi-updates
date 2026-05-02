@@ -27,6 +27,7 @@ from modules.notificador import notificar
 from modules.ocr_preco import extrair_preco_de_imagens
 from modules.olx_scraper import OlxScraper, normalizar_url as normalizar_olx_url, url_valida as olx_url_valida
 from modules.orulo_scraper import OruloScraper, normalizar_url as normalizar_orulo_url, url_valida as orulo_url_valida
+from modules.property_types import aplicar_tipos_imovel
 
 logger = Logger("main")
 
@@ -529,6 +530,7 @@ async def processar_link(row: dict, sheet, config: dict):
 
     # Validação e sanitização dos dados
     dados = _validar_dados(dados)
+    dados = aplicar_tipos_imovel(dados)
     motivo_invalido = _dados_invalidos(dados)
     if motivo_invalido:
         logger.error(f"[{execution_id}] Dados rejeitados: {motivo_invalido}")
@@ -689,6 +691,7 @@ async def processar_link(row: dict, sheet, config: dict):
                 if SALVAR_TUDO_COMO_RASCUNHO:
                     dados_extra["_forcar_rascunho"] = True
                 dados_extra = _validar_dados(dados_extra)
+                dados_extra = aplicar_tipos_imovel(dados_extra)
                 motivo_extra = _dados_invalidos(dados_extra)
                 if motivo_extra:
                     falhas_extra.append(f"{idx}/{len(extras_orulo)}: {motivo_extra}")
