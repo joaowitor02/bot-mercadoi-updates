@@ -11,6 +11,7 @@ import os
 import uuid
 import time
 import httpx
+from version import VERSION
 from modules.database_manager import DatabaseManager
 from modules.instagram_scraper import InstagramScraper
 from modules.instagram_chrome_scraper import extrair_via_chrome
@@ -594,74 +595,7 @@ async def processar_link(row: dict, sheet, config: dict):
     _t_etapa = time.time()
     sheet.atualizar_status(row_index, "enviando_wp")
     logger.info(f"[{execution_id}] Publicando no Mercadoi...")
-    resultado = None
-
-    if _usar_wordpress_api(config):
-        # Modo REST API: plugin (Bearer) ou snippet functions.php (Application Password)
-        modo = "Application Password" if config.get("wordpress_wp_user") else "API Key"
-        logger.info(f"[{execution_id}] Usando WordPress REST API ({modo})")
-        publisher = WordPressPublisher(
-            api_url        = config["wordpress_api_url"],
-            api_key        = config.get("wordpress_api_key", ""),
-            wp_user        = config.get("wordpress_wp_user", ""),
-            wp_app_password= config.get("wordpress_app_password", ""),
-            execution_id   = execution_id,
-        )
-        for tentativa in range(1, MAX_TENTATIVAS_MERCADOI + 1):
-            if tentativa > 1:
-                logger.info(f"[{execution_id}] Tentativa {tentativa}/{MAX_TENTATIVAS_MERCADOI}...")
-            resultado = await publisher.preencher_e_salvar(dados, tipo_midia, arquivo_midia)
-            if resultado["sucesso"]:
-                break
-            if tentativa < MAX_TENTATIVAS_MERCADOI:
-                logger.warning(
-                    f"[{execution_id}] Falhou: {resultado.get('mensagem', '')}. "
-                    f"Aguardando {ESPERA_ENTRE_TENTATIVAS}s..."
-                )
-                await asyncio.sleep(ESPERA_ENTRE_TENTATIVAS)
-    elif _usar_wordpress_xmlrpc(config):
-        # Modo XML-RPC: não exige plugin — só usuário e senha WordPress
-        logger.info(f"[{execution_id}] Usando WordPress XML-RPC")
-        publisher = WordPressXmlRpcPublisher(
-            site_url=config["wordpress_xmlrpc_url"],
-            wp_user=config["wordpress_xmlrpc_user"],
-            wp_password=config["wordpress_xmlrpc_password"],
-            execution_id=execution_id,
-        )
-        for tentativa in range(1, MAX_TENTATIVAS_MERCADOI + 1):
-            if tentativa > 1:
-                logger.info(f"[{execution_id}] Tentativa {tentativa}/{MAX_TENTATIVAS_MERCADOI}...")
-            resultado = await publisher.preencher_e_salvar(dados, tipo_midia, arquivo_midia)
-            if resultado["sucesso"]:
-                break
-            if tentativa < MAX_TENTATIVAS_MERCADOI:
-                logger.warning(
-                    f"[{execution_id}] Falhou: {resultado.get('mensagem', '')}. "
-                    f"Aguardando {ESPERA_ENTRE_TENTATIVAS}s..."
-                )
-                await asyncio.sleep(ESPERA_ENTRE_TENTATIVAS)
-    else:
-        # Modo legado: Playwright + Chrome
-        logger.info(f"[{execution_id}] Usando Playwright (modo legado)")
-        async with MercadoiDriver(
-            config["mercadoi_url"],
-            config.get("mercadoi_profile_path", r"C:\chrome_bot_mercadoi"),
-            execution_id=execution_id,
-            wp_user=config.get("wordpress_xmlrpc_user", "") or config.get("wordpress_wp_user", ""),
-            wp_pass=config.get("wordpress_xmlrpc_password", "") or config.get("wordpress_app_password", ""),
-        ) as driver:
-            for tentativa in range(1, MAX_TENTATIVAS_MERCADOI + 1):
-                if tentativa > 1:
-                    logger.info(f"[{execution_id}] Tentativa {tentativa}/{MAX_TENTATIVAS_MERCADOI}...")
-                resultado = await driver.preencher_e_salvar(dados, tipo_midia, arquivo_midia)
-                if resultado["sucesso"]:
-                    break
-                if tentativa < MAX_TENTATIVAS_MERCADOI:
-                    logger.warning(
-                        f"[{execution_id}] Falhou: {resultado.get('mensagem', '')}. "
-                        f"Aguardando {ESPERA_ENTRE_TENTATIVAS}s..."
-                    )
-                    await asyncio.sleep(ESPERA_ENTRE_TENTATIVAS)
+    resultado = await _publicar_com_retry(dados, tipo_midia, arquivo_midia, config, execution_id)
 
     if resultado and resultado["sucesso"]:
         publicacao_seg = int(time.time() - _t_etapa)
@@ -720,7 +654,7 @@ async def processar_link(row: dict, sheet, config: dict):
                             resultado=resultado_extra,
                             status=status_extra,
                             execution_id=f"{execution_id}-{idx}",
-                            origem="Ã“rulo",
+                            origem="Órulo",
                             tipo_midia=tipo_midia or "",
                             arquivo_midia=f"{len(arquivo_midia)} arquivo(s)" if arquivo_midia else "",
                             tempo_seg=tempo_total,
@@ -965,7 +899,7 @@ async def main(watch: bool = False, intervalo: int = 5):
     intervalo = config.get("watch_intervalo_minutos", intervalo)
 
     if watch:
-        logger.info(f"=== Bot Mercadoi v3.1 — Modo Watch ({intervalo} min) ===")
+        logger.info(f"=== Bot Mercadoi v{VERSION} — Modo Watch ({intervalo} min) ===")
         await notificar(config, f"🤖 <b>Bot Mercadoi iniciado</b> — monitorando a cada {intervalo} min.")
         ciclo = 1
         while True:
@@ -982,7 +916,7 @@ async def main(watch: bool = False, intervalo: int = 5):
             await asyncio.sleep(intervalo * 60)
             ciclo += 1
     else:
-        logger.info("=== Bot Mercadoi v3.1 ===")
+        logger.info(f"=== Bot Mercadoi v{VERSION} ===")
         await executar_ciclo(config)
         logger.info("=== Processamento concluído ===")
 

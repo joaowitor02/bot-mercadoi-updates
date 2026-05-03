@@ -293,7 +293,7 @@
       <div class="px-5 py-3 border-b border-slate-700/60 flex items-center gap-2.5">
         <span class="w-2 h-2 rounded-full bg-emerald-400 pulse-dot shrink-0"></span>
         <span class="text-sm font-semibold text-slate-200">Log em tempo real</span>
-        <span class="ml-auto text-xs text-slate-500">atualiza a cada 2s</span>
+        <span id="log-last-update" class="ml-auto text-xs text-slate-500">—</span>
         <button onclick="document.getElementById('log-card').classList.add('hidden')"
           class="text-slate-600 hover:text-slate-400 ml-2 transition-colors text-sm leading-none">&times;</button>
       </div>
@@ -1492,7 +1492,12 @@ async function atualizarLogs() {
       ).join('');
       container.scrollTop = container.scrollHeight;
     }
-  } catch {}
+    const ts = document.getElementById('log-last-update');
+    if (ts) ts.textContent = new Date().toLocaleTimeString('pt-BR');
+  } catch {
+    const ts = document.getElementById('log-last-update');
+    if (ts) ts.textContent = 'erro de conexão';
+  }
 }
 
 async function processarAgora() {
@@ -2595,15 +2600,20 @@ async function init() {
 
   setInterval(verificarTunnel, 10000);
 
+  // Status + chrome: a cada 8s (sempre)
   setInterval(async () => {
     await atualizarStatus();
     await atualizarChromeStatus();
-    if (!_botRodando) {
-      await carregarExecucoes();
-      if (_mainTab === 'fila') await carregarFila();
-    }
   }, 8000);
 
+  // Execuções, stats e fila: a cada 10s independente de o bot estar rodando.
+  // Antes só atualizava quando !_botRodando — em Watch Mode nunca atualizava.
+  setInterval(async () => {
+    await carregarExecucoes();
+    if (_mainTab === 'fila') await carregarFila();
+  }, 10000);
+
+  // Log ao vivo: a cada 2s se o card estiver visível
   setInterval(async () => {
     const logCard = document.getElementById('log-card');
     if (logCard && !logCard.classList.contains('hidden')) await atualizarLogs();

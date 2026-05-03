@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -55,7 +56,42 @@ _SENHA: str = ""          # senha do cliente
 _ADMIN_USUARIO: str = ""  # username do administrador
 _ADMIN_SENHA: str = ""    # senha do administrador
 _LICENCA_EXPIRA: str = ""  # "YYYY-MM-DD" ou "" para sem expiração
-_SESSION_TOKENS: dict[str, str] = {}  # token -> "admin" | "user"
+
+# token -> {"nivel": "admin"|"user", "exp": timestamp}
+_SESSION_TOKENS: dict[str, dict] = {}
+_SESSION_TTL = 30 * 24 * 3600  # 30 dias
+
+# Proteção brute-force: ip -> [timestamps de falhas]
+_LOGIN_FALHAS: dict[str, list] = {}
+_LOGIN_MAX_FALHAS = 10
+_LOGIN_JANELA_SEG = 600   # 10 min
+_LOGIN_BLOQUEIO_SEG = 600  # 10 min de bloqueio
+
+
+def _get_session_nivel(token: str) -> str:
+    entry = _SESSION_TOKENS.get(token)
+    if not entry:
+        return ""
+    if entry["exp"] < time.time():
+        _SESSION_TOKENS.pop(token, None)
+        return ""
+    return entry["nivel"]
+
+
+def _registrar_falha_login(ip: str) -> bool:
+    """Registra falha e retorna True se o IP deve ser bloqueado."""
+    agora = time.time()
+    falhas = [t for t in _LOGIN_FALHAS.get(ip, []) if agora - t < _LOGIN_JANELA_SEG]
+    falhas.append(agora)
+    _LOGIN_FALHAS[ip] = falhas
+    return len(falhas) >= _LOGIN_MAX_FALHAS
+
+
+def _ip_bloqueado(ip: str) -> bool:
+    agora = time.time()
+    falhas = [t for t in _LOGIN_FALHAS.get(ip, []) if agora - t < _LOGIN_BLOQUEIO_SEG]
+    _LOGIN_FALHAS[ip] = falhas
+    return len(falhas) >= _LOGIN_MAX_FALHAS
 
 # Rotas públicas (sem auth)
 _PUBLIC_PATHS = {"/login", "/favicon.ico", "/licenca-expirada", "/api/health", "/primeiro-acesso"}
@@ -184,7 +220,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return RedirectResponse("/primeiro-acesso", status_code=302)
 
         token = request.cookies.get("mercadoi_session", "")
-        nivel = _SESSION_TOKENS.get(token, "")
+        nivel = _get_session_nivel(token)
 
         # Licença expirada bloqueia usuário comum (admin continua)
         if _licenca_expirada() and nivel != "admin":
@@ -319,15 +355,21 @@ async def login_page(erro: str = ""):
 
 
 @app.post("/login")
-async def fazer_login(usuario: str = Form(...), senha: str = Form(...)):
+async def fazer_login(request: Request, usuario: str = Form(...), senha: str = Form(...)):
+    ip = request.client.host if request.client else "unknown"
+
+    if _ip_bloqueado(ip):
+        return RedirectResponse("/login?erro=1", status_code=303)
+
     u = usuario.strip().lower()
 
     # Admin tem prioridade (ignora expiração de licença)
     if _ADMIN_SENHA:
         usuario_ok = (not _ADMIN_USUARIO) or _hmac_mod.compare_digest(u.encode("utf-8"), _ADMIN_USUARIO.lower().encode("utf-8"))
         if usuario_ok and _verificar_senha(senha, _ADMIN_SENHA):
+            _LOGIN_FALHAS.pop(ip, None)
             token = secrets.token_hex(32)
-            _SESSION_TOKENS[token] = "admin"
+            _SESSION_TOKENS[token] = {"nivel": "admin", "exp": time.time() + _SESSION_TTL}
             resp = RedirectResponse("/", status_code=303)
             resp.set_cookie("mercadoi_session", token, httponly=True, samesite="strict")
             return resp
@@ -338,8 +380,9 @@ async def fazer_login(usuario: str = Form(...), senha: str = Form(...)):
         if usuario_ok and _verificar_senha(senha, _SENHA):
             if _licenca_expirada():
                 return RedirectResponse("/licenca-expirada", status_code=303)
+            _LOGIN_FALHAS.pop(ip, None)
             token = secrets.token_hex(32)
-            _SESSION_TOKENS[token] = "user"
+            _SESSION_TOKENS[token] = {"nivel": "user", "exp": time.time() + _SESSION_TTL}
             resp = RedirectResponse("/", status_code=303)
             resp.set_cookie("mercadoi_session", token, httponly=True, samesite="strict")
             return resp
@@ -348,6 +391,7 @@ async def fazer_login(usuario: str = Form(...), senha: str = Form(...)):
     if not _SENHA and not _ADMIN_SENHA:
         return RedirectResponse("/primeiro-acesso", status_code=303)
 
+    _registrar_falha_login(ip)
     return RedirectResponse("/login?erro=1", status_code=303)
 
 
@@ -708,7 +752,7 @@ async def health():
 async def status(request: Request):
     token = request.cookies.get("mercadoi_session", "")
     sem_auth = not _SENHA and not _ADMIN_SENHA
-    nivel = _SESSION_TOKENS.get(token, "admin" if sem_auth else "")
+    nivel = "admin" if sem_auth else _get_session_nivel(token)
 
     tempo_medio    = None
     workers_ativos = 0
@@ -1501,7 +1545,7 @@ class RemoverRequest(BaseModel):
 
 
 def _contar_arquivos_antigos(pastas: list[Path], dias: int) -> tuple[int, int]:
-    limite = __import__("time").time() - (dias * 86400)
+    limite = time.time() - (dias * 86400)
     count = 0
     bytes_total = 0
     vistos: set[str] = set()
@@ -1527,7 +1571,7 @@ def _contar_arquivos_antigos(pastas: list[Path], dias: int) -> tuple[int, int]:
 
 
 def _remover_arquivos_antigos(pastas: list[Path], dias: int) -> tuple[int, int]:
-    limite = __import__("time").time() - (dias * 86400)
+    limite = time.time() - (dias * 86400)
     count = 0
     bytes_total = 0
     vistos: set[str] = set()
