@@ -35,6 +35,7 @@ logger = Logger("main")
 MAX_TENTATIVAS_MERCADOI = 3
 ESPERA_ENTRE_TENTATIVAS = 5  # segundos
 SALVAR_TUDO_COMO_RASCUNHO = True
+MEDIA_DOWNLOAD_TIMEOUT = 180  # cancela download se exceder — evita travar em vídeos grandes
 
 
 def _usar_wordpress_api(config: dict) -> bool:
@@ -310,8 +311,17 @@ async def _extrair_e_baixar(url: str, config: dict) -> tuple:
             # Fallback browser — só funciona no Windows com Chrome configurado
             dados, motivo = await _via_browser(url, config)
 
+        timeout_midia = int(config.get("midia_download_timeout_seg", MEDIA_DOWNLOAD_TIMEOUT) or MEDIA_DOWNLOAD_TIMEOUT)
         try:
-            tipo_midia, arquivo_midia = await med_task
+            tipo_midia, arquivo_midia = await asyncio.wait_for(med_task, timeout=timeout_midia)
+        except asyncio.TimeoutError:
+            logger.warning(f"Download de mídia excedeu {timeout_midia}s — cancelando e continuando sem mídia")
+            med_task.cancel()
+            try:
+                await med_task
+            except asyncio.CancelledError:
+                pass
+            tipo_midia, arquivo_midia = None, []
         except asyncio.CancelledError:
             tipo_midia, arquivo_midia = None, []
 
@@ -392,7 +402,12 @@ async def _extrair_orulo(url: str, config: dict) -> tuple:
 
 async def _midia_instagram(url: str, config: dict) -> tuple:
     media = MediaResolver(config["downloads_path"], config)
-    tipo_midia, arquivo_midia = await media.resolver(url)
+    timeout_midia = int(config.get("midia_download_timeout_seg", MEDIA_DOWNLOAD_TIMEOUT) or MEDIA_DOWNLOAD_TIMEOUT)
+    try:
+        tipo_midia, arquivo_midia = await asyncio.wait_for(media.resolver(url), timeout=timeout_midia)
+    except asyncio.TimeoutError:
+        logger.warning(f"Download de mídia excedeu {timeout_midia}s — continuando sem mídia")
+        tipo_midia, arquivo_midia = None, []
     return tipo_midia, arquivo_midia
 
 

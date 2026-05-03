@@ -242,6 +242,7 @@ async def extrair_via_ytdlp(url: str, downloads_path: str) -> tuple[str, list[st
         "writesubtitles":   False,
         "noplaylist":       True,
         "format":           "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "socket_timeout":   30,   # corta conexões travadas após 30s
         # Sem cookies — se a conta for privada, yt-dlp também falha
     }
 

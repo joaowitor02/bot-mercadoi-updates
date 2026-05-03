@@ -303,7 +303,7 @@ class DatabaseManager:
         resultado: dict,
         status: str,
         execution_id: str,
-        origem: str = "Ã“rulo",
+        origem: str = "Órulo",
         tipo_midia: str = "",
         arquivo_midia: str = "",
         tempo_seg: int = 0,
