@@ -31,7 +31,7 @@ print(f"[INICIO] Python {sys.version.split()[0]} em {sys.platform}", flush=True)
 if sys.platform == "win32" and sys.version_info < (3, 14):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, Request
+from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -637,7 +637,28 @@ def _execucoes_db(dias: int = 7) -> list[dict]:
 _bot_rodando  = False
 _watch_ativo  = False
 _bot_processo = None
+_bot_task     = None
 _ultimo_log: list[str] = []
+_ultimo_inicio_bot = 0.0
+
+
+def _bot_em_execucao() -> bool:
+    if _bot_processo is not None:
+        try:
+            if _bot_processo.poll() is None:
+                return True
+        except Exception:
+            pass
+    if _bot_task is not None and not _bot_task.done():
+        return True
+    return bool(_bot_rodando)
+
+
+def _log_painel(msg: str) -> None:
+    linha = f"[painel] {msg}"
+    _ultimo_log.append(linha)
+    if len(_ultimo_log) > 500:
+        _ultimo_log[:] = _ultimo_log[-500:]
 
 
 def _tail_text_lines(path: Path, limit: int, max_bytes: int = 256 * 1024) -> list[str]:
@@ -651,10 +672,12 @@ def _tail_text_lines(path: Path, limit: int, max_bytes: int = 256 * 1024) -> lis
 
 
 async def _rodar_bot(watch: bool = False, intervalo: int = 5):
-    global _bot_rodando, _watch_ativo, _bot_processo, _ultimo_log
+    global _bot_rodando, _watch_ativo, _bot_processo, _ultimo_log, _ultimo_inicio_bot
     _bot_rodando = True
     _watch_ativo = watch
     _ultimo_log  = []
+    _ultimo_inicio_bot = time.time()
+    _log_painel("bot iniciado em modo watch" if watch else "bot iniciado")
     try:
         args = [sys.executable, "main.py"]
         if watch:
@@ -662,6 +685,7 @@ async def _rodar_bot(watch: bool = False, intervalo: int = 5):
         env = os.environ.copy()
         env["NODE_NO_WARNINGS"] = "1"
         env["PYTHONUNBUFFERED"] = "1"
+        env["BOT_DATA_DIR"] = str(_DATA_DIR)
         proc = subprocess.Popen(
             args,
             cwd=str(BASE_DIR),
@@ -688,12 +712,29 @@ async def _rodar_bot(watch: bool = False, intervalo: int = 5):
                 if len(_ultimo_log) > 500:
                     _ultimo_log[:] = _ultimo_log[-500:]
             proc.wait()
+            _log_painel(f"processo finalizado com codigo {proc.returncode}")
 
         await asyncio.get_event_loop().run_in_executor(None, _ler)
+    except Exception as e:
+        _log_painel(f"erro ao iniciar/executar bot: {e}")
+        _logger.error(f"Erro ao executar bot: {e}", exc_info=True)
     finally:
         _bot_rodando  = False
         _watch_ativo  = False
         _bot_processo = None
+
+
+def _iniciar_bot_task(watch: bool = False, intervalo: int = 5) -> tuple[bool, str]:
+    global _bot_task, _bot_rodando, _watch_ativo, _ultimo_log, _ultimo_inicio_bot
+    if _bot_em_execucao():
+        return False, "Bot já está rodando"
+    _bot_rodando = True
+    _watch_ativo = watch
+    _ultimo_log = []
+    _ultimo_inicio_bot = time.time()
+    _log_painel("solicitando inicio do bot")
+    _bot_task = asyncio.create_task(_rodar_bot(watch=watch, intervalo=intervalo))
+    return True, "Bot iniciado com sucesso"
 
 
 # ---------------------------------------------------------------------------
@@ -777,8 +818,9 @@ async def status(request: Request):
     except Exception:
         pass
 
+    rodando_real = _bot_em_execucao()
     return JSONResponse({
-        "rodando":        _bot_rodando,
+        "rodando":        rodando_real,
         "watch_ativo":    _watch_ativo,
         "hoje":           date.today().isoformat(),
         "autenticado":    bool(nivel),
@@ -790,27 +832,29 @@ async def status(request: Request):
 
 
 @app.post("/api/processar")
-async def processar_agora(background_tasks: BackgroundTasks):
-    if _bot_rodando:
-        return JSONResponse({"ok": False, "msg": "Bot já está rodando"}, status_code=409)
-    background_tasks.add_task(_rodar_bot, watch=False)
-    return JSONResponse({"ok": True, "msg": "Bot iniciado com sucesso"})
+async def processar_agora():
+    ok, msg = _iniciar_bot_task(watch=False)
+    if not ok:
+        return JSONResponse({"ok": False, "msg": msg}, status_code=409)
+    return JSONResponse({"ok": True, "msg": msg})
 
 
 @app.post("/api/watch/iniciar")
-async def iniciar_watch(background_tasks: BackgroundTasks):
-    if _bot_rodando:
+async def iniciar_watch():
+    if _bot_em_execucao():
         return JSONResponse({"ok": False, "msg": "Bot já está rodando"}, status_code=409)
     cfg = _load_config()
     intervalo = cfg.get("watch_intervalo_minutos", 5)
-    background_tasks.add_task(_rodar_bot, watch=True, intervalo=intervalo)
+    ok, msg = _iniciar_bot_task(watch=True, intervalo=intervalo)
+    if not ok:
+        return JSONResponse({"ok": False, "msg": msg}, status_code=409)
     return JSONResponse({"ok": True, "intervalo": intervalo, "msg": f"Watch mode iniciado ({intervalo} min)"})
 
 
 @app.post("/api/watch/parar")
 async def parar_watch():
     global _bot_processo
-    if _bot_processo and _bot_rodando:
+    if _bot_processo and _bot_em_execucao():
         try:
             _bot_processo.terminate()
             return JSONResponse({"ok": True, "msg": "Watch mode encerrado"})
@@ -822,7 +866,7 @@ async def parar_watch():
 @app.post("/api/parar")
 async def parar_bot():
     global _bot_processo
-    if _bot_processo and _bot_rodando:
+    if _bot_processo and _bot_em_execucao():
         try:
             _bot_processo.terminate()
             return JSONResponse({"ok": True, "msg": "Bot encerrado"})
@@ -934,10 +978,15 @@ async def logs_live(ultimas: int = 80):
     # então o arquivo está sempre atualizado. Isso é mais confiável do que o
     # stdout piped no Windows, que sofre de block-buffering mesmo com PYTHONUNBUFFERED.
     hoje = date.today().strftime("%Y-%m-%d")
-    log_file = LOGS_DIR / f"{hoje}.log"
-    if log_file.exists():
+    candidatos = [LOGS_DIR / f"{hoje}.log", BASE_DIR / "logs" / f"{hoje}.log"]
+    for log_file in candidatos:
+        if not log_file.exists():
+            continue
         try:
-            return JSONResponse(_tail_text_lines(log_file, max(1, min(ultimas, 300))))
+            linhas = _tail_text_lines(log_file, max(1, min(ultimas, 300)))
+            if _ultimo_log and _bot_em_execucao():
+                linhas = (linhas + _ultimo_log)[-max(1, min(ultimas, 300)):]
+            return JSONResponse(linhas)
         except Exception:
             pass
     # Fallback: buffer de stdout (caso o arquivo ainda não exista)

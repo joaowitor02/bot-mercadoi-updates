@@ -23,8 +23,10 @@ _configurar_utf8()
 
 class Logger:
     def __init__(self, nome: str):
-        os.makedirs("logs", exist_ok=True)
-        log_file = f"logs/{datetime.now().strftime('%Y-%m-%d')}.log"
+        data_dir = os.environ.get("BOT_DATA_DIR", "")
+        logs_dir = os.path.join(data_dir, "logs") if data_dir else "logs"
+        os.makedirs(logs_dir, exist_ok=True)
+        log_file = os.path.join(logs_dir, f"{datetime.now().strftime('%Y-%m-%d')}.log")
 
         self.logger = logging.getLogger(nome)
         self.logger.setLevel(logging.DEBUG)

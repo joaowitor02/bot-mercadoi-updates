@@ -1503,18 +1503,36 @@ async function atualizarLogs() {
 async function processarAgora() {
   if (_botRodando) return;
   try {
+    _botRodando = true;
+    const btn = document.getElementById('btn-processar');
+    const btnTxt = document.getElementById('btn-txt');
+    const logCard = document.getElementById('log-card');
+    const logContent = document.getElementById('log-content');
+    if (btn) btn.disabled = true;
+    if (btnTxt) btnTxt.textContent = 'Iniciando...';
+    if (logCard) logCard.classList.remove('hidden');
+    if (logContent) logContent.innerHTML = '<p class="log-line text-slate-400">Iniciando bot...</p>';
     const r = await fetch('/api/processar', { method: 'POST' });
     const d = await r.json();
     if (d.ok) {
       toast('Bot iniciado com sucesso!');
-      // Exibe o card de log imediatamente sem esperar pelo próximo ciclo de status
-      const logCard = document.getElementById('log-card');
-      if (logCard) logCard.classList.remove('hidden');
-      await atualizarStatus();
+      await Promise.all([atualizarStatus(), atualizarLogs(), carregarExecucoes(), carregarPendentes()]);
+      setTimeout(() => atualizarStatus(), 800);
+      setTimeout(() => carregarExecucoes(), 1500);
     } else {
+      _botRodando = false;
+      if (btn) btn.disabled = false;
+      if (btnTxt) btnTxt.textContent = 'Processar Agora';
       toast(d.msg, 'erro');
     }
-  } catch { toast('Erro ao iniciar o bot', 'erro'); }
+  } catch {
+    _botRodando = false;
+    const btn = document.getElementById('btn-processar');
+    const btnTxt = document.getElementById('btn-txt');
+    if (btn) btn.disabled = false;
+    if (btnTxt) btnTxt.textContent = 'Processar Agora';
+    toast('Erro ao iniciar o bot', 'erro');
+  }
 }
 
 // Estado das duplicatas pendentes de decisão
