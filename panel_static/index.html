@@ -375,6 +375,21 @@
           </button>
         </div>
 
+        <!-- Barra de limite de teste -->
+        <div id="limite-container" class="hidden pt-1">
+          <div class="flex items-center justify-between text-xs text-slate-500 mb-1.5">
+            <span class="flex items-center gap-1">
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              Período de teste
+            </span>
+            <span id="limite-texto" class="font-semibold text-slate-700">0 de 20 links</span>
+          </div>
+          <div class="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+            <div id="limite-barra" class="h-1.5 rounded-full bg-brand-500 transition-all duration-500" style="width:0%"></div>
+          </div>
+          <p id="limite-aviso" class="hidden text-xs text-red-500 mt-1.5 font-medium text-center">Limite atingido — entre em contato para ampliar.</p>
+        </div>
+
         <div id="add-result" class="hidden fade-in rounded-xl border p-4 space-y-3">
           <div class="flex items-center gap-4 flex-wrap" id="add-summary"></div>
           <div id="add-details" class="space-y-1 max-h-40 overflow-y-auto"></div>
@@ -2611,10 +2626,52 @@ window.fetch = async (...args) => {
 };
 
 // ---------------------------------------------------------------------------
+// Tutorial de boas-vindas
+// ---------------------------------------------------------------------------
+function fecharTutorial() {
+  document.getElementById('modal-tutorial').classList.add('hidden');
+  localStorage.setItem('mercadoi_tutorial_visto', '1');
+}
+
+// ---------------------------------------------------------------------------
+// Limite de links de teste
+// ---------------------------------------------------------------------------
+async function atualizarLimite() {
+  try {
+    const r = await fetch('/api/limite-links');
+    const d = await r.json();
+    const container = document.getElementById('limite-container');
+    if (!d.limite) { container.classList.add('hidden'); return; }
+    container.classList.remove('hidden');
+    const pct = Math.min(100, Math.round((d.total / d.limite) * 100));
+    document.getElementById('limite-texto').textContent = `${d.total} de ${d.limite} links`;
+    const barra = document.getElementById('limite-barra');
+    barra.style.width = pct + '%';
+    barra.className = `h-1.5 rounded-full transition-all duration-500 ${pct >= 100 ? 'bg-red-500' : pct >= 75 ? 'bg-amber-500' : 'bg-brand-500'}`;
+    const aviso = document.getElementById('limite-aviso');
+    if (d.atingido) {
+      aviso.classList.remove('hidden');
+      document.getElementById('btn-adicionar').disabled = true;
+      document.getElementById('textarea-urls').disabled = true;
+      document.getElementById('textarea-urls').placeholder = 'Limite de links atingido para este período de teste.';
+    } else {
+      aviso.classList.add('hidden');
+    }
+    // Atualiza o número no modal do tutorial
+    const numEl = document.getElementById('tutorial-limite-num');
+    if (numEl) numEl.textContent = d.limite;
+    // Mostra tutorial na primeira visita
+    if (!localStorage.getItem('mercadoi_tutorial_visto')) {
+      document.getElementById('modal-tutorial').classList.remove('hidden');
+    }
+  } catch {}
+}
+
+// ---------------------------------------------------------------------------
 // Init + polling
 // ---------------------------------------------------------------------------
 async function init() {
-  await Promise.all([carregarExecucoes(), atualizarStatus(), carregarPendentes(), carregarConfig(), atualizarChromeStatus(), verificarAtualizacao(), verificarTunnel()]);
+  await Promise.all([carregarExecucoes(), atualizarStatus(), carregarPendentes(), carregarConfig(), atualizarChromeStatus(), verificarAtualizacao(), verificarTunnel(), atualizarLimite()]);
 
   setInterval(verificarTunnel, 10000);
 
@@ -2638,6 +2695,7 @@ async function init() {
   }, 2000);
 
   setInterval(carregarPendentes, 15000);
+  setInterval(atualizarLimite, 15000);
   setInterval(() => { if (_isAdmin) carregarDiagnostico(); }, 60000);
 }
 
@@ -2650,6 +2708,61 @@ document.addEventListener('keydown', e => {
   }
 });
 </script>
+
+<!-- Modal: Tutorial de boas-vindas -->
+<div id="modal-tutorial" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+    <div class="bg-gradient-to-br from-brand-500 to-brand-600 px-6 py-7 text-white text-center">
+      <div class="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-3">
+        <svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+        </svg>
+      </div>
+      <h2 class="text-xl font-bold">Bem-vindo ao Bot Mercadoi!</h2>
+      <p class="text-sm text-white/75 mt-1">Automação de cadastro de imóveis</p>
+    </div>
+    <div class="p-6 space-y-4">
+      <p class="text-xs text-slate-400 text-center uppercase tracking-wide font-semibold">Como funciona em 3 passos</p>
+      <div class="flex gap-3 items-start">
+        <div class="w-8 h-8 rounded-xl bg-brand-50 flex items-center justify-center shrink-0 mt-0.5">
+          <span class="text-sm font-bold text-brand-600">1</span>
+        </div>
+        <div>
+          <p class="text-sm font-semibold text-slate-800">Adicione os links</p>
+          <p class="text-xs text-slate-500 mt-0.5 leading-relaxed">Vá até a aba <strong>Fila</strong>, cole os links do Instagram, OLX ou Órulo — um por linha — e clique em <strong>Adicionar à Fila</strong>.</p>
+        </div>
+      </div>
+      <div class="flex gap-3 items-start">
+        <div class="w-8 h-8 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0 mt-0.5">
+          <span class="text-sm font-bold text-emerald-600">2</span>
+        </div>
+        <div>
+          <p class="text-sm font-semibold text-slate-800">Processe</p>
+          <p class="text-xs text-slate-500 mt-0.5 leading-relaxed">Clique em <strong>Processar Agora</strong> no topo da página e acompanhe o andamento no log em tempo real.</p>
+        </div>
+      </div>
+      <div class="flex gap-3 items-start">
+        <div class="w-8 h-8 rounded-xl bg-amber-50 flex items-center justify-center shrink-0 mt-0.5">
+          <span class="text-sm font-bold text-amber-600">3</span>
+        </div>
+        <div>
+          <p class="text-sm font-semibold text-slate-800">Revise no site</p>
+          <p class="text-xs text-slate-500 mt-0.5 leading-relaxed">Os imóveis aparecem como <strong>rascunho</strong> no Mercadoi para você revisar. O link direto fica disponível no Histórico.</p>
+        </div>
+      </div>
+      <div class="bg-amber-50 border border-amber-100 rounded-xl p-3">
+        <p class="text-xs text-amber-700 text-center leading-relaxed">
+          Período de teste: você pode adicionar até <strong id="tutorial-limite-num">20</strong> links.
+        </p>
+      </div>
+    </div>
+    <div class="px-6 pb-6">
+      <button onclick="fecharTutorial()" class="w-full h-10 bg-brand-500 hover:bg-brand-600 text-white text-sm font-bold rounded-xl transition-colors shadow-sm">
+        Entendido — vamos começar!
+      </button>
+    </div>
+  </div>
+</div>
 
 <!-- Modal de duplicatas -->
 <div id="modal-duplicatas" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onclick="if(event.target===this)fecharModalDuplicatas()">

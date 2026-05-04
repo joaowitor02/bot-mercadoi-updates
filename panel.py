@@ -1051,10 +1051,49 @@ class AdicionarRequest(BaseModel):
     forcar: bool = False
 
 
+@app.get("/api/limite-links")
+async def get_limite_links(request: Request):
+    cfg = _load_config()
+    limite = int(cfg.get("limite_links_teste", 0) or 0)
+    if not limite:
+        return JSONResponse({"limite": 0, "total": 0, "restantes": None, "atingido": False})
+    try:
+        db = _db_manager()
+        with db._conn() as conn:
+            total = conn.execute("SELECT COUNT(*) FROM imoveis").fetchone()[0]
+    except Exception:
+        total = 0
+    return JSONResponse({
+        "limite":    limite,
+        "total":     total,
+        "restantes": max(0, limite - total),
+        "atingido":  total >= limite,
+    })
+
+
 @app.post("/api/adicionar")
-async def adicionar_url(body: AdicionarRequest):
+async def adicionar_url(request: Request, body: AdicionarRequest):
     if _bot_rodando:
         return JSONResponse({"ok": False, "msg": "Aguarde o bot terminar antes de adicionar"}, status_code=409)
+
+    # Verifica limite de teste para usuário comum
+    token = request.cookies.get("mercadoi_session", "")
+    nivel = _get_session_nivel(token) or ("admin" if not _SENHA and not _ADMIN_SENHA else "")
+    cfg = _load_config()
+    limite = int(cfg.get("limite_links_teste", 0) or 0)
+    if limite and nivel != "admin":
+        try:
+            _db_tmp = _db_manager()
+            with _db_tmp._conn() as conn:
+                total_atual = conn.execute("SELECT COUNT(*) FROM imoveis").fetchone()[0]
+            if total_atual >= limite:
+                return JSONResponse({
+                    "ok": False,
+                    "msg": f"Limite de {limite} links atingido para este período de teste. Entre em contato para ampliar.",
+                    "limite_atingido": True,
+                }, status_code=429)
+        except Exception:
+            pass
 
     urls_raw = [_normalizar_url_entrada(u) for u in body.urls if u.strip()]
     if not urls_raw:
