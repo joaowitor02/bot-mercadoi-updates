@@ -532,7 +532,7 @@ def _build_custom_fields(dados: dict, content: str) -> list:
         {"key": "fave_agent_display_option", "value": display_option},
     ])
     if agent_id:
-        fields.append({"key": "fave_agents", "value": [agent_id]})
+        fields.append({"key": "fave_agents", "value": agent_id})
 
     return fields
 

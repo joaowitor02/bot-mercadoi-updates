@@ -470,7 +470,7 @@ class BotMercadoiAPI {
         }
 
         if ($agent && !is_wp_error($agent)) {
-            update_post_meta($post_id, 'fave_agents', [(string) $agent->ID]);
+            update_post_meta($post_id, 'fave_agents', (string) $agent->ID);
         }
     }
 

@@ -814,14 +814,52 @@ class MercadoiDriver:
                 if await busca.count():
                     await busca.fill(nome_corretor, timeout=3000)
                     await page.wait_for_timeout(700)
-                opcao = page.locator(f'.select2-results__option:has-text("{nome_corretor}")').first
-                if await opcao.count():
-                    await opcao.click(timeout=5000)
+
+                clicado = await page.evaluate("""
+                    ({nome}) => {
+                        const norm = (t) => String(t || '').toLowerCase()
+                            .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
+                            .replace(/\\s+/g, ' ').trim();
+                        const alvo = norm(nome);
+                        const opcoes = Array.from(document.querySelectorAll(
+                            '.select2-results__option:not(.loading-results):not(.select2-results__message)'
+                        ));
+                        const opcao = opcoes.find(o => norm(o.innerText).includes(alvo));
+                        if (!opcao) return false;
+                        opcao.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+                        opcao.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                        return true;
+                    }
+                """, {"nome": nome_corretor})
+                if clicado:
+                    await page.wait_for_timeout(500)
                     logger.info(f"Corretor selecionado via Select2: {nome_corretor}")
                     return True
+                try:
+                    await busca.press("Enter", timeout=2000)
+                    await page.wait_for_timeout(500)
+                    if await self._corretor_selecionado(page, nome_corretor):
+                        logger.info(f"Corretor selecionado via Enter: {nome_corretor}")
+                        return True
+                except Exception:
+                    pass
         except Exception as e:
             logger.debug(f"Select2 corretor falhou: {e}")
         return False
+
+    async def _corretor_selecionado(self, page, nome_corretor: str) -> bool:
+        return await page.evaluate("""
+            ({nome}) => {
+                const norm = (t) => String(t || '').toLowerCase()
+                    .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
+                    .replace(/\\s+/g, ' ').trim();
+                const alvo = norm(nome);
+                const textos = Array.from(document.querySelectorAll(
+                    '.select2-selection__rendered, .select2-selection__choice'
+                )).map(e => norm(e.innerText || e.getAttribute('title')));
+                return textos.some(t => t.includes(alvo));
+            }
+        """, {"nome": nome_corretor})
 
     def _montar_conteudo(self, dados):
         descricao = dados.get("descricao_util", "")
