@@ -43,7 +43,6 @@ _PADROES_PRECO = [
     r'R\$\s*([\d.,]+)',                              # R$ 350.000,00
     r'(?:valor|pre[çc]o|venda)\s*:?\s*R?\$?\s*([\d.,]{4,})',  # Valor: 350.000
     r'\b(\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{2})?)\b',   # 350.000,00
-    r'\b(\d{5,})\b',                                 # 350000
 ]
 
 
@@ -140,6 +139,6 @@ def _extrair_preco_texto(texto: str) -> str:
             raw = re.sub(r'[,\.]\d{2}$', '', raw.strip())
             apenas_digitos = re.sub(r'[^\d]', '', raw)
             # Valida: preço imobiliário tem entre 4 e 10 dígitos
-            if 4 <= len(apenas_digitos) <= 10:
+            if 4 <= len(apenas_digitos) <= 8:
                 return apenas_digitos
     return ""

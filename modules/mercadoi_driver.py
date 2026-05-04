@@ -10,7 +10,7 @@ import re
 from urllib.parse import urljoin
 from playwright.async_api import async_playwright
 from modules.logger import Logger
-from modules.property_types import aplicar_tipos_imovel
+from modules.property_types import aplicar_tipos_imovel, normalizar_tipo_imovel
 
 logger = Logger("mercadoi_driver")
 
@@ -461,6 +461,7 @@ class MercadoiDriver:
             return resultado
 
     def _normalizar_tipo_imovel(self, valor: str) -> str:
+        return normalizar_tipo_imovel(valor or "")
         texto = normalizar(valor or "")
         if "cobertura" in texto:
             return "Apto. Cobertura"
@@ -569,6 +570,11 @@ class MercadoiDriver:
             "Apto. Flat", "Apto. Duplex", "Apto. Cobertura", "Apto. Garden",
             "Chácara", "Fazenda", "Sítio",
         }
+        if tipo_imovel == "Casa de Condomínio":
+            if await self._selecionar_subtipo_imovel(page, tipo_imovel):
+                return True
+            logger.info("Subtipo 'Casa de Condomínio' nao encontrado; usando 'Casa'")
+            return await self._selecionar_tipo_imovel(page, "Casa")
         if tipo_imovel in _subtipos_texto:
             return await self._selecionar_subtipo_imovel(page, tipo_imovel)
         value = mapa_values.get(tipo_imovel)

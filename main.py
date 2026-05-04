@@ -590,8 +590,12 @@ async def processar_link(row: dict, sheet, config: dict):
         preco_ocr = extrair_preco_de_imagens(arquivo_midia)
         if preco_ocr and (not preco_atual or len(preco_ocr) > len(preco_atual)):
             dados["preco"] = preco_ocr
+            dados = _validar_dados(dados)
             acao = "corrigido" if preco_curto else "obtido"
-            logger.info(f"[{execution_id}] Preço {acao} via OCR: {preco_ocr}")
+            if dados.get("preco"):
+                logger.info(f"[{execution_id}] Preço {acao} via OCR: {dados['preco']}")
+            else:
+                logger.warning(f"[{execution_id}] Preço OCR descartado por validação: {preco_ocr}")
 
     midia_seg = int(time.time() - _t_etapa)
     sheet.atualizar_campo(row_index, "midia_seg", str(midia_seg))

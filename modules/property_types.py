@@ -15,7 +15,13 @@ def _normalizar_texto(texto: str) -> str:
 def normalizar_tipos_imovel(*partes: str) -> list[str]:
     texto = _normalizar_texto(" ".join(str(p or "") for p in partes))
     tipos = []
+    tem_casa = bool(re.search(r"\b(casa|casas|sobrado|sobrados)\b", texto))
+    tem_condominio = "condominio" in texto or "condominium" in texto
 
+    if tem_casa and tem_condominio:
+        return ["Casa de Condom\u00ednio"]
+    if tem_casa:
+        return ["Casa"]
     if "cobertura" in texto:
         tipos.append("Apto. Cobertura")
     if "duplex" in texto:
@@ -35,7 +41,7 @@ def normalizar_tipos_imovel(*partes: str) -> list[str]:
         return ["Fazenda"]
     if "sitio" in texto:
         return ["S\u00edtio"]
-    if "casa" in texto or "resid" in texto or "sobrado" in texto:
+    if re.search(r"\bresidencia(s)?\b", texto):
         return ["Casa"]
     if "terreno" in texto or "lote" in texto:
         return ["Terreno"]
@@ -59,8 +65,13 @@ def aplicar_tipos_imovel(dados: dict) -> dict:
 
     if lista_atual:
         tipos = []
+        contexto = " ".join([
+            str(dados.get("tipo_imovel", "") or ""),
+            str(dados.get("titulo", "") or ""),
+            str(dados.get("descricao_util", "") or ""),
+        ])
         for item in lista_atual:
-            for tipo in normalizar_tipos_imovel(item):
+            for tipo in normalizar_tipos_imovel(item, contexto):
                 if tipo not in tipos:
                     tipos.append(tipo)
     else:

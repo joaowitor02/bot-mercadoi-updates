@@ -22,6 +22,7 @@ from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 import httpx
 from modules.logger import Logger
+from modules.property_types import normalizar_tipos_imovel
 
 try:
     from PIL import Image
@@ -749,26 +750,9 @@ class OruloScraper:
         return tipos[0] if tipos else "Apartamento"
 
     def _tipos_orulo(self, tipo: str, contexto: str = "") -> list:
-        texto = self._normalizar_texto(f"{tipo} {contexto}")
-        tipos = []
-        if "cobertura" in texto:
-            tipos.append("Apto. Cobertura")
-        if "duplex" in texto:
-            tipos.append("Apto. Duplex")
+        tipos = normalizar_tipos_imovel(tipo, contexto)
         if tipos:
             return tipos
-        if "flat" in texto:
-            return ["Apto. Flat"]
-        if "garden" in texto:
-            return ["Apto. Garden"]
-        if "studio" in texto or "apart" in texto or "apto" in texto:
-            return ["Apartamento"]
-        if "casa" in texto:
-            return ["Casa"]
-        if "terreno" in texto or "lote" in texto:
-            return ["Terreno"]
-        if "sala" in texto or "comercial" in texto or "loja" in texto:
-            return ["Sala Comercial"]
         return [tipo.strip() or "Apartamento"]
 
     def _extrair_tipologias(self, html: str, tipo_padrao: str) -> list:

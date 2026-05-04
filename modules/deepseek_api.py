@@ -19,7 +19,8 @@ REGRAS GERAIS:
 - Campos numéricos (quartos, suites, banheiros, vagas, area_m2) devem ter apenas dígitos ou "". Se o valor for zero ou desconhecido use "" — nunca use "0".
 - preco: apenas dígitos, sem R$, pontos ou vírgulas. Ex: "450000". Se não informado use "". NUNCA use número de telefone, CRM ou CRECI como preço.
 - operacao: use exatamente "A Venda" ou "Em Aluguel".
-- tipo_imovel: ex: "Apartamento", "Casa", "Terreno", "Sala Comercial".
+- tipo_imovel: ex: "Apartamento", "Casa", "Casa de Condomínio", "Terreno", "Sala Comercial".
+  Se for casa duplex/sobrado, use "Casa"; se for casa em condomínio/condomínio fechado, use "Casa de Condomínio".
 - elevador: use "Sim", "Não" ou "".
 - estagio_imovel: "Novo", "Usado" ou "Em Construção".
 - whatsapp_url: formato https://wa.me/+55...
