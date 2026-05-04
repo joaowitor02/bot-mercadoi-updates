@@ -410,8 +410,10 @@ class MercadoiDriver:
                     resultado["mensagem"] = "Nenhum arquivo de midia valido encontrado"
                     return resultado
 
-            # NAO EXIBIR CONTATO
-            await self._marcar_nao_exibir_contato(page)
+            if dados.get("_fonte") == "orulo":
+                await self._selecionar_contato_corretor(page, "Agustin Machado")
+            else:
+                await self._marcar_nao_exibir_contato(page)
 
             # DECIDE: publicar direto ou salvar rascunho
             publicar_direto = (
@@ -729,6 +731,97 @@ class MercadoiDriver:
                 logger.warning("Input 'nao exibir contato' nao encontrado na pagina")
         except Exception as e:
             logger.warning(f"Erro ao marcar nao exibir contato: {e}")
+
+    async def _selecionar_contato_corretor(self, page, nome_corretor: str):
+        """Marca contato do corretor e seleciona o corretor informado."""
+        try:
+            marcado = await page.evaluate("""
+                () => {
+                    const norm = (t) => String(t || '').toLowerCase()
+                        .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
+                        .replace(/\\s+/g, ' ').trim();
+                    const radios = Array.from(document.querySelectorAll('input[name="fave_agent_display_option"]'));
+                    if (!radios.length) return false;
+                    let alvo = null;
+                    for (const r of radios) {
+                        const label = r.closest('label') || document.querySelector(`label[for="${r.id}"]`) || r.parentElement;
+                        const texto = norm(label ? label.innerText : '');
+                        if (texto.includes('corretor') || texto.includes('agent')) {
+                            alvo = r; break;
+                        }
+                    }
+                    if (!alvo) {
+                        alvo = radios.find(r => ['agent_info', 'agent', '1'].includes(String(r.value))) || radios[0];
+                    }
+                    alvo.checked = true;
+                    alvo.dispatchEvent(new Event('change', { bubbles: true }));
+                    return true;
+                }
+            """)
+            if marcado:
+                logger.info("Marcado: Informacoes do Corretor")
+            else:
+                logger.warning("Opcao de contato do corretor nao encontrada")
+
+            if await self._selecionar_corretor_por_texto(page, nome_corretor):
+                return
+            logger.warning(f"Corretor '{nome_corretor}' nao encontrado na lista")
+        except Exception as e:
+            logger.warning(f"Erro ao selecionar corretor '{nome_corretor}': {e}")
+
+    async def _selecionar_corretor_por_texto(self, page, nome_corretor: str) -> bool:
+        selecionado = await page.evaluate("""
+            ({nome}) => {
+                const norm = (t) => String(t || '').toLowerCase()
+                    .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
+                    .replace(/\\s+/g, ' ').trim();
+                const alvo = norm(nome);
+                const selects = Array.from(document.querySelectorAll(
+                    'select[name="fave_agents"], select[name="fave_agents[]"], select[id*="agent"], select[name*="agent"]'
+                ));
+                for (const sel of selects) {
+                    const opt = Array.from(sel.options).find(o => norm(o.text).includes(alvo));
+                    if (!opt) continue;
+                    if (sel.multiple) {
+                        Array.from(sel.options).forEach(o => o.selected = false);
+                        opt.selected = true;
+                    } else {
+                        sel.value = opt.value;
+                    }
+                    sel.dispatchEvent(new Event('input', { bubbles: true }));
+                    sel.dispatchEvent(new Event('change', { bubbles: true }));
+                    if (window.jQuery) {
+                        window.jQuery(sel).val(sel.multiple ? [opt.value] : opt.value).trigger('change');
+                        window.jQuery(sel).trigger({
+                            type: 'select2:select',
+                            params: { data: { id: opt.value, text: opt.text } }
+                        });
+                    }
+                    return { ok: true, texto: opt.text };
+                }
+                return { ok: false };
+            }
+        """, {"nome": nome_corretor})
+        if selecionado and selecionado.get("ok"):
+            logger.info(f"Corretor selecionado: {selecionado.get('texto')}")
+            return True
+
+        try:
+            container = page.locator('.select2-container').first
+            if await container.count():
+                await container.click(timeout=3000)
+                busca = page.locator('.select2-search__field').last
+                if await busca.count():
+                    await busca.fill(nome_corretor, timeout=3000)
+                    await page.wait_for_timeout(700)
+                opcao = page.locator(f'.select2-results__option:has-text("{nome_corretor}")').first
+                if await opcao.count():
+                    await opcao.click(timeout=5000)
+                    logger.info(f"Corretor selecionado via Select2: {nome_corretor}")
+                    return True
+        except Exception as e:
+            logger.debug(f"Select2 corretor falhou: {e}")
+        return False
 
     def _montar_conteudo(self, dados):
         descricao = dados.get("descricao_util", "")

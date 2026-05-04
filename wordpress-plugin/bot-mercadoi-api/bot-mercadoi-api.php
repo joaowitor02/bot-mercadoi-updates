@@ -234,8 +234,12 @@ class BotMercadoiAPI {
         // Descrição no campo próprio do tema
         update_post_meta($post_id, 'prop_des', wp_kses_post($content));
 
-        // Não exibir contato (equivale a fave_agent_display_option = 2)
-        update_post_meta($post_id, 'fave_agent_display_option', '2');
+        if (($p['origem'] ?? '') === 'orulo') {
+            $this->set_orulo_agent($post_id, $p['mercadoi_agent_name'] ?? 'Agustin Machado');
+        } else {
+            // Não exibir contato (equivale a fave_agent_display_option = 2)
+            update_post_meta($post_id, 'fave_agent_display_option', '2');
+        }
 
         // Taxonomias de tipo/operação/cidade/bairro
         $this->set_taxonomies($post_id, $p);
@@ -443,6 +447,31 @@ class BotMercadoiAPI {
         $s = mb_strtolower(trim($s));
         $s = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $s) ?: $s;
         return preg_replace('/\s+/', ' ', $s);
+    }
+
+    private function set_orulo_agent(int $post_id, string $agent_name): void {
+        update_post_meta($post_id, 'fave_agent_display_option', 'agent_info');
+
+        $agent = get_page_by_title(sanitize_text_field($agent_name), OBJECT, 'houzez_agent');
+        if (!$agent) {
+            $agents = get_posts([
+                'post_type'      => 'houzez_agent',
+                'post_status'    => 'publish',
+                'posts_per_page' => 100,
+            ]);
+            $target = $this->norm_str($agent_name);
+            foreach ($agents as $candidate) {
+                $title = $this->norm_str($candidate->post_title);
+                if ($title === $target || str_contains($title, $target) || str_contains($target, $title)) {
+                    $agent = $candidate;
+                    break;
+                }
+            }
+        }
+
+        if ($agent && !is_wp_error($agent)) {
+            update_post_meta($post_id, 'fave_agents', [(string) $agent->ID]);
+        }
     }
 
     // -------------------------------------------------------------------------

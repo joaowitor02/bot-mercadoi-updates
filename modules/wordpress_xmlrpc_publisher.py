@@ -9,6 +9,8 @@ import os
 import asyncio
 import xmlrpc.client
 import httpx
+import re
+import unicodedata
 from urllib.parse import urlparse
 from modules.logger import Logger
 from modules.property_types import aplicar_tipos_imovel
@@ -16,6 +18,7 @@ from modules.property_types import aplicar_tipos_imovel
 logger = Logger("wordpress_xmlrpc_publisher")
 
 GEOCODE_TIMEOUT = 8
+ORULO_AGENT_NAME = "Agustin Machado"
 
 
 class WordPressXmlRpcPublisher:
@@ -39,6 +42,8 @@ class WordPressXmlRpcPublisher:
 
     async def preencher_e_salvar(self, dados: dict, tipo_midia: str, arquivo_midia: list) -> dict:
         dados = aplicar_tipos_imovel(dict(dados or {}))
+        if dados.get("_fonte") == "orulo":
+            dados.setdefault("_mercadoi_agent_name", ORULO_AGENT_NAME)
         resultado = {
             "sucesso":        False,
             "mensagem":       "",
@@ -107,6 +112,11 @@ class WordPressXmlRpcPublisher:
             v = dados.get(key, "")
             return v.strip() if isinstance(v, str) else str(v or "").strip()
 
+        if dados.get("_fonte") == "orulo" and not dados.get("_mercadoi_agent_id"):
+            agent_id = await self._buscar_agent_id(dados.get("_mercadoi_agent_name") or ORULO_AGENT_NAME)
+            if agent_id:
+                dados["_mercadoi_agent_id"] = str(agent_id)
+
         content       = _build_content(dados)
         custom_fields = _build_custom_fields(dados, content)
         tipo_lista = dados.get("tipo_imovel_lista") or []
@@ -170,6 +180,36 @@ class WordPressXmlRpcPublisher:
 
     def _sync_edit_post(self, post_id: int, post_data: dict) -> bool:
         return self._proxy().wp.editPost(0, self._user, self._pass, post_id, post_data)
+
+    async def _buscar_agent_id(self, nome: str) -> int | None:
+        nome_norm = _norm_text(nome)
+        if not nome_norm:
+            return None
+        for post_type in ("houzez_agent", "agent"):
+            try:
+                posts = await self._run(self._sync_get_posts, post_type)
+            except Exception as e:
+                logger.debug(f"[{self.execution_id}] Busca de corretor falhou ({post_type}): {e}")
+                continue
+            for post in posts or []:
+                title = post.get("post_title") or post.get("title") or ""
+                title_norm = _norm_text(title)
+                if title_norm == nome_norm or nome_norm in title_norm or title_norm in nome_norm:
+                    agent_id = int(post.get("post_id") or post.get("ID") or post.get("id") or 0)
+                    if agent_id:
+                        logger.info(f"[{self.execution_id}] Corretor Orulo: {title} (id={agent_id})")
+                        return agent_id
+        logger.warning(f"[{self.execution_id}] Corretor Orulo nao encontrado: {nome}")
+        return None
+
+    def _sync_get_posts(self, post_type: str) -> list:
+        return self._proxy().wp.getPosts(
+            0,
+            self._user,
+            self._pass,
+            {"post_type": post_type, "post_status": "publish", "number": 100},
+            ["post_id", "post_title"],
+        )
 
     # ------------------------------------------------------------------
     # Upload de imagens
@@ -480,10 +520,24 @@ def _build_custom_fields(dados: dict, content: str) -> list:
         if _s(field):
             fields.append({"key": meta_key, "value": _s(field)})
 
+    agent_id = _s("_mercadoi_agent_id")
+    if dados.get("_fonte") == "orulo":
+        display_option = "agent_info"
+    else:
+        display_option = "2"
+
     fields.extend([
         {"key": "faz-parceria",              "value": "A combinar"},
         {"key": "prop_des",                  "value": content},
-        {"key": "fave_agent_display_option", "value": "2"},
+        {"key": "fave_agent_display_option", "value": display_option},
     ])
+    if agent_id:
+        fields.append({"key": "fave_agents", "value": [agent_id]})
 
     return fields
+
+
+def _norm_text(texto: str) -> str:
+    texto = unicodedata.normalize("NFKD", str(texto or ""))
+    texto = "".join(c for c in texto if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", texto.lower()).strip()

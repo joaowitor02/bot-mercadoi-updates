@@ -138,7 +138,10 @@ class WordPressPublisher:
             "instagram_url":   _s("instagram_url"),
             "caracteristicas": dados.get("caracteristicas") or [],
             "publicar":        publicar,
+            "origem":          dados.get("_fonte", ""),
         }
+        if dados.get("_fonte") == "orulo":
+            payload["mercadoi_agent_name"] = "Agustin Machado"
 
         try:
             async with httpx.AsyncClient(timeout=TIMEOUT) as client:
