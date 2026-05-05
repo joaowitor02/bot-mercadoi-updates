@@ -77,7 +77,8 @@ def _validar_dados(dados: dict) -> dict:
     # Normaliza "0" (ou "0.0", "00" etc.) → "" para campos numéricos.
     # A IA às vezes retorna 0 quando o campo não existe em vez de deixar vazio.
     _CAMPOS_ZERO = ["quartos", "suites", "banheiros", "vagas",
-                    "area_m2", "area_terreno", "preco", "condominio", "ano_construcao"]
+                    "area_m2", "area_terreno", "preco", "condominio", "iptu",
+                    "taxas", "ano_construcao"]
     for campo in _CAMPOS_ZERO:
         v = dados.get(campo)
         if isinstance(v, str) and _re.match(r'^\s*0+\s*$', v):

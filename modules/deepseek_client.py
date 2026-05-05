@@ -2,6 +2,8 @@
 Modulo cliente do DeepSeek via navegador (chat.deepseek.com).
 """
 
+import os
+import sys
 from playwright.async_api import async_playwright
 from modules.logger import Logger
 
@@ -9,45 +11,57 @@ logger = Logger("deepseek_client")
 
 DEEPSEEK_URL = "https://chat.deepseek.com"
 
-PROMPT_FIXO = """Analise a publicação do Instagram no link abaixo e responda EXATAMENTE neste formato, sem explicações extras:
+PROMPT_FIXO = """Analise a publicacao do Instagram no link abaixo e responda EXATAMENTE neste formato, sem explicacoes extras.
+Importante: nao invente informacoes. Tudo que nao estiver especificado deve ficar vazio. Nao mostre Instagram, celular, WhatsApp, nome de pessoa ou chamada de contato dentro da Descricao.
 
-Título: [crie um título atraente e direto para o anúncio imobiliário, ex: "Apartamento 3 Quartos à Venda no Bessa – João Pessoa/PB"]
-Descrição:
-[crie uma descrição completa, bonita e organizada do imóvel, usando emojis relevantes (🏠🛏️🚿🚗📐💰📍etc), separando as informações em tópicos com quebras de linha. Inclua todos os detalhes disponíveis: características, diferenciais, localização, contato e link. Seja o mais completo possível.]
-Url da publicação: [url completa]
-Telefone ou WhatsApp: [no formato https://wa.me/+55...]
-Usuário de Instagram da publicação: [url completa do perfil]
-Tipo de imóvel: [ex: Apartamento]
-Tipo de operação: [A Venda ou Em Aluguel]
-Preço: [apenas números]
-Estágio do imóvel: [novo/usado/em construção]
-É térreo ou qual andar?: [ex: Térreo ou 3º andar]
-Tem Elevador?: [Sim ou Não]
-Quantos Quartos?: [número]
-Quantas Suites: [número]
-Banheiros: [número]
-Vagas (garagem): [número]
-Area/Metros quadrados (m2): [número]
+Titulo: [primeira linha/frase da publicacao que resume o principal do imovel]
+Descricao:
+[descricao da publicacao, o mais fiel possivel, preservando quebras de linha, sem nome de pessoa, Instagram, celular, WhatsApp ou contato]
+Url da publicacao: [url completa]
+Telefone ou WhatsApp: [https://wa.me/+55... se existir; senao vazio]
+Usuario de Instagram da publicacao: [url completa do perfil se existir; senao vazio]
+Tipo de imovel: [Apartamento, Casa, Casa de Condominio, Terreno, Sala Comercial, Apto. Cobertura, Apto. Duplex etc.]
+Tipo de operacao: [A Venda ou Em Aluguel]
+Preco: [apenas numeros; nunca telefone/CRECI/codigo]
+Caracteristicas: [liste em ordem alfabetica somente itens da lista permitida claramente mencionados]
+Estagio do imovel: [breve lancamento, lancamento, em construcao, novo, seminovo, usado ou reformado]
+E terreo ou qual andar?: [Terreo, numero do andar ou vazio]
+Tem Elevador?: [Sim, Nao ou vazio]
+Quantos Quartos?: [numero]
+Quantas Suites: [numero]
+Banheiros: [numero]
+Vagas (garagem): [numero]
+Area/Metros quadrados (m2): [numero]
+Area do terreno: [numero]
+Condominio: [apenas numeros]
+IPTU: [apenas numeros]
+Taxas: [apenas numeros]
+Posicao Solar: [texto curto]
+Mobiliado?: [sem mobilia, semi mobiliado, Mobiliado, Mobiliado e Decorado ou vazio]
+Escriturado?: [Sim, Nao ou vazio]
+Aceita Airbnb/Temporada?: [Sim, Nao ou vazio]
+Aceita Financiamento?: [Sim, Nao ou vazio]
+Proximidades: [lugares/vizinhancas de referencia]
 Cidade: [nome da cidade]
 Bairro: [nome do bairro]
 
+Caracteristicas permitidas:
+Academia; Acesso para cadeirantes; Area de Lazer; Area pet; Area Verde; Banheiro social; Biblioteca; Bicicletario; Campo de futebol; Campo de Golf; Churrasqueira; Circuito de seguranca; Condominio fechado; Coworking; Espaco gourmet; Espaco kids; Estacionamento para visita; Gerador Eletrico; Lavanderia; Lounge; Mini mercado; Piscina adulto; Piscina infantil; Playground; Portaria; Portaria 24h; Portaria eletronica; Quadra de areia; Quadra de tenis; Quadra poliesportiva; Recepcao; Salao de festas / SUM; Salao de jogos; Sauna; Seguranca 24h; Sistema de alarme; Solarium; Spa; Terraco/Rooftop; Vaga coberta; Vestiario; Aceita animais; Agua inclusa; Aquecedor; Aquecimento central; Ar Condicionado; Area de servico; Area externa privativa; Churrasqueira propria; Closet; Conexao a internet; Cozinha; Cozinha americana; Cozinha Gourmet; Cozinha independente; DCE - Dependencia de empregada; Deposito; Despensa; Energia solar; Entrada de servico; Escritorio; Espaco Gourmet; Freezer; Gas Central; Geladeira; Gramado / Jardim; Hidromassagem/Jacuzzi; Interfone; Jacuzzi; Lareira; Lava-louca; Lavadora de roupas; Mezanino; Microondas; Mobiliado; Piscina Privativa; Porteira Fechada; Projetados; Sala de estar; Sala em 2 ambientes; Suite; Telefone; TV; TV a cabo; Varanda; Varanda gourmet; Varanda Integrada; Ventilado.
+
 Link: {url}"""
 
-import sys
-import os
 
 def _headless() -> bool:
-    # Headless no Linux/Docker, visível no Windows (para login manual)
     return sys.platform != "win32"
+
 
 def _chrome_args() -> list[str]:
     if _headless():
         return ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
     return ["--start-maximized"]
 
+
 def _chrome_path() -> str | None:
-    # Windows: usa Chrome instalado (mais estável para login manual)
-    # Linux: usa Playwright bundled Chromium (não precisa instalar nada)
     if sys.platform != "win32":
         return None
     caminhos = [
@@ -60,8 +74,6 @@ def _chrome_path() -> str | None:
 
 class DeepSeekClient:
     def __init__(self, deepseek_profile_path=""):
-        # Perfil persistente só faz sentido no Windows (sessão de login salva)
-        # No Linux/Docker não há perfil — usa sessão efêmera
         self.profile_path = deepseek_profile_path if sys.platform == "win32" else ""
 
     async def extrair(self, url):
@@ -84,7 +96,7 @@ class DeepSeekClient:
                 else:
                     _browser = await p.chromium.launch(**launch_kwargs)
                     browser = await _browser.new_context()
-                    browser._browser_obj = _browser  # mantém referência
+                    browser._browser_obj = _browser
                 page = browser.pages[0] if browser.pages else await browser.new_page()
                 logger.info(f"Abrindo DeepSeek... (headless={_headless()})")
                 await page.goto(DEEPSEEK_URL, timeout=30000)
@@ -107,7 +119,7 @@ class DeepSeekClient:
                 await browser.close()
                 if resposta:
                     logger.info(f"Resposta recebida ({len(resposta)} caracteres)")
-                    logger.info(f"Prévia: {resposta[:300]}")
+                    logger.info(f"Previa: {resposta[:300]}")
                 else:
                     logger.error("Resposta vazia do DeepSeek")
                 return resposta
@@ -205,11 +217,10 @@ class DeepSeekClient:
 
     async def _coletar_resposta(self, page):
         seletores_resposta = [
-            '.ds-markdown:last-of-type',
+            ".ds-markdown:last-of-type",
             'div[class*="markdown"]:last-of-type',
-            '.message:last-child .content',
+            ".message:last-child .content",
         ]
-        # Aguarda a resposta estabilizar (para de crescer)
         texto_anterior = ""
         estavel = 0
         for _ in range(15):

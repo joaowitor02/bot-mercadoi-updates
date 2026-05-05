@@ -504,6 +504,8 @@ def _build_custom_fields(dados: dict, content: str) -> list:
         ("area_terreno",   "fave_property_land"),
         ("ano_construcao", "fave_property_year"),
         ("condominio",     "fave_property_condominium"),
+        ("iptu",           "fave_property_iptu"),
+        ("taxas",          "fave_property_taxes"),
     ]:
         if _s(field):
             fields.append({"key": meta_key, "value": _s(field)})
@@ -516,6 +518,12 @@ def _build_custom_fields(dados: dict, content: str) -> list:
         ("estagio_imovel", "estagio-da-obra-imóvel"),
         ("andar",          "no-térreo"),
         ("elevador",       "tem-elevador"),
+        ("posicao_solar",  "posicao-solar"),
+        ("mobiliado",      "mobiliado"),
+        ("escriturado",    "escriturado"),
+        ("aceita_airbnb",  "aceita-airbnb-temporada"),
+        ("aceita_financiamento", "aceita-financiamento"),
+        ("proximidades",   "proximidades"),
     ]:
         if _s(field):
             fields.append({"key": meta_key, "value": _s(field)})

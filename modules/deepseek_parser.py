@@ -5,6 +5,7 @@ quando os dados estao dentro da descricao.
 """
 
 import re
+import unicodedata
 from modules.logger import Logger
 from modules.property_types import aplicar_tipos_imovel
 
@@ -18,6 +19,7 @@ ROTULOS = {
     "tipo_imovel": r"Tipo\s+de\s+im[oó]vel\s*:",
     "operacao": r"Tipo\s+de\s+opera[çc][aã]o\s*:|Opera[çc][aã]o\s*:",
     "preco": r"Pre[çc]o\s*:",
+    "caracteristicas": r"Caracter[íi]sticas\s*:",
     "estagio_imovel": r"Est[aá]gio\s+do\s+im[oó]vel\s*:",
     "andar": r"[EÉ]\s+t[eé]rreo\s+ou\s+qual\s+andar\??\s*:|Andar\s*:",
     "elevador": r"Tem\s+Elevador\??\s*:",
@@ -29,7 +31,15 @@ ROTULOS = {
     "area_terreno": r"[AÁ]rea\s+(?:do\s+)?[Tt]erreno\s*:|[AÁ]rea\s+[Tt]otal\s+do\s+[Ll]ote\s*:",
     "ano_construcao": r"Ano\s+de\s+[Cc]onstru[çc][aã]o\s*:|Ano\s*:",
     "condominio": r"[Cc]ondom[íi]nio\s*:|[Tt]axa\s+de\s+[Cc]ondom[íi]nio\s*:",
+    "iptu": r"IPTU\s*:",
+    "taxas": r"Taxas?\s*:",
     "endereco": r"[Ee]ndere[çc]o\s*:|[Rr]ua\s*:",
+    "posicao_solar": r"Posi[çc][aã]o\s+[Ss]olar\s*:",
+    "mobiliado": r"Mobiliado\??\s*:",
+    "escriturado": r"Escriturado\??\s*:",
+    "aceita_airbnb": r"Aceita\s+Airbnb\/Temporada\??\s*:|Aceita\s+Temporada\??\s*:",
+    "aceita_financiamento": r"Aceita\s+Financiamento\??\s*:",
+    "proximidades": r"Proximidades\s*:",
     "cidade_extraida": r"Cidade\s*:",
     "bairro_extraido": r"Bairro\s*:",
 }
@@ -45,12 +55,15 @@ _FEATURES_KEYWORDS: list[tuple[list[str], str]] = [
     (["área de lazer", "area de lazer", "lazer coletivo"],       "Área de Lazer"),
     (["área pet", "area pet", "pet friendly", "aceita pet"],     "Área pet"),
     (["área verde", "area verde", "jardim coletivo"],            "Área Verde"),
+    (["banheiro social"],                                         "Banheiro social"),
+    (["biblioteca"],                                             "Biblioteca"),
     (["bicicletário", "bicicletario", "bike"],                   "Bicicletário"),
     (["campo de futebol", "quadra de futebol"],                  "Campo de futebol"),
     (["campo de golf", "campo de golfe"],                        "Campo de Golf"),
     (["churrasqueira coletiva", "churrasco coletivo"],           "Churrasqueira"),
     (["circuito de segurança", "câmeras", "cameras", "cftv"],    "Circuito de segurança"),
     (["condomínio fechado", "condominio fechado"],               "Condomínio fechado"),
+    (["coworking", "co-working"],                                "Coworking"),
     (["espaço kids", "espaco kids", "brinquedoteca"],            "Espaço kids"),
     (["estacionamento para visita", "vaga para visita"],         "Estacionamento para visita"),
     (["gerador"],                                                "Gerador Elétrico"),
@@ -63,11 +76,14 @@ _FEATURES_KEYWORDS: list[tuple[list[str], str]] = [
     (["portaria eletrônica", "portaria eletronica"],             "Portaria eletrônica"),
     (["portaria"],                                               "Portaria"),
     (["quadra de tênis", "quadra de tenis"],                     "Quadra de tênis"),
+    (["quadra de areia", "beach tennis"],                         "Quadra de areia"),
     (["quadra poliesportiva", "quadra esportiva"],               "Quadra poliesportiva"),
+    (["recepção", "recepcao"],                                   "Recepção"),
     (["salão de festas", "salao de festas", "sum"],              "Salão de festas / SUM"),
     (["salão de jogos", "salao de jogos", "game room"],          "Salão de jogos"),
     (["sauna"],                                                  "Sauna"),
     (["segurança 24h", "seguranca 24h", "vigilância 24"],        "Segurança 24h"),
+    (["sistema de alarme", "alarme"],                            "Sistema de alarme"),
     (["solarium", "solário", "solario"],                         "Solarium"),
     (["spa"],                                                    "Spa"),
     (["terraço/rooftop", "rooftop", "terraço coletivo"],        "Terraço/Rooftop"),
@@ -87,6 +103,7 @@ _FEATURES_KEYWORDS: list[tuple[list[str], str]] = [
     (["cozinha gourmet"],                                        "Cozinha Gourmet"),
     (["cozinha americana"],                                      "Cozinha americana"),
     (["cozinha independente"],                                   "Cozinha independente"),
+    (["cozinha"],                                                "Cozinha"),
     (["dependência de empregada", "dependencia empregada", "dce"],"DCE - Dependência de empregada"),
     (["depósito", "deposito"],                                   "Depósito"),
     (["despensa"],                                               "Despensa"),
@@ -98,7 +115,7 @@ _FEATURES_KEYWORDS: list[tuple[list[str], str]] = [
     (["gás central", "gas central"],                             "Gás Central"),
     (["geladeira"],                                              "Geladeira"),
     (["gramado", "jardim privativo"],                            "Gramado / Jardim"),
-    (["hidromassagem"],                                          "Hidromassagem"),
+    (["hidromassagem", "hidromassagem/jacuzzi"],                 "Hidromassagem/Jacuzzi"),
     (["interfone", "porteiro eletrônico"],                       "Interfone"),
     (["jacuzzi", "banheira de hidromassagem"],                   "Jacuzzi"),
     (["lareira"],                                                "Lareira"),
@@ -108,12 +125,15 @@ _FEATURES_KEYWORDS: list[tuple[list[str], str]] = [
     (["mezanino"],                                               "Mezanino"),
     (["microondas"],                                             "Microondas"),
     (["mobiliado", "semi-mobiliado", "semi mobiliado"],          "Mobiliado"),
-    (["piscina privativa", "piscina própria"],                   "Piscina"),
+    (["piscina privativa", "piscina própria"],                   "Piscina Privativa"),
     (["porteira fechada", "portão automático"],                  "Porteira Fechada"),
     (["projetados", "armários projetados"],                      "Projetados"),
-    (["sala de jantar"],                                         "Sala de jantar"),
+    (["sala de estar"],                                          "Sala de estar"),
     (["sala em 2 ambientes", "sala integrada"],                  "Sala em 2 ambientes"),
     (["suíte", "suite"],                                         "Suíte"),
+    (["telefone"],                                               "Telefone"),
+    (["tv a cabo"],                                              "TV a cabo"),
+    (["tv"],                                                     "TV"),
     (["varanda gourmet"],                                        "Varanda gourmet"),
     (["varanda integrada"],                                      "Varanda Integrada"),
     (["varanda"],                                                "Varanda"),
@@ -172,14 +192,20 @@ class DeepSeekParser:
         dados["suites"]       = self._normalizar_numero(dados.get("suites", ""))
         dados["banheiros"]    = self._normalizar_numero(dados.get("banheiros", ""))
         dados["vagas"]        = self._normalizar_numero(dados.get("vagas", ""))
-        dados["condominio"]   = self._normalizar_preco(dados.get("condominio", ""))
+        dados["condominio"]   = self._normalizar_valor_taxa(dados.get("condominio", ""))
+        dados["iptu"]         = self._normalizar_valor_taxa(dados.get("iptu", ""))
+        dados["taxas"]        = self._normalizar_valor_taxa(dados.get("taxas", ""))
         dados["ano_construcao"] = self._normalizar_ano(dados.get("ano_construcao", ""))
 
         # Normalizar bairro e cidade (remover emojis, sufixos como "– João Pessoa/PB")
         dados["bairro_extraido"] = self._normalizar_localidade(dados.get("bairro_extraido", ""))
         dados["cidade_extraida"] = self._normalizar_localidade(dados.get("cidade_extraida", ""))
 
-        # Características — fallback para modo browser (sem JSON estruturado)
+        # Características — normaliza lista textual e aplica fallback no modo browser.
+        if isinstance(dados.get("caracteristicas"), str):
+            dados["caracteristicas"] = self._normalizar_caracteristicas_texto(
+                dados.get("caracteristicas", "")
+            )
         if not dados.get("caracteristicas"):
             dados["caracteristicas"] = self._detectar_caracteristicas(
                 titulo + "\n" + descricao_bruta
@@ -244,6 +270,14 @@ class DeepSeekParser:
         # Remover URLs (http/https/wa.me)
         texto = re.sub(r'https?://\S+', '', texto)
         texto = re.sub(r'wa\.me/\S+', '', texto)
+        texto = re.sub(r'@\w+', '', texto)
+        texto = re.sub(r'.*(?:instagram|whatsapp|telefone|celular|contato)\s*:?.*', '', texto, flags=re.IGNORECASE)
+        texto = re.sub(
+            r'^\D*(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)?9?\d{4}[-\s]?\d{4}\D*$',
+            '',
+            texto,
+            flags=re.MULTILINE,
+        )
         # Remover linhas com "não informado" ou variações
         texto = re.sub(r'.*(n[ãa]o\s+informad[ao]|sem\s+informa[çc][ãa]o|n[ãa]o\s+foi\s+informad[ao]).*', '', texto, flags=re.IGNORECASE)
         # Remover linhas que ficaram so com o rotulo sem valor util (ex: "Link da publicação", "Usuário:", "WhatsApp:")
@@ -348,6 +382,19 @@ class DeepSeekParser:
 
         return ""
 
+    def _normalizar_valor_taxa(self, valor):
+        if not valor:
+            return ""
+        valor = str(valor).strip()
+        valor = re.sub(r'^(?:condom[íi]nio|iptu|taxas?|valor)\s*', '', valor, flags=re.IGNORECASE).strip()
+        valor = re.sub(r'^R\$\s*', '', valor, flags=re.IGNORECASE).strip()
+        valor = re.sub(r',\d+$', '', valor)
+        valor = re.sub(r'\.\d{2}$', '', valor)
+        apenas_digitos = re.sub(r'[^\d]', '', valor)
+        if apenas_digitos and apenas_digitos != '0' and len(apenas_digitos) <= 8:
+            return apenas_digitos
+        return ""
+
     def _normalizar_area(self, valor):
         if not valor:
             return ""
@@ -382,6 +429,33 @@ class DeepSeekParser:
         for keywords, nome in _FEATURES_KEYWORDS:
             if any(kw in texto_lower for kw in keywords):
                 encontradas.append(nome)
-        return encontradas
+        return sorted(dict.fromkeys(encontradas), key=lambda s: s.lower())
+
+    def _normalizar_caracteristicas_texto(self, texto: str) -> list[str]:
+        """Converte a linha 'Caracteristicas:' do modo browser em lista limpa."""
+        if not texto:
+            return []
+        permitidas = {self._norm_texto(nome): nome for _, nome in _FEATURES_KEYWORDS}
+        itens = re.split(r"[,;\n]+", texto)
+        encontradas = []
+        for item in itens:
+            item_norm = re.sub(r"^[\-\*\d\.\)\s]+", "", item).strip()
+            if not item_norm:
+                continue
+            alvo = self._norm_texto(item_norm)
+            if alvo in permitidas:
+                encontradas.append(permitidas[alvo])
+                continue
+            for chave, oficial in permitidas.items():
+                if alvo == chave or alvo in chave or chave in alvo:
+                    encontradas.append(oficial)
+                    break
+        return sorted(dict.fromkeys(encontradas), key=lambda s: s.lower())
+
+    @staticmethod
+    def _norm_texto(texto: str) -> str:
+        texto = unicodedata.normalize("NFKD", str(texto or ""))
+        texto = "".join(c for c in texto if not unicodedata.combining(c))
+        return re.sub(r"\s+", " ", texto.lower()).strip()
 
 
