@@ -340,7 +340,7 @@
         </div>
         <div>
           <h2 class="text-sm font-semibold text-slate-800">Adicionar Links à Fila</h2>
-          <p class="text-xs text-slate-400">Cole um ou vários links do Instagram, OLX ou Órulo, um por linha</p>
+          <p class="text-xs text-slate-400">Cole links do Instagram, OLX ou Órulo; para OLX, pode colar o telefone antes do link</p>
         </div>
       </div>
 
@@ -1751,14 +1751,18 @@ function retirarDuplicadas() {
 function atualizarContador() {
   const textarea = document.getElementById('textarea-urls');
   const linhas = textarea.value.split('\n').map(l => l.trim()).filter(Boolean);
-  const count = linhas.length;
+  const urlRegex = /(https?:\/\/[^\s<>\]\)"']+|(?:www\.)?(?:instagram\.com|[\w-]+\.)?olx\.com\.br[^\s<>\]\)"']*|(?:www\.)?orulo\.com\.br[^\s<>\]\)"']*)/i;
+  const phoneRegex = /(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)?(?:9[\s.-]*)?\d{4}[\s.-]?\d{4}/;
+  const count = linhas.filter(l => urlRegex.test(l)).length;
+  const temContatoOlx = linhas.some(l => phoneRegex.test(l) && !urlRegex.test(l))
+    && linhas.some(l => /olx\.com\.br/i.test(l));
 
   const counter = document.getElementById('link-counter');
   const counterTxt = document.getElementById('counter-txt');
   if (count > 0) {
     counter.classList.remove('hidden');
     counter.classList.add('inline-flex');
-    counterTxt.textContent = `${count} link${count > 1 ? 's' : ''}`;
+    counterTxt.textContent = `${count} link${count > 1 ? 's' : ''}${temContatoOlx ? ' + contato OLX' : ''}`;
   } else {
     counter.classList.add('hidden');
     counter.classList.remove('inline-flex');
@@ -2748,7 +2752,7 @@ document.addEventListener('keydown', e => {
         </div>
         <div>
           <p class="text-sm font-semibold text-slate-800">Adicione os links</p>
-          <p class="text-xs text-slate-500 mt-0.5 leading-relaxed">Vá até a aba <strong>Fila</strong>, cole os links do Instagram, OLX ou Órulo — um por linha — e clique em <strong>Adicionar à Fila</strong>.</p>
+          <p class="text-xs text-slate-500 mt-0.5 leading-relaxed">Vá até a aba <strong>Fila</strong>, cole os links do Instagram, OLX ou Órulo e clique em <strong>Adicionar à Fila</strong>. Para OLX, cole o telefone em uma linha e o link na linha seguinte.</p>
         </div>
       </div>
       <div class="flex gap-3 items-start">
