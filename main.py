@@ -8,6 +8,7 @@ import asyncio
 import sys
 import json
 import os
+import re
 import uuid
 import time
 import httpx
@@ -36,6 +37,20 @@ MAX_TENTATIVAS_MERCADOI = 3
 ESPERA_ENTRE_TENTATIVAS = 5  # segundos
 SALVAR_TUDO_COMO_RASCUNHO = True
 MEDIA_DOWNLOAD_TIMEOUT = 180  # cancela download se exceder — evita travar em vídeos grandes
+
+
+def _normalizar_whatsapp_url(valor: str) -> str:
+    valor = str(valor or "").strip()
+    if not valor:
+        return ""
+    if valor.lower().startswith(("http://", "https://")):
+        return valor
+    digitos = re.sub(r"\D", "", valor)
+    if len(digitos) in (10, 11):
+        digitos = f"55{digitos}"
+    if digitos.startswith("55") and len(digitos) in (12, 13):
+        return f"https://wa.me/{digitos}"
+    return ""
 
 
 def _usar_wordpress_api(config: dict) -> bool:
@@ -557,6 +572,11 @@ async def processar_link(row: dict, sheet, config: dict):
 
     if not dados.get("url_publicacao"):
         dados["url_publicacao"] = url
+
+    whatsapp_olx = _normalizar_whatsapp_url(row.get("whatsapp_contato", ""))
+    if olx_url_valida(url) and whatsapp_olx:
+        dados["whatsapp_url"] = whatsapp_olx
+        logger.info(f"[{execution_id}] WhatsApp OLX anexado ao anuncio")
 
     # --- Melhoria: whatsapp_default como fallback de contato ---
     if not dados.get("whatsapp_url") and config.get("whatsapp_default", "").strip():

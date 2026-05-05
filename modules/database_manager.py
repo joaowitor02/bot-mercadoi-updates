@@ -18,6 +18,7 @@ _CAMPOS_VALIDOS = frozenset({
     "fim_processamento", "resultado", "mensagem_erro", "id_execucao",
     "mercadoi_url", "tentativas", "tempo_seg", "url_publica", "origem",
     "captura_seg", "midia_seg", "publicacao_seg", "prioridade",
+    "whatsapp_contato",
 })
 
 _CREATE_TABLE = """
@@ -43,6 +44,7 @@ CREATE TABLE IF NOT EXISTS imoveis (
     url_publica       TEXT    DEFAULT '',
     origem            TEXT    DEFAULT '',
     prioridade        INTEGER DEFAULT 0,
+    whatsapp_contato  TEXT    DEFAULT '',
     criado_em         TEXT    DEFAULT (datetime('now', 'localtime')),
     atualizado_em     TEXT    DEFAULT (datetime('now', 'localtime'))
 )
@@ -105,6 +107,8 @@ class DatabaseManager:
                     conn.execute("ALTER TABLE imoveis ADD COLUMN origem TEXT DEFAULT ''")
                 if "prioridade" not in cols:
                     conn.execute("ALTER TABLE imoveis ADD COLUMN prioridade INTEGER DEFAULT 0")
+                if "whatsapp_contato" not in cols:
+                    conn.execute("ALTER TABLE imoveis ADD COLUMN whatsapp_contato TEXT DEFAULT ''")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_imoveis_status_id ON imoveis(status, id)")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_imoveis_url ON imoveis(url_instagram)")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_imoveis_atualizado ON imoveis(atualizado_em)")
@@ -200,17 +204,30 @@ class DatabaseManager:
     # Escrita
     # ------------------------------------------------------------------
 
-    def adicionar_pendente(self, url: str) -> int:
+    def adicionar_pendente(self, url: str, whatsapp_contato: str = "") -> int:
         with self._lock:
             with self._conn() as conn:
                 cur = conn.execute(
-                    "INSERT INTO imoveis (url_instagram, status) VALUES (?, 'pendente')",
-                    (url.strip(),),
+                    "INSERT INTO imoveis (url_instagram, status, whatsapp_contato) VALUES (?, 'pendente', ?)",
+                    (url.strip(), (whatsapp_contato or "").strip()),
                 )
                 conn.commit()
                 row_id = cur.lastrowid
         logger.info(f"URL adicionada (id {row_id}): {url[:60]}")
         return row_id
+
+    def atualizar_whatsapp_por_url(self, url: str, whatsapp_contato: str) -> bool:
+        if not whatsapp_contato:
+            return False
+        with self._lock:
+            with self._conn() as conn:
+                cur = conn.execute(
+                    "UPDATE imoveis SET whatsapp_contato=?, atualizado_em=datetime('now','localtime') "
+                    "WHERE url_instagram=?",
+                    (whatsapp_contato.strip(), url.strip()),
+                )
+                conn.commit()
+        return cur.rowcount > 0
 
     def resetar_url(self, url: str) -> bool:
         with self._lock:

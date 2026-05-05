@@ -1047,6 +1047,13 @@ _INSTAGRAM_RE = re.compile(
 _OLX_RE = re.compile(
     r"^(?:https?://)?(?:[\w-]+\.)?olx\.com\.br(?:/|$)", re.IGNORECASE
 )
+_URL_TOKEN_RE = re.compile(
+    r"(https?://[^\s<>\]\)\"']+|(?:www\.)?(?:instagram\.com|[\w-]+\.)?olx\.com\.br[^\s<>\]\)\"']*|(?:www\.)?orulo\.com\.br[^\s<>\]\)\"']*)",
+    re.IGNORECASE,
+)
+_PHONE_BR_RE = re.compile(
+    r"(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)?(?:9[\s.-]*)?\d{4}[\s.-]?\d{4}"
+)
 
 def _url_suportada(url: str) -> bool:
     return bool(_INSTAGRAM_RE.match(url) or olx_url_valida(url) or orulo_url_valida(url))
@@ -1056,6 +1063,58 @@ def _normalizar_url_entrada(url: str) -> str:
     if orulo_url_valida(url):
         return normalizar_orulo_url(url)
     return url
+
+def _extrair_urls_texto(texto: str) -> list[str]:
+    urls = []
+    for match in _URL_TOKEN_RE.findall(texto or ""):
+        url = match.strip().rstrip(".,;")
+        if url and not url.lower().startswith(("http://", "https://")):
+            url = f"https://{url}"
+        if url:
+            urls.append(_normalizar_url_entrada(url))
+    return urls
+
+def _normalizar_whatsapp_contato(texto: str) -> str:
+    texto_sem_urls = _URL_TOKEN_RE.sub(" ", texto or "")
+    for candidato in _PHONE_BR_RE.findall(texto_sem_urls):
+        digitos = re.sub(r"\D", "", candidato)
+        if len(digitos) in (10, 11):
+            digitos = f"55{digitos}"
+        if digitos.startswith("55") and len(digitos) in (12, 13):
+            return f"https://wa.me/{digitos}"
+    return ""
+
+def _extrair_entradas_adicionar(linhas: list[str]) -> list[dict]:
+    entradas = []
+    whatsapp_pendente = ""
+
+    for linha in linhas:
+        texto = (linha or "").strip()
+        if not texto:
+            continue
+
+        urls = _extrair_urls_texto(texto)
+        whatsapp_linha = _normalizar_whatsapp_contato(texto)
+
+        if urls:
+            for url in urls:
+                contato = ""
+                if olx_url_valida(url):
+                    contato = whatsapp_linha or whatsapp_pendente
+                    if contato:
+                        whatsapp_pendente = ""
+                entradas.append({"url": url, "whatsapp_contato": contato})
+            continue
+
+        if whatsapp_linha:
+            for entrada in reversed(entradas):
+                if olx_url_valida(entrada.get("url", "")) and not entrada.get("whatsapp_contato"):
+                    entrada["whatsapp_contato"] = whatsapp_linha
+                    break
+            else:
+                whatsapp_pendente = whatsapp_linha
+
+    return entradas
 
 def _fonte(url: str) -> str:
     if _OLX_RE.match(url):
@@ -1114,8 +1173,8 @@ async def adicionar_url(request: Request, body: AdicionarRequest):
         except Exception:
             pass
 
-    urls_raw = [_normalizar_url_entrada(u) for u in body.urls if u.strip()]
-    if not urls_raw:
+    entradas_raw = _extrair_entradas_adicionar(body.urls)
+    if not entradas_raw:
         return JSONResponse({"ok": False, "msg": "Nenhuma URL informada"}, status_code=400)
 
     try:
@@ -1143,7 +1202,9 @@ async def adicionar_url(request: Request, body: AdicionarRequest):
     def _pode_inserir_novamente(status: str) -> bool:
         return status not in {"pendente", "processando"}
 
-    for url in urls_raw:
+    for entrada in entradas_raw:
+        url = entrada["url"]
+        whatsapp_contato = entrada.get("whatsapp_contato", "")
         if not _url_suportada(url):
             results.append({"url": url, "status": "invalida", "msg": "URL não é um post do Instagram, anúncio do OLX ou empreendimento do Órulo"})
             continue
@@ -1154,7 +1215,7 @@ async def adicionar_url(request: Request, body: AdicionarRequest):
             status_existente = existentes[url]
             if body.forcar and _pode_inserir_novamente(status_existente):
                 try:
-                    linha = sheet.adicionar_pendente(url)
+                    linha = sheet.adicionar_pendente(url, whatsapp_contato=whatsapp_contato)
                     adicionadas_agora.add(url)
                     msg_reativ = "Duplicada inserida novamente para novo processamento"
                     results.append({"url": url, "status": "adicionada", "linha": linha, "msg": msg_reativ})
@@ -1163,6 +1224,8 @@ async def adicionar_url(request: Request, body: AdicionarRequest):
             elif _pode_reativar(status_existente):
                 try:
                     sheet.resetar_url(originais_existentes.get(url, url))
+                    if whatsapp_contato:
+                        sheet.atualizar_whatsapp_por_url(originais_existentes.get(url, url), whatsapp_contato)
                     adicionadas_agora.add(url)
                     results.append({"url": url, "status": "adicionada", "msg": "Reativada para reprocessamento"})
                 except Exception as e:
@@ -1189,7 +1252,7 @@ async def adicionar_url(request: Request, body: AdicionarRequest):
                 })
             continue
         try:
-            linha = sheet.adicionar_pendente(url)
+            linha = sheet.adicionar_pendente(url, whatsapp_contato=whatsapp_contato)
             adicionadas_agora.add(url)
             results.append({"url": url, "status": "adicionada", "linha": linha, "msg": f"Linha {linha}"})
         except Exception as e:
