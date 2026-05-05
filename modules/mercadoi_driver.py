@@ -764,6 +764,7 @@ class MercadoiDriver:
             """)
             if marcado:
                 logger.info("Marcado: Informacoes do Corretor")
+                await page.wait_for_timeout(500)
             else:
                 logger.warning("Opcao de contato do corretor nao encontrada")
 
@@ -780,44 +781,85 @@ class MercadoiDriver:
                     .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
                     .replace(/\\s+/g, ' ').trim();
                 const alvo = norm(nome);
-                const selects = Array.from(document.querySelectorAll(
-                    'select[name="fave_agents"], select[name="fave_agents[]"], select[id*="agent"], select[name*="agent"]'
-                ));
-                for (const sel of selects) {
-                    const opt = Array.from(sel.options).find(o => norm(o.text).includes(alvo));
-                    if (!opt) continue;
+                const aplicar = (sel, opt) => {
                     if (sel.multiple) {
                         Array.from(sel.options).forEach(o => o.selected = false);
                         opt.selected = true;
                     } else {
                         sel.value = opt.value;
+                        opt.selected = true;
                     }
                     sel.dispatchEvent(new Event('input', { bubbles: true }));
                     sel.dispatchEvent(new Event('change', { bubbles: true }));
                     if (window.jQuery) {
-                        window.jQuery(sel).val(sel.multiple ? [opt.value] : opt.value).trigger('change');
-                        window.jQuery(sel).trigger({
+                        const val = sel.multiple ? [opt.value] : opt.value;
+                        const jq = window.jQuery(sel);
+                        jq.val(val).trigger('change');
+                        jq.trigger({
                             type: 'select2:select',
                             params: { data: { id: opt.value, text: opt.text } }
                         });
+                        if (jq.data('selectpicker')) jq.selectpicker('refresh');
                     }
-                    return { ok: true, texto: opt.text };
+                    return { ok: true, texto: opt.text, value: opt.value };
+                };
+                const selects = Array.from(document.querySelectorAll(
+                    'select[name="fave_agents"], select[name="fave_agents[]"], select[id*="agent"], select[name*="agent"]'
+                ));
+                for (const sel of selects) {
+                    const opt = Array.from(sel.options).find(o => {
+                        const t = norm(o.text || o.label || '');
+                        return t === alvo || t.includes(alvo) || alvo.includes(t);
+                    });
+                    if (!opt) continue;
+                    return aplicar(sel, opt);
                 }
                 return { ok: false };
             }
         """, {"nome": nome_corretor})
         if selecionado and selecionado.get("ok"):
-            logger.info(f"Corretor selecionado: {selecionado.get('texto')}")
-            return True
+            await page.keyboard.press("Escape")
+            await page.wait_for_timeout(300)
+            if await self._corretor_selecionado(page, nome_corretor):
+                logger.info(f"Corretor selecionado: {selecionado.get('texto')}")
+                return True
 
         try:
-            container = page.locator('.select2-container').first
-            if await container.count():
-                await container.click(timeout=3000)
+            aberto = await page.evaluate("""
+                () => {
+                    const selects = Array.from(document.querySelectorAll(
+                        'select[name="fave_agents"], select[name="fave_agents[]"], select[id*="agent"], select[name*="agent"]'
+                    ));
+                    const sel = selects.find(s => !s.disabled);
+                    if (!sel) return false;
+                    let container = null;
+                    if (sel.id) {
+                        container = document.querySelector(`#select2-${CSS.escape(sel.id)}-container`);
+                        if (container) container = container.closest('.select2-container');
+                    }
+                    if (!container) {
+                        container = sel.nextElementSibling && sel.nextElementSibling.classList.contains('select2-container')
+                            ? sel.nextElementSibling
+                            : null;
+                    }
+                    if (!container && window.jQuery && window.jQuery(sel).data('select2')) {
+                        window.jQuery(sel).select2('open');
+                        return true;
+                    }
+                    const selection = container && container.querySelector('.select2-selection');
+                    if (!selection) return false;
+                    selection.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+                    selection.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+                    selection.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                    return true;
+                }
+            """)
+            if aberto:
+                await page.wait_for_timeout(400)
                 busca = page.locator('.select2-search__field').last
                 if await busca.count():
                     await busca.fill(nome_corretor, timeout=3000)
-                    await page.wait_for_timeout(700)
+                    await page.wait_for_timeout(900)
 
                 clicado = await page.evaluate("""
                     ({nome}) => {
@@ -828,20 +870,52 @@ class MercadoiDriver:
                         const opcoes = Array.from(document.querySelectorAll(
                             '.select2-results__option:not(.loading-results):not(.select2-results__message)'
                         ));
-                        const opcao = opcoes.find(o => norm(o.innerText).includes(alvo));
+                        const opcao = opcoes.find(o => {
+                            const t = norm(o.innerText || o.textContent || '');
+                            return t === alvo || t.includes(alvo);
+                        });
                         if (!opcao) return false;
+                        opcao.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
                         opcao.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
                         opcao.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
                         return true;
                     }
                 """, {"nome": nome_corretor})
                 if clicado:
-                    await page.wait_for_timeout(500)
-                    logger.info(f"Corretor selecionado via Select2: {nome_corretor}")
-                    return True
+                    await page.wait_for_timeout(600)
+                    # Garante que o select real ficou com o valor mesmo se o Select2 mantiver o dropdown aberto.
+                    reforcado = await page.evaluate("""
+                        ({nome}) => {
+                            const norm = (t) => String(t || '').toLowerCase()
+                                .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
+                                .replace(/\\s+/g, ' ').trim();
+                            const alvo = norm(nome);
+                            const selects = Array.from(document.querySelectorAll(
+                                'select[name="fave_agents"], select[name="fave_agents[]"], select[id*="agent"], select[name*="agent"]'
+                            ));
+                            for (const sel of selects) {
+                                const opt = Array.from(sel.options).find(o => norm(o.text || o.label || '').includes(alvo));
+                                if (!opt) continue;
+                                const val = sel.multiple ? [opt.value] : opt.value;
+                                opt.selected = true;
+                                if (!sel.multiple) sel.value = opt.value;
+                                sel.dispatchEvent(new Event('input', { bubbles: true }));
+                                sel.dispatchEvent(new Event('change', { bubbles: true }));
+                                if (window.jQuery) window.jQuery(sel).val(val).trigger('change');
+                                return true;
+                            }
+                            return false;
+                        }
+                    """, {"nome": nome_corretor})
+                    await page.keyboard.press("Escape")
+                    await page.wait_for_timeout(300)
+                    if reforcado and await self._corretor_selecionado(page, nome_corretor):
+                        logger.info(f"Corretor selecionado via Select2: {nome_corretor}")
+                        return True
                 try:
                     await busca.press("Enter", timeout=2000)
                     await page.wait_for_timeout(500)
+                    await page.keyboard.press("Escape")
                     if await self._corretor_selecionado(page, nome_corretor):
                         logger.info(f"Corretor selecionado via Enter: {nome_corretor}")
                         return True
@@ -861,7 +935,15 @@ class MercadoiDriver:
                 const textos = Array.from(document.querySelectorAll(
                     '.select2-selection__rendered, .select2-selection__choice'
                 )).map(e => norm(e.innerText || e.getAttribute('title')));
-                return textos.some(t => t.includes(alvo));
+                const selects = Array.from(document.querySelectorAll(
+                    'select[name="fave_agents"], select[name="fave_agents[]"], select[id*="agent"], select[name*="agent"]'
+                ));
+                for (const sel of selects) {
+                    for (const opt of Array.from(sel.selectedOptions || [])) {
+                        textos.push(norm(opt.text || opt.label || ''));
+                    }
+                }
+                return textos.some(t => t === alvo || t.includes(alvo));
             }
         """, {"nome": nome_corretor})
 
