@@ -50,7 +50,10 @@ REGRAS GERAIS:
   So use Apto. Cobertura quando a cobertura for o tipo da unidade; area de lazer na cobertura do predio nao muda o tipo.
 - estagio_imovel: breve lancamento, lancamento, em construcao, novo, seminovo, usado ou reformado.
 - elevador, escriturado, aceita_airbnb e aceita_financiamento: use "Sim", "Nao" ou "".
+- aceita_permuta: use "Sim", "Nao" ou "".
 - mobiliado: use "sem mobilia", "semi mobiliado", "Mobiliado" ou "Mobiliado e Decorado".
+- perto_do_mar: use "Vista para o mar", "Frente para o mar", "Quadra do mar", "Proximo ao mar" ou "".
+- posicao_predio: use "Frente", "Fundo", "Lateral", "Meio" ou "".
 - condominio, iptu e taxas: valores em reais, apenas digitos.
 - area_m2 e area_terreno: area em m2, apenas digitos. Para apartamentos, area_terreno geralmente fica "".
 - endereco: rua e numero se mencionados.
@@ -98,6 +101,9 @@ Retorne exatamente este JSON preenchido:
   "posicao_solar": "",
   "mobiliado": "",
   "escriturado": "",
+  "perto_do_mar": "",
+  "aceita_permuta": "",
+  "posicao_predio": "",
   "aceita_airbnb": "",
   "aceita_financiamento": "",
   "proximidades": "",

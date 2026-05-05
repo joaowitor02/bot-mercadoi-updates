@@ -372,6 +372,7 @@ class MercadoiDriver:
 
             # CARACTERISTICAS
             await self._marcar_caracteristicas(page, dados.get("caracteristicas") or [])
+            await self._preencher_detalhes_adicionais(page, dados)
 
             # Faz Parceria — sempre "A combinar", com retry por timing de select2
             for _tentativa in range(4):
@@ -1106,6 +1107,222 @@ class MercadoiDriver:
                 logger.info(f"Caracteristicas nao encontradas no formulario: {', '.join(faltantes[:20])}")
         except Exception as e:
             logger.warning(f"Erro ao marcar caracteristicas: {e}")
+
+    def _detalhes_adicionais(self, dados: dict) -> dict:
+        def _s(key: str) -> str:
+            v = dados.get(key, "")
+            return v.strip() if isinstance(v, str) else str(v or "").strip()
+
+        def sim_nao(valor: str) -> str:
+            n = normalizar(valor)
+            if not n:
+                return ""
+            if n in {"nao", "n", "no", "false", "não"} or "nao aceita" in n or "não aceita" in n:
+                return "Não"
+            if n in {"sim", "s", "yes", "true"} or "aceita" in n or "possui" in n:
+                return "Sim"
+            return valor.strip()
+
+        def estagio(valor: str) -> str:
+            n = normalizar(valor)
+            mapa = [
+                (("breve",), "1- Em breve lançamento"),
+                (("lancamento", "lançamento"), "2- Lançamento"),
+                (("construcao", "construção", "obra"), "3- Em Construção"),
+                (("novo",), "4- Novo"),
+                (("semi novo", "seminovo"), "5- Semi Novo"),
+                (("usado",), "6- Usado"),
+                (("reformado",), "7- Reformado"),
+            ]
+            for chaves, opcao in mapa:
+                if any(c in n for c in chaves):
+                    return opcao
+            return valor.strip()
+
+        def mobiliado(valor: str) -> str:
+            n = normalizar(valor)
+            if not n:
+                return ""
+            if "decor" in n:
+                return "Mobiliado e decorado"
+            if "semi" in n:
+                return "Semi-mobiliado"
+            if "sem" in n and ("mobil" in n or "mob" in n):
+                return "Sem mobília"
+            if "mobil" in n:
+                return "Mobiliado"
+            return valor.strip()
+
+        def posicao_solar(valor: str) -> str:
+            n = normalizar(valor)
+            opcoes = [
+                ("sol da manha e tarde", "Sol da manhã e tarde"),
+                ("sol da manha", "Sol da manhã"),
+                ("sol da tarde", "Sol da tarde"),
+                ("nordeste", "Nordeste"),
+                ("sudeste", "Sudeste"),
+                ("sudoeste", "Sudoeste"),
+                ("noroeste", "Noroeste"),
+                ("norte", "Norte"),
+                ("sul", "Sul"),
+                ("leste", "Leste"),
+                ("oeste", "Oeste"),
+                ("nascente", "Leste"),
+                ("poente", "Oeste"),
+            ]
+            for chave, opcao in opcoes:
+                if chave in n:
+                    return opcao
+            return valor.strip()
+
+        def perto_mar(valor: str) -> str:
+            n = normalizar(valor)
+            if not n:
+                return ""
+            if "vista" in n:
+                return "Vista para o mar"
+            if "frente" in n or "beira mar" in n:
+                return "Frente para o mar"
+            if "quadra" in n:
+                return "Quadra do mar"
+            if "mar" in n or "praia" in n:
+                return "Próximo ao mar"
+            return valor.strip()
+
+        def posicao_predio(valor: str) -> str:
+            n = normalizar(valor)
+            for chave, opcao in [("frente", "Frente"), ("fundo", "Fundo"), ("lateral", "Lateral"), ("meio", "Meio")]:
+                if chave in n:
+                    return opcao
+            return valor.strip()
+
+        cond_taxas = []
+        if _s("condominio"):
+            cond_taxas.append(f"Condomínio: {_s('condominio')}")
+        if _s("iptu"):
+            cond_taxas.append(f"IPTU: {_s('iptu')}")
+        if _s("taxas"):
+            cond_taxas.append(f"Taxas: {_s('taxas')}")
+
+        return {
+            "selects": {
+                "Estágio do Imovel": estagio(_s("estagio_imovel")),
+                "Andar": _s("andar"),
+                "Tem elevador?": sim_nao(_s("elevador")),
+                "Posição Solar": posicao_solar(_s("posicao_solar")),
+                "Perto do mar?": perto_mar(_s("perto_do_mar")),
+                "Escriturado?": sim_nao(_s("escriturado")),
+                "Aceita Permuta?": sim_nao(_s("aceita_permuta")),
+                "Posição no Prédio": posicao_predio(_s("posicao_predio")),
+                "Mobiliado?": mobiliado(_s("mobiliado")),
+                "Aceita Airbnb/Temporada": sim_nao(_s("aceita_airbnb")),
+                "Aceita Financiamento?": sim_nao(_s("aceita_financiamento")),
+            },
+            "inputs": {
+                "Área total m²": _s("area_terreno"),
+                "Condomínio - IPTU - Taxas": " | ".join(cond_taxas),
+                "Ano de construção": _s("ano_construcao"),
+                "Proximidades": _s("proximidades"),
+            },
+        }
+
+    async def _preencher_detalhes_adicionais(self, page, dados: dict):
+        detalhes = self._detalhes_adicionais(dados)
+        selects = {k: v for k, v in detalhes["selects"].items() if v}
+        inputs = {k: v for k, v in detalhes["inputs"].items() if v}
+        if not selects and not inputs:
+            return
+        try:
+            resultado = await page.evaluate("""
+                ({selects, inputs}) => {
+                    const norm = (t) => String(t || '')
+                        .toLowerCase()
+                        .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
+                        .replace(/[^a-z0-9]+/g, ' ')
+                        .replace(/\\s+/g, ' ')
+                        .trim();
+
+                    const controles = 'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), textarea, select';
+                    const acharCampo = (rotulo) => {
+                        const alvo = norm(rotulo);
+                        const labels = Array.from(document.querySelectorAll('label, .control-label, .form-label'));
+                        for (const label of labels) {
+                            const texto = norm(label.innerText || label.textContent || '');
+                            if (!texto || !(texto === alvo || texto.includes(alvo) || alvo.includes(texto))) continue;
+                            let raiz = label;
+                            for (let i = 0; i < 5 && raiz; i++, raiz = raiz.parentElement) {
+                                const campo = raiz.querySelector(controles);
+                                if (campo) return campo;
+                            }
+                        }
+                        const campos = Array.from(document.querySelectorAll(controles));
+                        return campos.find(c => {
+                            const ph = norm(c.getAttribute('placeholder') || '');
+                            const name = norm(c.getAttribute('name') || c.id || '');
+                            return ph.includes(alvo) || alvo.includes(ph) || name.includes(alvo);
+                        }) || null;
+                    };
+
+                    const escolherOption = (select, valor) => {
+                        const alvo = norm(valor);
+                        let melhor = null;
+                        for (const op of Array.from(select.options || [])) {
+                            const t = norm(op.text || op.label || '');
+                            const base = t.replace(/^\\d+\\s*[-–]\\s*/, '');
+                            if (!base || base === 'selecione' || base === 'sim nao') continue;
+                            const alvoNum = (alvo.match(/\\d+/) || [''])[0];
+                            const baseNum = (base.match(/\\d+/) || [''])[0];
+                            if (t === alvo || base === alvo || t.includes(alvo) || alvo.includes(base)) {
+                                melhor = op;
+                                break;
+                            }
+                            if (alvoNum && baseNum && alvoNum === baseNum && base.includes('andar')) {
+                                melhor = op;
+                                break;
+                            }
+                        }
+                        if (!melhor) return false;
+                        if (window.jQuery) {
+                            const jq = window.jQuery(select);
+                            jq.val(melhor.value).trigger('change');
+                            if (jq.data('selectpicker')) jq.selectpicker('refresh');
+                            if (jq.data('select2')) jq.trigger('change.select2');
+                        } else {
+                            select.value = melhor.value;
+                            select.dispatchEvent(new Event('input', {bubbles: true}));
+                            select.dispatchEvent(new Event('change', {bubbles: true}));
+                        }
+                        return opTexto(melhor);
+                    };
+
+                    const opTexto = (op) => String(op.text || op.label || '').replace(/\\s+/g, ' ').trim();
+                    const preenchidos = [];
+
+                    for (const [rotulo, valor] of Object.entries(inputs || {})) {
+                        if (!valor) continue;
+                        const campo = acharCampo(rotulo);
+                        if (!campo || campo.tagName === 'SELECT') continue;
+                        campo.value = valor;
+                        campo.dispatchEvent(new Event('input', {bubbles: true}));
+                        campo.dispatchEvent(new Event('change', {bubbles: true}));
+                        preenchidos.push(`${rotulo}=${valor}`);
+                    }
+
+                    for (const [rotulo, valor] of Object.entries(selects || {})) {
+                        if (!valor) continue;
+                        const campo = acharCampo(rotulo);
+                        if (!campo || campo.tagName !== 'SELECT') continue;
+                        const escolhido = escolherOption(campo, valor);
+                        if (escolhido) preenchidos.push(`${rotulo}=${escolhido}`);
+                    }
+
+                    return preenchidos;
+                }
+            """, {"selects": selects, "inputs": inputs})
+            if resultado:
+                logger.info(f"Detalhes adicionais preenchidos: {', '.join(resultado[:20])}")
+        except Exception as e:
+            logger.warning(f"Erro ao preencher detalhes adicionais: {e}")
 
     def _cidade_por_bairro(self, bairro: str) -> str:
         b = normalizar(bairro)
