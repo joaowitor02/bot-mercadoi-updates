@@ -370,6 +370,9 @@ class MercadoiDriver:
                 ('select[name="tem-elevador"]',                dados.get("elevador",      "").strip()),
             ])
 
+            # CARACTERISTICAS
+            await self._marcar_caracteristicas(page, dados.get("caracteristicas") or [])
+
             # Faz Parceria — sempre "A combinar", com retry por timing de select2
             for _tentativa in range(4):
                 try:
@@ -1020,6 +1023,89 @@ class MercadoiDriver:
                 logger.info(f"Selects em batch: {len(resultado)} selecionados")
         except Exception as e:
             logger.warning(f"Erro ao selecionar em batch: {e}")
+
+    async def _marcar_caracteristicas(self, page, caracteristicas):
+        """Marca checkboxes de caracteristicas pelo texto visivel do formulario."""
+        if isinstance(caracteristicas, str):
+            caracteristicas = [p.strip() for p in re.split(r"[,;\n]+", caracteristicas) if p.strip()]
+        alvos = list(dict.fromkeys([str(c).strip() for c in (caracteristicas or []) if str(c).strip()]))
+        if not alvos:
+            return
+        try:
+            resultado = await page.evaluate("""
+                (alvos) => {
+                    const norm = (t) => String(t || '')
+                        .toLowerCase()
+                        .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
+                        .replace(/[^a-z0-9]+/g, ' ')
+                        .replace(/\\s+/g, ' ')
+                        .trim();
+
+                    const textoCheckbox = (input) => {
+                        const textos = [];
+                        if (input.id) {
+                            const lab = document.querySelector(`label[for="${CSS.escape(input.id)}"]`);
+                            if (lab) textos.push(lab.innerText || lab.textContent || '');
+                        }
+                        const labelPai = input.closest('label');
+                        if (labelPai) textos.push(labelPai.innerText || labelPai.textContent || '');
+
+                        let el = input.nextSibling;
+                        let hops = 0;
+                        while (el && hops < 4) {
+                            if (el.nodeType === Node.TEXT_NODE) textos.push(el.textContent || '');
+                            if (el.nodeType === Node.ELEMENT_NODE) textos.push(el.innerText || el.textContent || '');
+                            el = el.nextSibling;
+                            hops++;
+                        }
+
+                        const parent = input.parentElement;
+                        if (parent) textos.push(parent.innerText || parent.textContent || '');
+
+                        return textos
+                            .map(t => String(t || '').replace(/\\s+/g, ' ').trim())
+                            .filter(Boolean)
+                            .sort((a, b) => a.length - b.length)[0] || '';
+                    };
+
+                    const alvosNorm = alvos.map(a => ({original: a, norm: norm(a)})).filter(a => a.norm);
+                    const marcadas = [];
+                    const faltantes = new Map(alvosNorm.map(a => [a.norm, a.original]));
+                    const boxes = Array.from(document.querySelectorAll('input[type="checkbox"]'));
+
+                    for (const box of boxes) {
+                        const texto = textoCheckbox(box);
+                        const textoNorm = norm(texto);
+                        if (!textoNorm) continue;
+                        const alvo = alvosNorm.find(a =>
+                            textoNorm === a.norm ||
+                            textoNorm.includes(a.norm) ||
+                            a.norm.includes(textoNorm)
+                        );
+                        if (!alvo) continue;
+                        if (!box.checked) {
+                            box.click();
+                        }
+                        box.dispatchEvent(new Event('input', {bubbles: true}));
+                        box.dispatchEvent(new Event('change', {bubbles: true}));
+                        marcadas.push(texto);
+                        faltantes.delete(alvo.norm);
+                    }
+
+                    return {
+                        marcadas: Array.from(new Set(marcadas)),
+                        faltantes: Array.from(faltantes.values()),
+                    };
+                }
+            """, alvos)
+            marcadas = resultado.get("marcadas", []) if isinstance(resultado, dict) else []
+            faltantes = resultado.get("faltantes", []) if isinstance(resultado, dict) else []
+            if marcadas:
+                logger.info(f"Caracteristicas marcadas: {', '.join(marcadas[:20])}")
+            if faltantes:
+                logger.info(f"Caracteristicas nao encontradas no formulario: {', '.join(faltantes[:20])}")
+        except Exception as e:
+            logger.warning(f"Erro ao marcar caracteristicas: {e}")
 
     def _cidade_por_bairro(self, bairro: str) -> str:
         b = normalizar(bairro)
