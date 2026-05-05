@@ -13,18 +13,45 @@ def _normalizar_texto(texto: str) -> str:
 
 
 def normalizar_tipos_imovel(*partes: str) -> list[str]:
-    texto = _normalizar_texto(" ".join(str(p or "") for p in partes))
+    partes_norm = [_normalizar_texto(p) for p in partes if str(p or "").strip()]
+    texto = _normalizar_texto(" ".join(partes_norm))
+    texto_principal = _normalizar_texto(" ".join(partes_norm[:2]))
     tipos = []
     tem_casa = bool(re.search(r"\b(casa|casas|sobrado|sobrados)\b", texto))
     tem_condominio = "condominio" in texto or "condominium" in texto
+    tem_terreno = bool(re.search(r"\b(terreno|terrenos|lote|lotes)\b", texto))
+
+    # Terreno/lote deve vencer antes de termos genericos do empreendimento.
+    if tem_terreno:
+        return ["Terreno"]
 
     if tem_casa and tem_condominio:
         return ["Casa de Condom\u00ednio"]
     if tem_casa:
         return ["Casa"]
-    if "cobertura" in texto:
+
+    mencao_cobertura_area = bool(re.search(
+        r"\b(area de lazer|lazer|rooftop|terraco|piscina|salao|espaco)\b.{0,50}\bcobertura\b"
+        r"|\bcobertura\b.{0,50}\b(predio|empreendimento|coletiva|comum|lazer)\b",
+        texto,
+    ))
+    cobertura_no_tipo = any(
+        bool(re.search(r"\b(cobertura|coberturas|apartamento cobertura|apto cobertura|cobertura duplex)\b", p))
+        for p in partes_norm[:2]
+    )
+    cobertura_tipo_forte = any(
+        bool(re.search(
+            r"^(apartamento|apto\.?|apt)?\s*cobertura(\s+duplex)?$"
+            r"|^cobertura(\s+duplex)?$"
+            r"|^duplex\s+cobertura$"
+            r"|\b(apartamento|apto\.?|apt)\s+cobertura\b",
+            p,
+        ))
+        for p in partes_norm[:2]
+    )
+    if cobertura_no_tipo and (cobertura_tipo_forte or not mencao_cobertura_area):
         tipos.append("Apto. Cobertura")
-    if "duplex" in texto:
+    if "duplex" in texto_principal:
         tipos.append("Apto. Duplex")
     if tipos:
         return tipos
@@ -43,8 +70,6 @@ def normalizar_tipos_imovel(*partes: str) -> list[str]:
         return ["S\u00edtio"]
     if re.search(r"\bresidencia(s)?\b", texto):
         return ["Casa"]
-    if "terreno" in texto or "lote" in texto:
-        return ["Terreno"]
     if "sala" in texto or "comercial" in texto or "loja" in texto or "escritorio" in texto:
         return ["Sala Comercial"]
     return ["Apartamento"]

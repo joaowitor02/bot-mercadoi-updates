@@ -1296,7 +1296,7 @@ function fecharModalDet(e) {
 // ---------------------------------------------------------------------------
 async function carregarExecucoes() {
   try {
-    const r = await fetch(`/api/execucoes?dias=${_filtroDias}`);
+    const r = await fetch(`/api/execucoes?dias=${_filtroDias}&_=${Date.now()}`, { cache: 'no-store' });
     _execucoes = await r.json();
     renderStats(_execucoes);
     renderResumoDiario(_execucoes);
@@ -1309,10 +1309,29 @@ async function carregarExecucoes() {
 
 async function carregarPendentes() {
   try {
-    const r = await fetch('/api/pendentes');
+    const r = await fetch(`/api/pendentes?_=${Date.now()}`, { cache: 'no-store' });
     const d = await r.json();
     document.getElementById('stat-pendentes').textContent = d.count ?? '—';
   } catch {}
+}
+
+async function atualizarPainel(opts = {}) {
+  const {
+    fila = _mainTab === 'fila',
+    execucoes = true,
+    pendentes = true,
+    status = true,
+    diagnostico = false,
+    logs = false,
+  } = opts;
+  const tarefas = [];
+  if (status) tarefas.push(atualizarStatus());
+  if (execucoes) tarefas.push(carregarExecucoes());
+  if (pendentes) tarefas.push(carregarPendentes());
+  if (fila) tarefas.push(carregarFila());
+  if (diagnostico && _isAdmin) tarefas.push(carregarDiagnostico());
+  if (logs) tarefas.push(atualizarLogs());
+  await Promise.allSettled(tarefas);
 }
 
 async function carregarDiagnostico() {
@@ -1371,14 +1390,14 @@ async function toggleWatch() {
       const d = await r.json();
       d.ok ? toast(`Watch mode iniciado — ciclo a cada ${d.intervalo} min`) : toast(d.msg, 'erro');
     }
-    await atualizarStatus();
+    await atualizarPainel({ fila: true, logs: true });
   } catch { toast('Erro de conexão', 'erro'); }
   finally { btn.disabled = false; }
 }
 
 async function atualizarStatus() {
   try {
-    const r = await fetch('/api/status');
+    const r = await fetch(`/api/status?_=${Date.now()}`, { cache: 'no-store' });
     const d = await r.json();
     const _wasRunning = _botRodando;
     _botRodando = d.rodando;
@@ -1467,8 +1486,7 @@ async function atualizarStatus() {
       if (_wasRunning) {
         logCard.classList.remove('hidden');
         await atualizarLogs();
-        await carregarExecucoes();
-        if (_mainTab === 'fila') await carregarFila();
+        await atualizarPainel({ status: false, logs: false });
       }
     }
   } catch {}
@@ -1483,7 +1501,7 @@ async function pausarBot() {
     const d = await r.json();
     if (d.ok) {
       toast('Bot pausado com sucesso');
-      await atualizarStatus();
+      await atualizarPainel({ fila: true, logs: true });
     } else {
       toast(d.msg || 'Erro ao pausar', 'erro');
     }
@@ -1498,7 +1516,7 @@ async function pausarBot() {
 
 async function atualizarLogs() {
   try {
-    const r = await fetch('/api/logs/live?ultimas=80');
+    const r = await fetch(`/api/logs/live?ultimas=80&_=${Date.now()}`, { cache: 'no-store' });
     const linhas = await r.json();
     const container = document.getElementById('log-content');
     if (linhas.length) {
@@ -1531,9 +1549,10 @@ async function processarAgora() {
     const d = await r.json();
     if (d.ok) {
       toast('Bot iniciado com sucesso!');
-      await Promise.all([atualizarStatus(), atualizarLogs(), carregarExecucoes(), carregarPendentes()]);
-      setTimeout(() => atualizarStatus(), 800);
-      setTimeout(() => carregarExecucoes(), 1500);
+      await atualizarPainel({ fila: true, logs: true });
+      setTimeout(() => atualizarPainel({ fila: true, logs: true }), 800);
+      setTimeout(() => atualizarPainel({ fila: true, logs: true }), 2500);
+      setTimeout(() => atualizarPainel({ fila: true, logs: true }), 6000);
     } else {
       _botRodando = false;
       if (btn) btn.disabled = false;
@@ -1600,7 +1619,7 @@ async function adicionarUrls(forcar = false, urlsParaForcar = null) {
       _exibirResultado(d, result, summary, details);
       if (d.adicionadas) {
         atualizarContador();
-        await carregarPendentes();
+        await atualizarPainel({ fila: true, status: false });
       }
       return;
     }
@@ -1616,7 +1635,7 @@ async function adicionarUrls(forcar = false, urlsParaForcar = null) {
         textarea.value = linhasRestantes.join('\n');
       }
       atualizarContador();
-      await carregarPendentes();
+      await atualizarPainel({ fila: true, status: false });
       toast(`${d.adicionadas} link${d.adicionadas>1?'s':''} adicionado${d.adicionadas>1?'s':''}!`);
     }
   } catch { toast('Erro de conexão', 'erro'); }
@@ -1849,7 +1868,7 @@ function _filaItemsFiltrados() {
 
 async function carregarFila() {
   try {
-    const r = await fetch('/api/fila');
+    const r = await fetch(`/api/fila?_=${Date.now()}`, { cache: 'no-store' });
     const d = await r.json();
     _filaItems = d.items || [];
     const total = _filaItems.length;
@@ -1946,7 +1965,7 @@ async function removerDaFila(id) {
     const d = await r.json();
     if (d.ok) {
       toast('Item removido da fila');
-      await Promise.all([carregarFila(), carregarPendentes()]);
+      await atualizarPainel({ fila: true, status: false });
     } else {
       toast(d.msg || 'Erro ao remover', 'erro');
     }
@@ -1964,7 +1983,7 @@ async function priorizarItem(id) {
     const d = await r.json();
     if (d.ok) {
       toast(d.msg || 'Item movido para o topo');
-      await Promise.all([carregarFila(), carregarPendentes()]);
+      await atualizarPainel({ fila: true, status: false });
     } else {
       toast(d.msg || 'Erro ao priorizar', 'erro');
     }
@@ -1984,7 +2003,7 @@ async function reprocessar(url) {
     const d = await r.json();
     if (d.ok) {
       toast('Imóvel voltou para a fila de pendentes');
-      await Promise.all([carregarFila(), carregarExecucoes(), carregarPendentes()]);
+      await atualizarPainel({ fila: true });
     } else {
       toast(d.msg || 'Erro ao reprocessar', 'erro');
     }
@@ -1998,7 +2017,7 @@ async function limparErros() {
     if (r.status === 401) { window.location.href = '/login'; return; }
     const d = await r.json();
     d.ok ? toast(d.msg || 'Erros removidos') : toast(d.msg || 'Erro ao limpar', 'erro');
-    if (d.ok) await carregarFila();
+    if (d.ok) await atualizarPainel({ fila: true, status: false });
   } catch { toast('Erro de conexão', 'erro'); }
 }
 
@@ -2010,7 +2029,7 @@ async function limparPendentes() {
     const d = await r.json();
     if (d.ok) {
       toast(d.msg || 'Pendentes removidos');
-      await carregarFila();
+      await atualizarPainel({ fila: true, status: false });
     } else {
       toast(d.msg || 'Erro ao limpar pendentes', 'erro');
     }

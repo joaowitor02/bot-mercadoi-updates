@@ -16,7 +16,7 @@ import subprocess
 import sys
 import threading
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 _logger = logging.getLogger("panel")
@@ -671,6 +671,23 @@ def _tail_text_lines(path: Path, limit: int, max_bytes: int = 256 * 1024) -> lis
     return data.decode("utf-8", errors="replace").splitlines()[-limit:]
 
 
+def _filtrar_logs_execucao(linhas: list[str], limit: int) -> list[str]:
+    if not _ultimo_inicio_bot or not _bot_em_execucao():
+        return linhas[-limit:]
+    corte = datetime.fromtimestamp(max(0, _ultimo_inicio_bot - 3))
+    filtradas: list[str] = []
+    for linha in linhas:
+        m = re.match(r"^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})", linha)
+        if not m:
+            continue
+        try:
+            if datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S") >= corte:
+                filtradas.append(linha)
+        except ValueError:
+            continue
+    return (filtradas or linhas)[-limit:]
+
+
 async def _rodar_bot(watch: bool = False, intervalo: int = 5):
     global _bot_rodando, _watch_ativo, _bot_processo, _ultimo_log, _ultimo_inicio_bot
     _bot_rodando = True
@@ -983,14 +1000,16 @@ async def logs_live(ultimas: int = 80):
         if not log_file.exists():
             continue
         try:
-            linhas = _tail_text_lines(log_file, max(1, min(ultimas, 300)))
+            limit = max(1, min(ultimas, 300))
+            linhas = _tail_text_lines(log_file, limit, max_bytes=512 * 1024)
+            linhas = _filtrar_logs_execucao(linhas, limit)
             if _ultimo_log and _bot_em_execucao():
-                linhas = (linhas + _ultimo_log)[-max(1, min(ultimas, 300)):]
-            return JSONResponse(linhas)
+                linhas = (linhas + _ultimo_log)[-limit:]
+            return JSONResponse(linhas, headers={"Cache-Control": "no-store"})
         except Exception:
             pass
     # Fallback: buffer de stdout (caso o arquivo ainda não exista)
-    return JSONResponse(_ultimo_log[-ultimas:])
+    return JSONResponse(_ultimo_log[-ultimas:], headers={"Cache-Control": "no-store"})
 
 
 @app.get("/screenshots/{filename}")

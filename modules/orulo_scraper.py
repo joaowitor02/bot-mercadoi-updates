@@ -63,10 +63,13 @@ _URL_RE = re.compile(
 _MAX_IMAGENS = 20
 
 _TIPOS = [
+    "Casa em Condominio", "Casa de Condominio", "Casa Condomínio",
+    "Casa Duplex", "Casa Sobrado", "Casa", "Sobrado",
+    "Terrenos", "Terreno", "Lotes", "Lote",
     "Apartamento Cobertura", "Apartamento Duplex", "Apto. Cobertura", "Apto. Duplex",
     "Cobertura Duplex", "Duplex Cobertura", "Cobertura", "Duplex",
-    "Apartamento", "Casa", "Terreno", "Studio", "Flat",
-    "Sala Comercial", "Loja", "Galpao", "Lote",
+    "Apartamento", "Studio", "Flat",
+    "Sala Comercial", "Loja", "Galpao",
 ]
 
 _AMENIDADES = [
