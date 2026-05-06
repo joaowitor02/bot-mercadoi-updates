@@ -439,7 +439,34 @@ async def _publicar_com_retry(
         dados["_forcar_rascunho"] = True
     resultado = None
 
-    if _usar_wordpress_api(config):
+    # O XML-RPC nao clica no formulario do Mercadoi: ele cria posts e tenta
+    # traduzir campos para taxonomias/metas. Para Orulo, precisamos do fluxo
+    # via navegador para marcar caracteristicas, selecionar corretor e anexar
+    # imagens mesmo quando o usuario WordPress nao tem upload_files.
+    usar_browser_mercadoi = dados.get("_fonte") == "orulo"
+
+    if usar_browser_mercadoi:
+        logger.info(f"[{execution_id}] Usando Playwright Mercadoi (fluxo Orulo)")
+        async with MercadoiDriver(
+            config["mercadoi_url"],
+            config.get("mercadoi_profile_path", r"C:\chrome_bot_mercadoi"),
+            execution_id=execution_id,
+            wp_user=config.get("wordpress_xmlrpc_user", "") or config.get("wordpress_wp_user", ""),
+            wp_pass=config.get("wordpress_xmlrpc_password", "") or config.get("wordpress_app_password", ""),
+        ) as driver:
+            for tentativa in range(1, MAX_TENTATIVAS_MERCADOI + 1):
+                if tentativa > 1:
+                    logger.info(f"[{execution_id}] Tentativa {tentativa}/{MAX_TENTATIVAS_MERCADOI}...")
+                resultado = await driver.preencher_e_salvar(dados, tipo_midia, arquivo_midia)
+                if resultado["sucesso"]:
+                    break
+                if tentativa < MAX_TENTATIVAS_MERCADOI:
+                    logger.warning(
+                        f"[{execution_id}] Falhou: {resultado.get('mensagem', '')}. "
+                        f"Aguardando {ESPERA_ENTRE_TENTATIVAS}s..."
+                    )
+                    await asyncio.sleep(ESPERA_ENTRE_TENTATIVAS)
+    elif _usar_wordpress_api(config):
         modo = "Application Password" if config.get("wordpress_wp_user") else "API Key"
         logger.info(f"[{execution_id}] Usando WordPress REST API ({modo})")
         publisher = WordPressPublisher(
@@ -847,7 +874,13 @@ async def executar_ciclo(config: dict):
     if not pendentes:
         return 0
 
-    if not _usar_wordpress_api(config) and not _usar_wordpress_xmlrpc(config) and sys.platform == "win32" and not await _verificar_chrome():
+    tem_orulo_pendente = any(orulo_url_valida(normalizar_orulo_url(row["url_instagram"])) for row in pendentes)
+
+    if (
+        (tem_orulo_pendente or (not _usar_wordpress_api(config) and not _usar_wordpress_xmlrpc(config)))
+        and sys.platform == "win32"
+        and not await _verificar_chrome()
+    ):
         logger.error("Chrome do Mercadoi não está aberto. Abra o Chrome com remote debugging na porta 9222.")
         await notificar(config, "⚠️ <b>Bot Mercadoi</b> — Chrome não está aberto.\nAbra o Chrome com remote debugging para retomar o processamento.")
         return 0
@@ -859,7 +892,7 @@ async def executar_ciclo(config: dict):
     # Paralelismo seguro apenas quando não há browser no caminho crítico.
     # Browser DeepSeek ou Playwright para publicação não suportam múltiplas
     # instâncias simultâneas no mesmo Chrome.
-    sem_browser_publicacao = _usar_wordpress_api(config) or _usar_wordpress_xmlrpc(config)
+    sem_browser_publicacao = (_usar_wordpress_api(config) or _usar_wordpress_xmlrpc(config)) and not tem_orulo_pendente
     modo_api_completo = sem_browser_publicacao and bool(config.get("usar_deepseek_api"))
     if max_workers > 1 and not modo_api_completo:
         logger.warning(
