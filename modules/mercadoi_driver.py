@@ -1330,6 +1330,14 @@ class MercadoiDriver:
         longitude = str(dados.get("longitude", "") or dados.get("lng", "") or dados.get("lon", "") or "").strip()
         if not endereco and not cep and not latitude and not longitude:
             return
+        # Busca o CEP correto via ViaCEP quando há rua + cidade disponíveis
+        try:
+            from modules.cep_lookup import buscar_cep
+            cep_buscado = await buscar_cep(dados)
+            if cep_buscado:
+                cep = cep_buscado
+        except Exception as e:
+            logger.debug(f"Busca CEP falhou: {e}")
         try:
             resultado = await page.evaluate("""
                 ({endereco, cep, latitude, longitude}) => {

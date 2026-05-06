@@ -1145,20 +1145,34 @@ class OruloScraper:
             r"https://static\.orulo\.com\.br/images/[^\"'\s)]+?\.(?:jpeg|jpg|png|webp)(?:\?\d+)?",
             re.IGNORECASE,
         )
-        candidatos = []
-        for ordem, m in enumerate(padrao.finditer(html_img)):
-            if inicio_plantas >= 0 and m.start() >= inicio_plantas:
-                continue
-            u = m.group(0)
-            base = u.split("?")[0]
-            contexto = html_img[max(0, m.start() - 350):m.end() + 350]
-            contexto_planta = self._contexto_tag_imagem(html_img, m.start(), m.end())
-            if self._imagem_eh_planta(base, contexto_planta):
-                continue
-            candidatos.append((self._pontuar_imagem(base, contexto, ordem), base))
 
-        candidatos.sort(key=lambda item: item[0])
-        urls = self._deduplicar_urls_imagem([u for _, u in candidatos])
+        def _coletar(html_src: str, apenas_antes: int = -1) -> list:
+            cands = []
+            for ordem, m in enumerate(padrao.finditer(html_src)):
+                if apenas_antes >= 0 and m.start() >= apenas_antes:
+                    continue
+                u = m.group(0)
+                base = u.split("?")[0]
+                contexto_planta = self._contexto_tag_imagem(html_src, m.start(), m.end())
+                if self._imagem_eh_planta(base, contexto_planta):
+                    continue
+                contexto = html_src[max(0, m.start() - 350):m.end() + 350]
+                cands.append((self._pontuar_imagem(base, contexto, ordem), base))
+            cands.sort(key=lambda item: item[0])
+            return self._deduplicar_urls_imagem([u for _, u in cands])
+
+        # 1ª passagem: apenas galeria principal (antes da seção de plantas)
+        urls = _coletar(html_img, apenas_antes=inicio_plantas)
+
+        # 2ª passagem: se ainda faltar imagens, coleta do resto da página
+        # (seções de tipologias, ambientes, etc.) filtrando plantas individualmente
+        if len(urls) < _MAX_IMAGENS:
+            extras = _coletar(html_img, apenas_antes=-1)  # sem restrição de posição
+            faltam = _MAX_IMAGENS - len(urls)
+            novas = [u for u in extras if u not in set(urls)][:faltam]
+            if novas:
+                logger.info(f"Orulo: adicionando {len(novas)} imagem(ns) de outras secoes")
+            urls = self._deduplicar_urls_imagem(urls + novas)
 
         if not urls:
             og = self._meta(html, "og:image")
