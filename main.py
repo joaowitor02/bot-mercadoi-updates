@@ -72,6 +72,11 @@ def _usar_wordpress_xmlrpc(config: dict) -> bool:
     )
 
 
+def _forcar_fluxo_browser_mercadoi(config: dict) -> bool:
+    """Mantem o fluxo historico pelo formulario real do Mercadoi por padrao."""
+    return bool(config.get("forcar_fluxo_browser_mercadoi", True))
+
+
 # ---------------------------------------------------------------------------
 # Validação dos dados extraídos pela IA
 # ---------------------------------------------------------------------------
@@ -439,14 +444,15 @@ async def _publicar_com_retry(
         dados["_forcar_rascunho"] = True
     resultado = None
 
-    # O XML-RPC nao clica no formulario do Mercadoi: ele cria posts e tenta
-    # traduzir campos para taxonomias/metas. Para Orulo, precisamos do fluxo
-    # via navegador para marcar caracteristicas, selecionar corretor e anexar
-    # imagens mesmo quando o usuario WordPress nao tem upload_files.
-    usar_browser_mercadoi = dados.get("_fonte") == "orulo"
+    # O XML-RPC/REST nao clica no formulario real do Mercadoi: ele cria posts e
+    # tenta traduzir campos para taxonomias/metas. Quando o usuario WordPress
+    # nao tem upload_files ou alguma taxonomia e recusada, imagens e
+    # caracteristicas quebram. Por seguranca, o fluxo historico via navegador
+    # fica como padrao para todas as fontes.
+    usar_browser_mercadoi = _forcar_fluxo_browser_mercadoi(config) or dados.get("_fonte") == "orulo"
 
     if usar_browser_mercadoi:
-        logger.info(f"[{execution_id}] Usando Playwright Mercadoi (fluxo Orulo)")
+        logger.info(f"[{execution_id}] Usando Playwright Mercadoi (fluxo formulario)")
         async with MercadoiDriver(
             config["mercadoi_url"],
             config.get("mercadoi_profile_path", r"C:\chrome_bot_mercadoi"),
@@ -875,9 +881,10 @@ async def executar_ciclo(config: dict):
         return 0
 
     tem_orulo_pendente = any(orulo_url_valida(normalizar_orulo_url(row["url_instagram"])) for row in pendentes)
+    tem_browser_pendente = _forcar_fluxo_browser_mercadoi(config) or tem_orulo_pendente
 
     if (
-        (tem_orulo_pendente or (not _usar_wordpress_api(config) and not _usar_wordpress_xmlrpc(config)))
+        (tem_browser_pendente or (not _usar_wordpress_api(config) and not _usar_wordpress_xmlrpc(config)))
         and sys.platform == "win32"
         and not await _verificar_chrome()
     ):
@@ -892,7 +899,7 @@ async def executar_ciclo(config: dict):
     # Paralelismo seguro apenas quando não há browser no caminho crítico.
     # Browser DeepSeek ou Playwright para publicação não suportam múltiplas
     # instâncias simultâneas no mesmo Chrome.
-    sem_browser_publicacao = (_usar_wordpress_api(config) or _usar_wordpress_xmlrpc(config)) and not tem_orulo_pendente
+    sem_browser_publicacao = (_usar_wordpress_api(config) or _usar_wordpress_xmlrpc(config)) and not tem_browser_pendente
     modo_api_completo = sem_browser_publicacao and bool(config.get("usar_deepseek_api"))
     if max_workers > 1 and not modo_api_completo:
         logger.warning(
