@@ -712,19 +712,40 @@ class MercadoiDriver:
     async def _marcar_nao_exibir_contato(self, page):
         """
         Marca a opcao 'Nao exibir contato' via JavaScript.
-        Ha 3 radios fave_agent_display_option; o de value='2' ou o ultimo = Nao exibir.
+        O Mercadoi pode renderizar radios/checkboxes com labels; preferimos o
+        controle cujo texto visivel seja "Nao exibir".
         """
         try:
             marcado = await page.evaluate("""
                 () => {
-                    const radios = document.querySelectorAll('input[name="fave_agent_display_option"]');
-                    if (!radios.length) return false;
+                    const norm = (t) => String(t || '').toLowerCase()
+                        .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
+                        .replace(/\\s+/g, ' ').trim();
+                    const principais = Array.from(document.querySelectorAll(
+                        'input[name="fave_agent_display_option"], input[name*="agent_display"]'
+                    ));
+                    const inputs = principais.length ? principais : Array.from(document.querySelectorAll('input[type="radio"], input[type="checkbox"]'));
+                    if (!inputs.length) return false;
                     let alvo = null;
-                    for (const r of radios) {
-                        if (r.value === "2") { alvo = r; break; }
+                    for (const input of inputs) {
+                        const label = input.closest('label') || document.querySelector(`label[for="${input.id}"]`) || input.parentElement;
+                        const texto = norm(label ? label.innerText || label.textContent : '');
+                        if (texto.includes('nao exibir') || texto.includes('não exibir')) {
+                            alvo = input;
+                            break;
+                        }
                     }
-                    if (!alvo) alvo = radios[radios.length - 1];
+                    if (!alvo && principais.length) alvo = principais.find(r => String(r.value) === "2") || principais[principais.length - 1];
+                    if (!alvo) return false;
+                    const nome = alvo.name;
+                    if (nome) {
+                        inputs.filter(i => i.name === nome && i !== alvo).forEach(i => {
+                            if (i.type === 'checkbox' || i.type === 'radio') i.checked = false;
+                        });
+                    }
                     alvo.checked = true;
+                    alvo.click();
+                    alvo.dispatchEvent(new Event('input', { bubbles: true }));
                     alvo.dispatchEvent(new Event('change', { bubbles: true }));
                     return true;
                 }
@@ -1325,23 +1346,39 @@ class MercadoiDriver:
                         .trim();
 
                     const controles = 'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), textarea, select';
+                    const visivel = (el) => !!(el && (el.offsetWidth || el.offsetHeight || el.getClientRects().length));
                     const acharCampo = (rotulo) => {
                         const alvo = norm(rotulo);
+                        const porFor = (label) => {
+                            const id = label.getAttribute('for');
+                            return id ? document.getElementById(id) : null;
+                        };
+                        const campoProximo = (label) => {
+                            const direto = porFor(label);
+                            if (direto && direto.matches(controles) && visivel(direto)) return direto;
+                            const candidatos = [];
+                            let raiz = label.parentElement;
+                            for (let i = 0; i < 5 && raiz; i++, raiz = raiz.parentElement) {
+                                candidatos.push(...Array.from(raiz.querySelectorAll(controles)).filter(visivel));
+                                const depois = Array.from(raiz.querySelectorAll(controles)).filter(c =>
+                                    visivel(c) && !!(label.compareDocumentPosition(c) & Node.DOCUMENT_POSITION_FOLLOWING)
+                                );
+                                if (depois.length) return depois[0];
+                            }
+                            return candidatos[0] || null;
+                        };
                         const labels = Array.from(document.querySelectorAll('label, .control-label, .form-label'));
                         for (const label of labels) {
                             const texto = norm(label.innerText || label.textContent || '');
                             if (!texto || !(texto === alvo || texto.includes(alvo) || alvo.includes(texto))) continue;
-                            let raiz = label;
-                            for (let i = 0; i < 5 && raiz; i++, raiz = raiz.parentElement) {
-                                const campo = raiz.querySelector(controles);
-                                if (campo) return campo;
-                            }
+                            const campo = campoProximo(label);
+                            if (campo) return campo;
                         }
                         const campos = Array.from(document.querySelectorAll(controles));
                         return campos.find(c => {
                             const ph = norm(c.getAttribute('placeholder') || '');
                             const name = norm(c.getAttribute('name') || c.id || '');
-                            return ph.includes(alvo) || alvo.includes(ph) || name.includes(alvo);
+                            return (ph && (ph.includes(alvo) || alvo.includes(ph))) || (name && name.includes(alvo));
                         }) || null;
                     };
 
@@ -1369,11 +1406,10 @@ class MercadoiDriver:
                             jq.val(melhor.value).trigger('change');
                             if (jq.data('selectpicker')) jq.selectpicker('refresh');
                             if (jq.data('select2')) jq.trigger('change.select2');
-                        } else {
-                            select.value = melhor.value;
-                            select.dispatchEvent(new Event('input', {bubbles: true}));
-                            select.dispatchEvent(new Event('change', {bubbles: true}));
                         }
+                        select.value = melhor.value;
+                        select.dispatchEvent(new Event('input', {bubbles: true}));
+                        select.dispatchEvent(new Event('change', {bubbles: true}));
                         return opTexto(melhor);
                     };
 

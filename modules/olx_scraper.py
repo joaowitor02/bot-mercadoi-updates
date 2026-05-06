@@ -8,6 +8,7 @@ import re
 import os
 import asyncio
 import html as html_lib
+import unicodedata
 import httpx
 from modules.logger import Logger
 from modules.property_types import normalizar_tipo_imovel
@@ -99,6 +100,149 @@ def _texto_limpo(valor) -> str:
     texto = re.sub(r"[ \t]+", " ", texto)
     texto = re.sub(r"\n\s*\n\s*\n+", "\n\n", texto)
     return texto.strip()
+
+
+def _norm_texto(valor: str) -> str:
+    texto = unicodedata.normalize("NFD", str(valor or "").lower())
+    texto = "".join(c for c in texto if unicodedata.category(c) != "Mn")
+    texto = re.sub(r"[^a-z0-9]+", " ", texto)
+    return re.sub(r"\s+", " ", texto).strip()
+
+
+def _primeiro_numero(texto: str, padroes: list[str]) -> str:
+    for padrao in padroes:
+        m = re.search(padrao, texto, re.IGNORECASE)
+        if m:
+            return re.sub(r"\D", "", m.group(1))
+    return ""
+
+
+def _primeiro_valor_monetario(texto: str, padroes: list[str]) -> str:
+    for padrao in padroes:
+        m = re.search(padrao, texto, re.IGNORECASE)
+        if m:
+            return _limpar_preco(m.group(1))
+    return ""
+
+
+def _extrair_proximidades(texto: str) -> str:
+    padroes = [
+        r"(?:proximo|próximo|perto)\s+(?:a|de|do|da|dos|das)\s+([^\n.]{8,120})",
+        r"(?:facil acesso|fácil acesso)\s+(?:a|para)\s+([^\n.]{8,120})",
+        r"(?:comercios|comércios|servicos|serviços|escolas|farmacias|farmácias|supermercados)[^\n.]{0,120}",
+    ]
+    for padrao in padroes:
+        m = re.search(padrao, texto, re.IGNORECASE)
+        if m:
+            trecho = m.group(1) if m.lastindex else m.group(0)
+            return re.sub(r"\s+", " ", trecho).strip(" .,-")
+    return ""
+
+
+def _adicionar_caracteristica(features: list, nome: str):
+    if nome and nome not in features:
+        features.append(nome)
+
+
+def _enriquecer_por_texto(dados: dict) -> dict:
+    texto = "\n".join([
+        str(dados.get("titulo", "")),
+        str(dados.get("descricao_util", "")),
+        " ".join(str(c) for c in (dados.get("caracteristicas") or [])),
+    ])
+    n = _norm_texto(texto)
+    features = list(dados.get("caracteristicas") or [])
+
+    if not dados.get("suites"):
+        dados["suites"] = _primeiro_numero(texto, [
+            r"(\d+)\s*su[ií]tes?",
+            r"sendo\s+(\d+)\s*su[ií]tes?",
+        ])
+    if not dados.get("banheiros"):
+        dados["banheiros"] = _primeiro_numero(texto, [r"(\d+)\s*banheiros?"])
+    if not dados.get("vagas"):
+        dados["vagas"] = _primeiro_numero(texto, [r"(\d+)\s*vagas?"])
+    if not dados.get("condominio"):
+        dados["condominio"] = _primeiro_valor_monetario(texto, [
+            r"condom[ií]nio\s*(?:de|:|-)?\s*r?\$?\s*([\d\.,]+)",
+            r"cond\.\s*r?\$?\s*([\d\.,]+)",
+        ])
+    if not dados.get("iptu"):
+        dados["iptu"] = _primeiro_valor_monetario(texto, [
+            r"iptu\s*(?:de|:|-)?\s*r?\$?\s*([\d\.,]+)",
+        ])
+    if not dados.get("andar"):
+        if re.search(r"\bt[eé]rreo\b", texto, re.IGNORECASE):
+            dados["andar"] = "Térreo"
+        else:
+            dados["andar"] = _primeiro_numero(texto, [
+                r"(\d+)[ºoªa]?\s*andar",
+                r"andar\s*(\d+)",
+            ])
+    if not dados.get("elevador"):
+        if "sem elevador" in n or "nao tem elevador" in n or "nao possui elevador" in n:
+            dados["elevador"] = "Não"
+        elif "elevador" in n:
+            dados["elevador"] = "Sim"
+    if not dados.get("perto_do_mar"):
+        if "frente mar" in n or "beira mar" in n or "pe na areia" in n:
+            dados["perto_do_mar"] = "Frente para o mar"
+        elif "quadra do mar" in n:
+            dados["perto_do_mar"] = "Quadra do mar"
+        elif re.search(r"\b\d+\s*(?:m|metros)\s+do\s+mar\b", texto, re.IGNORECASE) or "perto da praia" in n:
+            dados["perto_do_mar"] = "Próximo ao mar"
+    if not dados.get("mobiliado"):
+        if "semi mobiliado" in n or "semi-mobiliado" in n:
+            dados["mobiliado"] = "Semi-mobiliado"
+        elif "sem mobilia" in n or "sem moveis" in n:
+            dados["mobiliado"] = "Sem mobília"
+        elif "mobiliado" in n or "moveis planejados" in n or "projetados" in n:
+            dados["mobiliado"] = "Mobiliado"
+    if not dados.get("escriturado") and ("escritura" in n or "escriturado" in n):
+        dados["escriturado"] = "Sim"
+    if not dados.get("aceita_financiamento"):
+        if "nao aceita financiamento" in n:
+            dados["aceita_financiamento"] = "Não"
+        elif "aceita financiamento" in n or "financiavel" in n or "financiável" in texto.lower():
+            dados["aceita_financiamento"] = "Sim"
+    if not dados.get("aceita_permuta"):
+        if "nao aceita permuta" in n:
+            dados["aceita_permuta"] = "Não"
+        elif "aceita permuta" in n:
+            dados["aceita_permuta"] = "Sim"
+    if not dados.get("posicao_solar"):
+        for chave, valor in [
+            ("nascente", "Leste"), ("poente", "Oeste"), ("nordeste", "Nordeste"),
+            ("sudeste", "Sudeste"), ("sudoeste", "Sudoeste"), ("noroeste", "Noroeste"),
+            ("sol da manha", "Sol da manhã"), ("sol da tarde", "Sol da tarde"),
+        ]:
+            if chave in n:
+                dados["posicao_solar"] = valor
+                break
+    if not dados.get("proximidades"):
+        dados["proximidades"] = _extrair_proximidades(texto)
+
+    for chave, nome in [
+        ("ar condicionado", "Ar Condicionado"),
+        ("varanda gourmet", "Varanda gourmet"),
+        ("varanda", "Varanda"),
+        ("area de servico", "Área de serviço"),
+        ("cozinha americana", "Cozinha americana"),
+        ("cozinha gourmet", "Cozinha Gourmet"),
+        ("moveis planejados", "Projetados"),
+        ("projetados", "Projetados"),
+        ("piscina", "Piscina adulto"),
+        ("churrasqueira", "Churrasqueira"),
+        ("academia", "Academia"),
+        ("salao de festas", "Salão de festas / SUM"),
+        ("playground", "Playground"),
+        ("portaria 24", "Portaria 24h"),
+        ("aceita pet", "Aceita animais"),
+    ]:
+        if chave in n:
+            _adicionar_caracteristica(features, nome)
+    dados["caracteristicas"] = features
+    return dados
 
 
 def _json_string(valor: str) -> str:
@@ -295,8 +439,20 @@ def _montar_dados_analytics(data: dict, url: str, imagens_urls: list) -> dict:
         "area_terreno":    "",
         "ano_construcao":  "",
         "condominio":      condominio,
+        "iptu":            "",
+        "taxas":           "",
+        "perto_do_mar":    "",
+        "posicao_solar":   "",
+        "posicao_predio":  "",
+        "mobiliado":       "",
+        "escriturado":     "",
+        "aceita_permuta":  "",
+        "aceita_airbnb":   "",
+        "aceita_financiamento": "",
+        "proximidades":    "",
         "caracteristicas": features,
     }
+    dados = _enriquecer_por_texto(dados)
     if not dados["descricao_util"] or dados["descricao_util"].lower() == titulo.lower():
         dados["descricao_util"] = _montar_descricao_fallback(dados)
     return dados, imagens_urls
@@ -528,8 +684,20 @@ def _montar_dados(ad: dict, url: str) -> dict:
         "area_terreno":    "",
         "ano_construcao":  "",
         "condominio":      "",
+        "iptu":            "",
+        "taxas":           "",
+        "perto_do_mar":    "",
+        "posicao_solar":   "",
+        "posicao_predio":  "",
+        "mobiliado":       "",
+        "escriturado":     "",
+        "aceita_permuta":  "",
+        "aceita_airbnb":   "",
+        "aceita_financiamento": "",
+        "proximidades":    "",
         "caracteristicas": [],
     }
+    dados = _enriquecer_por_texto(dados)
     if not dados["descricao_util"] or dados["descricao_util"].lower() == titulo.lower():
         dados["descricao_util"] = _montar_descricao_fallback(dados)
     return dados, imagens_urls
