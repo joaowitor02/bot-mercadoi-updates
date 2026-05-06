@@ -1732,6 +1732,18 @@ class MercadoiDriver:
                     return opcao
             return valor.strip()
 
+        def andar(valor: str) -> str:
+            n = normalizar(valor)
+            if not n:
+                return ""
+            if "terreo" in n or "terrco" in n or "ground" in n or n == "0":
+                return "Terreo"
+            # extrai o primeiro número inteiro encontrado (ex: "3o andar" → "3")
+            m = re.search(r"\b(\d{1,3})\b", valor)
+            if m:
+                return m.group(1)
+            return ""
+
         cond_taxas = []
         if _s("condominio"):
             cond_taxas.append(f"Condomínio: {_s('condominio')}")
@@ -1743,7 +1755,7 @@ class MercadoiDriver:
         return {
             "selects": {
                 "Estágio do Imovel": estagio(_s("estagio_imovel")),
-                "Andar": _s("andar"),
+                "Andar": andar(_s("andar")),
                 "Tem elevador?": sim_nao(_s("elevador")),
                 "Posição Solar": posicao_solar(_s("posicao_solar")),
                 "Perto do mar?": perto_mar(_s("perto_do_mar")),
