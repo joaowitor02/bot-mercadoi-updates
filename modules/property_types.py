@@ -19,9 +19,22 @@ def normalizar_tipos_imovel(*partes: str) -> list[str]:
     tipos = []
     tem_casa = bool(re.search(r"\b(casa|casas|sobrado|sobrados)\b", texto))
     tem_condominio = "condominio" in texto or "condominium" in texto
-    tem_terreno = bool(re.search(r"\b(terreno|terrenos|lote|lotes)\b", texto))
 
-    # Terreno/lote deve vencer antes de termos genericos do empreendimento.
+    # Terreno/lote: só classifica como Terreno quando o contexto é de venda do
+    # próprio terreno, não quando "terreno" descreve apenas a área da propriedade.
+    # Contextos como "terreno total", "area de terreno", "m² de terreno" NÃO são tipo.
+    tem_terreno_area = bool(re.search(
+        r"\b(area|metros|m2|m²|total|fracao)\s*(de\s*)?(terreno|terrenos)\b"
+        r"|\bterreno\s*(total|de|com|:)\b"
+        r"|\barea\s+do\s+terreno\b",
+        texto,
+    ))
+    tem_terreno = (
+        bool(re.search(r"\b(terreno|terrenos|lote|lotes)\b", texto))
+        and not tem_terreno_area
+        and not tem_casa
+        and not bool(re.search(r"\b(apart|apto|apartamento|cobertura|flat|studio|kitnet)\b", texto))
+    )
     if tem_terreno:
         return ["Terreno"]
 
@@ -62,12 +75,10 @@ def normalizar_tipos_imovel(*partes: str) -> list[str]:
         return ["Apto. Garden"]
     if "studio" in texto or "apart" in texto or "apto" in texto or "kitnet" in texto or "kit net" in texto:
         return ["Apartamento"]
-    if "chacara" in texto:
+    if "chacara" in texto or "sitio" in texto:
         return ["Ch\u00e1cara"]
     if "fazenda" in texto:
         return ["Fazenda"]
-    if "sitio" in texto:
-        return ["S\u00edtio"]
     if re.search(r"\bresidencia(s)?\b", texto):
         return ["Casa"]
     if "sala" in texto or "comercial" in texto or "loja" in texto or "escritorio" in texto:

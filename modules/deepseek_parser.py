@@ -166,9 +166,9 @@ class DeepSeekParser:
             valor = self._extrair_valor(linhas, padrao)
             dados[chave] = valor
 
-        # Fallback de titulo: usar primeira linha da descricao
+        # Fallback de titulo: monta estruturado ou usa primeira linha
         if not dados.get("titulo"):
-            dados["titulo"] = self._gerar_titulo(descricao_bruta)
+            dados["titulo"] = self._gerar_titulo(descricao_bruta, dados)
 
         # Fallback: extrair dados da descricao quando nao vieram nos rotulos
         if not dados.get("quartos"):
@@ -257,15 +257,44 @@ class DeepSeekParser:
                     break
         return ""
 
-    def _gerar_titulo(self, descricao):
+    def _gerar_titulo(self, descricao, dados: dict | None = None):
+        """Gera título a partir dos dados estruturados ou da primeira linha da descrição."""
+        # Título estruturado: monta com tipo + quartos + bairro/cidade
+        if dados:
+            tipo = str(dados.get("tipo_imovel") or "").strip()
+            quartos = str(dados.get("quartos") or "").strip()
+            bairro = str(dados.get("bairro_extraido") or "").strip()
+            cidade = str(dados.get("cidade_extraida") or "").strip()
+            area = str(dados.get("area_m2") or "").strip()
+            partes = []
+            if tipo:
+                partes.append(tipo)
+            if quartos and quartos not in ("0", ""):
+                partes.append(f"{quartos} quarto{'s' if quartos != '1' else ''}")
+            if area and area not in ("0", ""):
+                partes.append(f"{area}m²")
+            if bairro:
+                partes.append(bairro)
+            if cidade and cidade.lower() not in (bairro or "").lower():
+                partes.append(cidade)
+            if len(partes) >= 2:
+                return " - ".join(partes)
+
+        # Fallback: extrai da primeira linha da descrição
         if not descricao:
             return ""
         linhas = [l.strip() for l in descricao.split("\n") if l.strip()]
         if not linhas:
             return ""
-        primeira_linha = linhas[0]
-        # Remover aspas do inicio
-        primeira_linha = primeira_linha.strip('"\'')
+        primeira_linha = linhas[0].strip('"\'')
+        # Descarta linhas que parecem frases de call-to-action ou links
+        import re as _re
+        if _re.search(r'(entre em contato|chame|clique|acesse|link|http|@)', primeira_linha, _re.IGNORECASE):
+            for linha in linhas[1:5]:
+                linha = linha.strip('"\'')
+                if len(linha) > 15 and not _re.search(r'(entre em contato|chame|clique|acesse|link|http|@)', linha, _re.IGNORECASE):
+                    primeira_linha = linha
+                    break
         if "." in primeira_linha:
             return primeira_linha.split(".")[0].strip() + "."
         return primeira_linha

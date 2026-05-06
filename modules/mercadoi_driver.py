@@ -1975,6 +1975,12 @@ class MercadoiDriver:
         except Exception:
             logger.warning("Timeout aguardando opções de bairro")
 
+    # Palavras genéricas de início de bairro que não servem como chave de busca parcial
+    _PREFIXOS_BAIRRO_GENERICOS = {
+        "bairro", "jardim", "vila", "parque", "setor", "conjunto", "residencial",
+        "loteamento", "distrito", "zona", "area", "rua", "avenida", "praia",
+    }
+
     async def _selecionar_bairro(self, page, bairro):
         if not bairro:
             return ""
@@ -1983,12 +1989,18 @@ class MercadoiDriver:
         if await self._selecionar_por_texto(page, '#neighborhood', bairro):
             return bairro
 
-        # Tenta apenas a primeira palavra (ex: "Intermares Sul" → "Intermares")
-        primeira_palavra = bairro.split()[0] if bairro.split() else ""
-        if primeira_palavra and primeira_palavra != bairro:
-            if await self._selecionar_por_texto(page, '#neighborhood', primeira_palavra):
-                logger.info(f"Bairro parcial aceito: '{primeira_palavra}' (original: '{bairro}')")
-                return primeira_palavra
+        palavras = bairro.split()
+        # Fallback por palavra mais específica: pula prefixos genéricos do início
+        for i, palavra in enumerate(palavras):
+            if normalizar(palavra) in self._PREFIXOS_BAIRRO_GENERICOS:
+                continue
+            if len(palavra) < 4:
+                continue
+            # Tenta a partir dessa palavra em diante (ex: "Bairro das Indústrias" → "Indústrias")
+            candidato = " ".join(palavras[i:])
+            if candidato != bairro and await self._selecionar_por_texto(page, '#neighborhood', candidato):
+                logger.info(f"Bairro parcial aceito: '{candidato}' (original: '{bairro}')")
+                return candidato
 
         logger.info(f"Bairro '{bairro}' nao encontrado no select — campo deixado em branco")
         return ""

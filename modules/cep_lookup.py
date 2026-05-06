@@ -94,18 +94,9 @@ def _score(item: dict, dados: dict, logradouro: str) -> int:
     return score
 
 
-async def buscar_cep(dados: dict) -> str:
-    cep = _cep_explicito(dados)
-    if cep:
-        return cep
-
-    endereco = str(dados.get("endereco") or dados.get("rua") or "").strip()
-    cidade = str(dados.get("cidade_extraida") or "").strip()
-    uf = _uf(dados)
-    logradouro = _logradouro(endereco)
+async def _consultar_viacep(uf: str, cidade: str, logradouro: str, dados: dict) -> str:
     if not (uf and cidade and len(logradouro) >= 3):
         return ""
-
     url = f"https://viacep.com.br/ws/{quote(uf)}/{quote(cidade)}/{quote(logradouro)}/json/"
     try:
         async with httpx.AsyncClient(timeout=4, follow_redirects=True) as client:
@@ -121,5 +112,37 @@ async def buscar_cep(dados: dict) -> str:
             logger.info(f"CEP encontrado: {cep} ({itens[0].get('logradouro', '')})")
         return cep
     except Exception as e:
-        logger.debug(f"Busca de CEP falhou: {e}")
+        logger.debug(f"Busca de CEP falhou ({logradouro}): {e}")
         return ""
+
+
+async def buscar_cep(dados: dict) -> str:
+    cep = _cep_explicito(dados)
+    if cep:
+        return cep
+
+    endereco = str(dados.get("endereco") or dados.get("rua") or "").strip()
+    cidade = str(dados.get("cidade_extraida") or "").strip()
+    uf = _uf(dados)
+    logradouro = _logradouro(endereco)
+
+    # 1ª tentativa: pelo logradouro (endereço da rua)
+    if logradouro:
+        cep = await _consultar_viacep(uf, cidade, logradouro, dados)
+        if cep:
+            return cep
+
+    # 2ª tentativa: pelo nome do empreendimento/condomínio quando endereço ausente
+    empreendimento = str(
+        dados.get("_empreendimento_resumo") or
+        dados.get("titulo") or ""
+    ).strip()
+    # Extrai só o nome principal (antes de vírgula, traço ou parêntese)
+    empreendimento = re.split(r"[,\-(]", empreendimento)[0].strip()
+    if empreendimento and empreendimento != logradouro and len(empreendimento) >= 5:
+        cep = await _consultar_viacep(uf, cidade, empreendimento, dados)
+        if cep:
+            logger.info(f"CEP via nome do empreendimento: {empreendimento}")
+            return cep
+
+    return ""

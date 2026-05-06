@@ -1142,8 +1142,15 @@ async def logs_live(ultimas: int = 80):
     # Lê sempre do arquivo de log — o FileHandler faz flush() após cada linha,
     # então o arquivo está sempre atualizado. Isso é mais confiável do que o
     # stdout piped no Windows, que sofre de block-buffering mesmo com PYTHONUNBUFFERED.
-    hoje = date.today().strftime("%Y-%m-%d")
-    candidatos = [LOGS_DIR / f"{hoje}.log", BASE_DIR / "logs" / f"{hoje}.log"]
+    from datetime import datetime as _dtl, timezone as _tzl, timedelta as _tdl
+    _br = _tzl(_tdl(hours=-3))
+    hoje = _dtl.now(_br).strftime("%Y-%m-%d")
+    # Inclui também o dia anterior para cobrir logs que cruzaram meia-noite
+    ontem = (_dtl.now(_br) - _tdl(days=1)).strftime("%Y-%m-%d")
+    candidatos = [
+        LOGS_DIR / f"{hoje}.log", BASE_DIR / "logs" / f"{hoje}.log",
+        LOGS_DIR / f"{ontem}.log", BASE_DIR / "logs" / f"{ontem}.log",
+    ]
     for log_file in candidatos:
         if not log_file.exists():
             continue
