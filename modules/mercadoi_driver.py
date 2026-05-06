@@ -363,13 +363,29 @@ class MercadoiDriver:
                 '#prop_size':   dados.get("area_m2",  "").strip(),
             })
 
-            # Seleciona select de elevador (nome sem acento — outros campos via _preencher_detalhes_adicionais)
-            await self._selecionar_batch(page, [
-                ('select[name="tem-elevador"]', dados.get("elevador", "").strip()),
-            ])
-
             # CARACTERISTICAS
             await self._marcar_caracteristicas(page, dados.get("caracteristicas") or [])
+
+            # Seleciona todos os campos de detalhe com seletores CSS exatos do formulário Mercadoi
+            det = self._detalhes_adicionais(dados)
+            dv  = det["selects"]
+            await self._selecionar_batch(page, [
+                # Campos simples (sem [])
+                ('select[name="tem-elevador"]',              dv.get("Tem elevador?", "")),
+                ('select[name="mobiliado"]',                 dv.get("Mobiliado?", "")),
+                ('select[name="escriturado"]',               dv.get("Escriturado?", "")),
+                ('select[name="aceita-airbnb-temporada"]',   dv.get("Aceita Airbnb/Temporada", "")),
+                ('select[name="aceita-permuta"]',            dv.get("Aceita Permuta?", "")),
+                ('select[name="aceita-financiamento"]',      dv.get("Aceita Financiamento?", "")),
+                ('select[name="posic3a7c3a3o-do-imovel"]',  dv.get("Posição Solar", "")),
+                ('select[name="posic3a7c3a3o"]',             dv.get("Posição no Prédio", "")),
+                # Campos com [] (multiple-select com selectpicker)
+                ('select[name="estagio-da-obra-imc3b3vel[]"]', dv.get("Estágio do Imovel", "")),
+                ('select[name="no-tc3a9rreo[]"]',           dv.get("Andar", "")),
+                ('select[name="perto-do-mar[]"]',            dv.get("Perto do mar?", "")),
+            ])
+
+            # Campos de texto livre (área, condomínio, ano, proximidades)
             await self._preencher_detalhes_adicionais(page, dados)
 
             # Faz Parceria — sempre "A combinar", com retry por timing de select2
@@ -1479,37 +1495,63 @@ class MercadoiDriver:
             resultado = await page.evaluate("""
                 (selecoes) => {
                     const log = [];
+                    const norm = t => String(t || '').toLowerCase()
+                        .normalize('NFD').replace(/[\\u0300-\\u036f]/g,'')
+                        .replace(/[^a-z0-9]+/g,' ').replace(/\\s+/g,' ').trim();
+
                     for (const [seletor, valorAlvo] of selecoes) {
-                        const sel = document.querySelector(seletor);
+                        // Tenta pelo seletor CSS primeiro; fallback por name exato
+                        let sel = null;
+                        try { sel = document.querySelector(seletor); } catch(_) {}
+                        if (!sel) {
+                            const m = seletor.match(/\\[name="([^"]+)"\\]/);
+                            if (m) sel = Array.from(document.querySelectorAll('select'))
+                                              .find(s => s.name === m[1]);
+                        }
                         if (!sel) continue;
-                        const norm = t => t.toLowerCase()
-                            .normalize('NFD').replace(/[\\u0300-\\u036f]/g,'')
-                            .replace(/\\s+/g,' ').trim();
+
                         const alvo = norm(valorAlvo);
                         let melhor = null;
-                        for (const op of sel.options) {
+                        for (const op of Array.from(sel.options)) {
+                            if (!op.value) continue; // pula placeholders sem valor
                             const t = norm(op.text);
                             const b = t.replace(/^\\d+\\s*[-\\u2013]\\s*/, '');
-                            if (t === alvo || b === alvo || t.includes(alvo) || alvo.includes(b)) {
+                            if (!b || /sim.n.o|nao.sim/i.test(b)) continue; // pula "Sim/Não" combinado
+                            if (t === alvo || b === alvo) { melhor = op; break; }
+                            if (alvo.length > 3 && (t.includes(alvo) || (alvo.includes(b) && b.length > 3))) {
                                 melhor = op; break;
                             }
                         }
-                        if (melhor) {
-                            if (window.jQuery && window.jQuery(sel).data('select2')) {
-                                window.jQuery(sel).val(melhor.value).trigger('change');
-                            } else {
-                                sel.value = melhor.value;
-                                sel.dispatchEvent(new Event('change', {bubbles: true}));
-                                sel.dispatchEvent(new Event('input',  {bubbles: true}));
-                            }
-                            log.push(seletor + '=' + melhor.text);
+                        if (!melhor) continue;
+
+                        // Seleciona no elemento nativo
+                        if (sel.multiple) {
+                            Array.from(sel.options).forEach(o => { o.selected = false; });
                         }
+                        melhor.selected = true;
+                        if (!sel.multiple) sel.value = melhor.value;
+                        sel.dispatchEvent(new Event('input',  {bubbles: true}));
+                        sel.dispatchEvent(new Event('change', {bubbles: true}));
+
+                        // Atualiza plugins JS
+                        if (window.jQuery) {
+                            const jq = window.jQuery(sel);
+                            if (jq.data('selectpicker')) {
+                                try { jq.selectpicker('val', sel.multiple ? [melhor.value] : melhor.value); } catch(_) {}
+                                try { jq.selectpicker('refresh'); } catch(_) {}
+                            } else if (jq.data('select2')) {
+                                jq.val(sel.multiple ? [melhor.value] : melhor.value).trigger('change');
+                            } else {
+                                jq.val(sel.multiple ? [melhor.value] : melhor.value).trigger('change');
+                            }
+                        }
+                        log.push(seletor.replace(/select\\[name="([^"]+)"\\]/, '$1') + '=' + melhor.text.trim());
                     }
                     return log;
                 }
             """, validos)
             if resultado:
-                logger.info(f"Selects em batch: {len(resultado)} selecionados")
+                logger.info(f"Detalhes (batch): {', '.join(resultado)}")
         except Exception as e:
             logger.warning(f"Erro ao selecionar em batch: {e}")
 
@@ -1613,14 +1655,15 @@ class MercadoiDriver:
 
         def estagio(valor: str) -> str:
             n = normalizar(valor)
+            # Valores EXATOS do formulário Mercadoi (incluindo typo "Contrução")
             mapa = [
-                (("breve",), "1- Em breve lançamento"),
-                (("lancamento", "lançamento"), "2- Lançamento"),
-                (("construcao", "construção", "obra"), "3- Em Construção"),
-                (("novo",), "4- Novo"),
-                (("semi novo", "seminovo"), "5- Semi Novo"),
-                (("usado",), "6- Usado"),
-                (("reformado",), "7- Reformado"),
+                (("breve",),                              "1- Em breve lançamento"),
+                (("lancamento", "lançamento"),            "2- Lançamento"),
+                (("construcao", "construção", "contrucao", "obra", "obras"), "3- Em Contrução"),
+                (("novo",),                               "4- Novo"),
+                (("semi novo", "seminovo"),               "5- Semi Novo"),
+                (("usado",),                              "6- Usado"),
+                (("reformado",),                          "7- Reformado"),
             ]
             for chaves, opcao in mapa:
                 if any(c in n for c in chaves):
@@ -1715,10 +1758,11 @@ class MercadoiDriver:
         }
 
     async def _preencher_detalhes_adicionais(self, page, dados: dict):
+        # Apenas campos de texto livre — os selects são tratados por _selecionar_batch
         detalhes = self._detalhes_adicionais(dados)
-        selects = {k: v for k, v in detalhes["selects"].items() if v}
+        selects = {}  # não preenche selects aqui
         inputs  = {k: v for k, v in detalhes["inputs"].items()  if v}
-        if not selects and not inputs:
+        if not inputs:
             return
         try:
             resultado = await page.evaluate("""
