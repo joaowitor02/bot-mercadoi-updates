@@ -57,6 +57,7 @@ REGRAS GERAIS:
 - condominio, iptu e taxas: valores em reais, apenas digitos.
 - area_m2 e area_terreno: area em m2, apenas digitos. Para apartamentos, area_terreno geralmente fica "".
 - endereco: rua e numero se mencionados.
+- cep: CEP se mencionado explicitamente, no formato 00000-000 ou apenas 8 digitos.
 - latitude e longitude: coordenadas somente se estiverem explicitamente presentes.
 - proximidades: lugares/vizinhancas de referencia citados na publicacao.
 - caracteristicas: array JSON em ordem alfabetica, com nomes EXATAMENTE como na lista abaixo.
@@ -99,6 +100,7 @@ Retorne exatamente este JSON preenchido:
   "iptu": "",
   "taxas": "",
   "endereco": "",
+  "cep": "",
   "latitude": "",
   "longitude": "",
   "posicao_solar": "",

@@ -393,6 +393,18 @@ def _extrair_endereco_olx(data: dict, html: str = "") -> str:
     return ""
 
 
+def _extrair_cep_olx(data: dict, html: str = "") -> str:
+    for valor in [
+        _valor_recursivo(data, ("postalCode", "postal_code", "zipcode", "zipCode", "cep")),
+        html,
+    ]:
+        m = re.search(r"\b\d{5}[-\s]?\d{3}\b", str(valor or ""))
+        if m:
+            digits = re.sub(r"\D", "", m.group(0))
+            return f"{digits[:5]}-{digits[5:]}"
+    return ""
+
+
 def _montar_descricao_fallback(dados: dict) -> str:
     titulo = dados.get("titulo", "").strip()
     bairro = dados.get("bairro_extraido", "").strip()
@@ -481,6 +493,7 @@ def _montar_dados_analytics(data: dict, url: str, imagens_urls: list, html: str 
     bairro     = data.get("neighbourhood", "")
     estado     = data.get("state", "")
     endereco   = _extrair_endereco_olx(data, html)
+    cep        = _extrair_cep_olx(data, html)
     quartos    = str(data.get("rooms", ""))
     banheiros  = str(data.get("bathrooms", ""))
     vagas      = str(data.get("garage_spaces", ""))
@@ -508,6 +521,7 @@ def _montar_dados_analytics(data: dict, url: str, imagens_urls: list, html: str 
         "cidade_extraida": cidade,
         "bairro_extraido": bairro,
         "endereco":        endereco,
+        "cep":             cep,
         "url_publicacao":  url,
         "whatsapp_url":    "",
         "instagram_url":   "",
@@ -703,6 +717,7 @@ def _montar_dados(ad: dict, url: str) -> dict:
         ad.get("neighbourhood") or ad.get("district") or ""
     )
     endereco = loc.get("address") or loc.get("street") or ad.get("street") or ""
+    cep = _extrair_cep_olx(ad)
 
     # Características numéricas
     quartos  = _prop(props, "room", "quarto", "bedroom", "dormit")
@@ -753,6 +768,7 @@ def _montar_dados(ad: dict, url: str) -> dict:
         "cidade_extraida": cidade,
         "bairro_extraido": bairro,
         "endereco":        endereco,
+        "cep":             cep,
         "url_publicacao":  url,
         "whatsapp_url":    wa,
         "instagram_url":   "",

@@ -45,6 +45,8 @@ Aceita Permuta?: [Sim, Nao ou vazio]
 Aceita Airbnb/Temporada?: [Sim, Nao ou vazio]
 Aceita Financiamento?: [Sim, Nao ou vazio]
 Proximidades: [lugares/vizinhancas de referencia]
+Endereco: [rua e numero se mencionados; senao vazio]
+CEP: [CEP se mencionado explicitamente; senao vazio]
 Cidade: [nome da cidade]
 Bairro: [nome do bairro]
 

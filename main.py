@@ -21,6 +21,7 @@ from modules.deepseek_client import DeepSeekClient
 from modules.deepseek_parser import DeepSeekParser
 from modules.media_resolver import MediaResolver
 from modules.mercadoi_driver import MercadoiDriver
+from modules.cep_lookup import buscar_cep
 from modules.wordpress_publisher import WordPressPublisher
 from modules.wordpress_xmlrpc_publisher import WordPressXmlRpcPublisher
 from modules.status_writer import StatusWriter
@@ -440,6 +441,12 @@ async def _publicar_com_retry(
     execution_id: str,
 ) -> dict | None:
     """Publica/salva um imovel usando o destino configurado."""
+    if not dados.get("cep") and config.get("preencher_cep_auto", True):
+        cep = await buscar_cep(dados)
+        if cep:
+            dados["cep"] = cep
+            logger.info(f"[{execution_id}] CEP preenchido automaticamente: {cep}")
+
     if SALVAR_TUDO_COMO_RASCUNHO:
         dados["_forcar_rascunho"] = True
     resultado = None

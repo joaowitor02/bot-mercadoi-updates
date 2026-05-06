@@ -798,6 +798,8 @@ class MercadoiDriver:
                 logger.warning("Opcao de contato do corretor nao encontrada")
 
             selecionou = False
+            if await self._selecionar_corretor_por_clique(page, nome_corretor):
+                selecionou = True
             if agent_id and await self._selecionar_corretor_por_id(page, str(agent_id).strip()):
                 selecionou = True
             if not selecionou and await self._selecionar_corretor_por_texto(page, nome_corretor):
@@ -854,6 +856,87 @@ class MercadoiDriver:
             await page.wait_for_timeout(300)
             logger.info(f"Corretor selecionado por ID: {selecionado.get('texto') or agent_id}")
             return True
+        return False
+
+    async def _selecionar_corretor_por_clique(self, page, nome_corretor: str) -> bool:
+        """Usa cliques reais no Select2 do campo de corretor."""
+        try:
+            aberto = await page.evaluate("""
+                () => {
+                    const norm = (t) => String(t || '').toLowerCase()
+                        .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
+                        .replace(/\\s+/g, ' ').trim();
+                    const selects = Array.from(document.querySelectorAll('select, input[type="hidden"]'))
+                        .filter(el => /(fave[_-]?agents?|agent)/i.test(`${el.name || ''} ${el.id || ''}`));
+                    const sel = selects.find(s => !s.disabled) || selects[0];
+                    if (!sel) return false;
+                    try { sel.scrollIntoView({block: 'center'}); } catch (_) {}
+
+                    let container = null;
+                    if (sel.id) {
+                        container = document.querySelector(`#select2-${CSS.escape(sel.id)}-container`);
+                        if (container) container = container.closest('.select2-container');
+                    }
+                    if (!container) {
+                        container = sel.nextElementSibling && sel.nextElementSibling.classList.contains('select2-container')
+                            ? sel.nextElementSibling
+                            : null;
+                    }
+                    if (window.jQuery && window.jQuery(sel).data('select2')) {
+                        window.jQuery(sel).select2('open');
+                        return true;
+                    }
+                    const selection = container && container.querySelector('.select2-selection');
+                    if (!selection) return false;
+                    selection.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+                    selection.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+                    selection.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                    return true;
+                }
+            """)
+            if not aberto:
+                return False
+
+            await page.wait_for_timeout(500)
+            busca = page.locator('.select2-container--open .select2-search__field').last
+            if not await busca.count():
+                busca = page.locator('.select2-search__field').last
+            if await busca.count():
+                await busca.fill(nome_corretor, timeout=3000)
+                await page.wait_for_timeout(900)
+
+            variantes = [
+                nome_corretor,
+                re.sub(r"^augustin", "agustin", nome_corretor, flags=re.IGNORECASE),
+                re.sub(r"^agustin", "augustin", nome_corretor, flags=re.IGNORECASE),
+            ]
+            for nome in dict.fromkeys(v for v in variantes if v):
+                opcao = page.locator(
+                    '.select2-container--open .select2-results__option:not(.loading-results):not(.select2-results__message)'
+                ).filter(has_text=re.compile(re.escape(nome), re.IGNORECASE)).first
+                try:
+                    if await opcao.count():
+                        await opcao.click(timeout=3000)
+                        await page.wait_for_timeout(600)
+                        await page.keyboard.press("Escape")
+                        if await self._corretor_selecionado(page, nome_corretor):
+                            logger.info(f"Corretor selecionado por clique: {nome_corretor}")
+                            return True
+                except Exception:
+                    continue
+
+            if await busca.count():
+                try:
+                    await busca.press("Enter", timeout=2000)
+                    await page.wait_for_timeout(600)
+                    await page.keyboard.press("Escape")
+                    if await self._corretor_selecionado(page, nome_corretor):
+                        logger.info(f"Corretor selecionado por Enter: {nome_corretor}")
+                        return True
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.debug(f"Clique no corretor falhou: {e}")
         return False
 
     async def _selecionar_corretor_por_texto(self, page, nome_corretor: str) -> bool:
@@ -1128,12 +1211,14 @@ class MercadoiDriver:
                         /fave_agents?/i.test(i.name) && String(i.value) === String(valor)
                     );
                     if (!temAgente) {
-                        const hidden = document.createElement('input');
-                        hidden.type = 'hidden';
-                        hidden.name = 'fave_agents[]';
-                        hidden.value = valor;
-                        hidden.setAttribute('data-bot-agent-hidden', '1');
-                        $form[0].appendChild(hidden);
+                        for (const nomeCampo of ['fave_agents', 'fave_agents[]']) {
+                            const hidden = document.createElement('input');
+                            hidden.type = 'hidden';
+                            hidden.name = nomeCampo;
+                            hidden.value = valor;
+                            hidden.setAttribute('data-bot-agent-hidden', '1');
+                            $form[0].appendChild(hidden);
+                        }
                     }
                 }
                 const serializado = $form && $form.length
@@ -1219,13 +1304,14 @@ class MercadoiDriver:
 
     async def _preencher_endereco_mapa(self, page, dados: dict):
         endereco = str(dados.get("endereco", "") or dados.get("rua", "") or "").strip()
+        cep = str(dados.get("cep", "") or dados.get("codigo_postal", "") or "").strip()
         latitude = str(dados.get("latitude", "") or dados.get("lat", "") or "").strip()
         longitude = str(dados.get("longitude", "") or dados.get("lng", "") or dados.get("lon", "") or "").strip()
-        if not endereco and not latitude and not longitude:
+        if not endereco and not cep and not latitude and not longitude:
             return
         try:
             resultado = await page.evaluate("""
-                ({endereco, latitude, longitude}) => {
+                ({endereco, cep, latitude, longitude}) => {
                     const visivel = (el) => !!(el && (el.offsetWidth || el.offsetHeight || el.getClientRects().length));
                     const preencher = (seletores, valor) => {
                         if (!valor) return false;
@@ -1254,6 +1340,20 @@ class MercadoiDriver:
                         'input[name="property_address"]',
                         'input[name*="map"][name*="address"]'
                     ], endereco);
+                    ok.cep = preencher([
+                        '#property_zip',
+                        '#fave_property_zip',
+                        '#prop_zip',
+                        '#zip',
+                        'input[name="property_zip"]',
+                        'input[name="fave_property_zip"]',
+                        'input[name="prop_zip"]',
+                        'input[name="zip"]',
+                        'input[name*="cep"]',
+                        'input[name*="postal"]',
+                        'input[name*="zip"]',
+                        'input[placeholder*="CEP"]'
+                    ], cep);
                     ok.latitude = preencher([
                         '#latitude',
                         '#property_map_lat',
@@ -1278,7 +1378,7 @@ class MercadoiDriver:
                     ], longitude);
                     return ok;
                 }
-            """, {"endereco": endereco, "latitude": latitude, "longitude": longitude})
+            """, {"endereco": endereco, "cep": cep, "latitude": latitude, "longitude": longitude})
             marcados = [k for k, ok in (resultado or {}).items() if ok]
             if marcados:
                 logger.info(f"Endereco/mapa preenchido: {', '.join(marcados)}")

@@ -34,6 +34,7 @@ ROTULOS = {
     "iptu": r"IPTU\s*:",
     "taxas": r"Taxas?\s*:",
     "endereco": r"[Ee]ndere[çc]o\s*:|[Rr]ua\s*:",
+    "cep": r"CEP\s*:|C[oÃ³]digo\s+postal\s*:",
     "latitude": r"Latitude\s*:|Lat\s*:",
     "longitude": r"Longitude\s*:|Lng\s*:|Lon\s*:",
     "posicao_solar": r"Posi[çc][aã]o\s+[Ss]olar\s*:",

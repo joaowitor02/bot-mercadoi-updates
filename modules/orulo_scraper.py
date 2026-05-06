@@ -548,6 +548,7 @@ class OruloScraper:
         resumo_empreendimento = self._resumo_empreendimento(html, caracteristicas)
         descricao = "\n\n".join(p for p in [og_desc, resumo_empreendimento, resumo] if p).strip()
         latitude, longitude = self._extrair_coordenadas(html)
+        cep = self._extrair_cep(html)
 
         dados = {
             "titulo": titulo,
@@ -568,6 +569,7 @@ class OruloScraper:
             "elevador": "",
             "estagio_imovel": self._extrair_estagio(html),
             "endereco": endereco,
+            "cep": cep,
             "latitude": latitude,
             "longitude": longitude,
             "bairro_extraido": bairro,
@@ -730,6 +732,13 @@ class OruloScraper:
             if -35 <= lat_f <= 10 and -75 <= lng_f <= -30:
                 return lat, lng
         return "", ""
+
+    def _extrair_cep(self, html: str) -> str:
+        m = re.search(r"\b\d{5}[-\s]?\d{3}\b", html or "")
+        if not m:
+            return ""
+        digits = re.sub(r"\D", "", m.group(0))
+        return f"{digits[:5]}-{digits[5:]}"
 
     def _resumo_tipologias(self, tipologias: list, html: str) -> str:
         if tipologias:
