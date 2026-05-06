@@ -651,7 +651,25 @@ def _bot_em_execucao() -> bool:
             pass
     if _bot_task is not None and not _bot_task.done():
         return True
-    return bool(_bot_rodando)
+    if _bot_rodando:
+        return True
+    # Detecta main.py rodando via systemd ou outro lançador externo
+    try:
+        import psutil
+        for p in psutil.process_iter(["cmdline"]):
+            cmd = " ".join(p.info.get("cmdline") or [])
+            if "main.py" in cmd and "panel.py" not in cmd:
+                return True
+    except Exception:
+        try:
+            out = subprocess.check_output(
+                ["pgrep", "-f", "main.py"], stderr=subprocess.DEVNULL
+            )
+            if out.strip():
+                return True
+        except Exception:
+            pass
+    return False
 
 
 def _log_painel(msg: str) -> None:

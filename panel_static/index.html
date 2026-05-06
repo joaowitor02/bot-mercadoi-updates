@@ -289,13 +289,11 @@
     </div>
 
     <!-- Log ao vivo -->
-    <div id="log-card" class="hidden bg-slate-900 rounded-2xl border border-slate-700/60 fade-in overflow-hidden">
+    <div id="log-card" class="bg-slate-900 rounded-2xl border border-slate-700/60 fade-in overflow-hidden">
       <div class="px-5 py-3 border-b border-slate-700/60 flex items-center gap-2.5">
-        <span class="w-2 h-2 rounded-full bg-emerald-400 pulse-dot shrink-0"></span>
+        <span id="log-dot" class="w-2 h-2 rounded-full bg-slate-600 shrink-0"></span>
         <span class="text-sm font-semibold text-slate-200">Log em tempo real</span>
         <span id="log-last-update" class="ml-auto text-xs text-slate-500">—</span>
-        <button onclick="document.getElementById('log-card').classList.add('hidden')"
-          class="text-slate-600 hover:text-slate-400 ml-2 transition-colors text-sm leading-none">&times;</button>
       </div>
       <div id="log-content" class="p-4 h-52 overflow-y-auto">
         <p class="log-line text-slate-500">Aguardando saída do bot...</p>
@@ -1475,13 +1473,14 @@ async function atualizarStatus() {
     }
 
     const btnPausar = document.getElementById('btn-pausar');
+    const logDot = document.getElementById('log-dot');
     if (_botRodando) {
       dot.className   = 'w-2 h-2 rounded-full bg-emerald-500 pulse-dot shrink-0';
       txt.textContent = _watchAtivo ? 'Watch ativo' : 'Rodando';
       btn.disabled    = true;
       btnTxt.textContent = 'Em execução...';
       btnPausar.style.display = 'flex';
-      logCard.classList.remove('hidden');
+      if (logDot) logDot.className = 'w-2 h-2 rounded-full bg-emerald-400 pulse-dot shrink-0';
       await atualizarLogs();
     } else {
       dot.className   = 'w-2 h-2 rounded-full bg-slate-300 shrink-0';
@@ -1489,9 +1488,9 @@ async function atualizarStatus() {
       btn.disabled    = false;
       btnTxt.textContent = 'Processar Agora';
       btnPausar.style.display = 'none';
-      // Bot acabou de terminar: faz uma última leitura do log e atualiza a tabela de execuções
+      if (logDot) logDot.className = 'w-2 h-2 rounded-full bg-slate-600 shrink-0';
+      // Bot acabou de terminar: atualiza log e tabela de execuções
       if (_wasRunning) {
-        logCard.classList.remove('hidden');
         await atualizarLogs();
         await atualizarPainel({ status: false, logs: false });
       }
@@ -2740,18 +2739,14 @@ async function init() {
     await atualizarChromeStatus();
   }, 8000);
 
-  // Execuções, stats e fila: a cada 10s independente de o bot estar rodando.
-  // Antes só atualizava quando !_botRodando — em Watch Mode nunca atualizava.
+  // Execuções, stats e fila: a cada 5s para acompanhar progressão em tempo real
   setInterval(async () => {
     await carregarExecucoes();
     if (_mainTab === 'fila') await carregarFila();
-  }, 10000);
+  }, 5000);
 
-  // Log ao vivo: a cada 2s se o card estiver visível
-  setInterval(async () => {
-    const logCard = document.getElementById('log-card');
-    if (logCard && !logCard.classList.contains('hidden')) await atualizarLogs();
-  }, 2000);
+  // Log ao vivo: a cada 2s sempre (card permanente)
+  setInterval(atualizarLogs, 2000);
 
   setInterval(carregarPendentes, 15000);
   setInterval(atualizarLimite, 15000);
