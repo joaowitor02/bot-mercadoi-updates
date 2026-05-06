@@ -316,6 +316,83 @@ def _extrair_descricao_html(html: str) -> str:
     return ""
 
 
+def _valor_recursivo(obj, nomes: tuple[str, ...], profundidade: int = 0) -> str:
+    if profundidade > 8:
+        return ""
+    nomes_norm = {_norm_texto(n) for n in nomes}
+    if isinstance(obj, dict):
+        for key, val in obj.items():
+            key_norm = _norm_texto(key)
+            if key_norm in nomes_norm or any(n in key_norm for n in nomes_norm):
+                if isinstance(val, (str, int, float)):
+                    texto = _texto_limpo(val)
+                    if texto:
+                        return texto
+                if isinstance(val, dict):
+                    for subkey in ("label", "value", "name", "text"):
+                        texto = _texto_limpo(val.get(subkey, ""))
+                        if texto:
+                            return texto
+            achado = _valor_recursivo(val, nomes, profundidade + 1)
+            if achado:
+                return achado
+    elif isinstance(obj, list):
+        for item in obj[:20]:
+            achado = _valor_recursivo(item, nomes, profundidade + 1)
+            if achado:
+                return achado
+    return ""
+
+
+def _endereco_plausivel(texto: str) -> str:
+    texto = _texto_limpo(texto)
+    if not texto:
+        return ""
+    texto = re.sub(r"\s*,\s*", ", ", texto).strip(" ,.-")
+    norm = _norm_texto(texto)
+    if not norm or norm in {"pb", "paraiba", "brasil"}:
+        return ""
+    if len(texto) <= 3:
+        return ""
+    # Evita jogar apenas bairro/cidade/estado no campo de rua.
+    if not re.search(
+        r"\b(rua|avenida|av\.?|travessa|rodovia|estrada|alameda|pra[çc]a|loteamento|residencial|condom[ií]nio)\b",
+        texto,
+        re.IGNORECASE,
+    ) and not re.search(r"\d", texto):
+        return ""
+    return texto
+
+
+def _extrair_endereco_olx(data: dict, html: str = "") -> str:
+    candidatos = [
+        _valor_recursivo(data, (
+            "streetAddress", "street_address", "address", "street", "logradouro",
+            "addressLine", "address_line", "fullAddress", "full_address",
+            "propertyAddress", "mapAddress",
+        )),
+    ]
+
+    if html:
+        html_decoded = html_lib.unescape(html)
+        for pattern in [
+            r'"streetAddress"\s*:\s*"([^"]{4,120})"',
+            r'"street_address"\s*:\s*"([^"]{4,120})"',
+            r'"address"\s*:\s*"([^"]{4,160})"',
+            r'"logradouro"\s*:\s*"([^"]{4,120})"',
+            r'<meta[^>]+(?:property|name)=["\'][^"\']*(?:street|address|logradouro)[^"\']*["\'][^>]+content=["\']([^"\']{4,160})["\']',
+            r'<meta[^>]+content=["\']([^"\']{4,160})["\'][^>]+(?:property|name)=["\'][^"\']*(?:street|address|logradouro)[^"\']*["\']',
+        ]:
+            for m in re.finditer(pattern, html_decoded, flags=re.IGNORECASE):
+                candidatos.append(_json_string(m.group(1)))
+
+    for candidato in candidatos:
+        endereco = _endereco_plausivel(candidato)
+        if endereco:
+            return endereco
+    return ""
+
+
 def _montar_descricao_fallback(dados: dict) -> str:
     titulo = dados.get("titulo", "").strip()
     bairro = dados.get("bairro_extraido", "").strip()
@@ -385,7 +462,7 @@ def _extrair_analytics_json(html: str) -> dict | None:
     return None
 
 
-def _montar_dados_analytics(data: dict, url: str, imagens_urls: list) -> dict:
+def _montar_dados_analytics(data: dict, url: str, imagens_urls: list, html: str = "") -> dict:
     """Monta dados normalizados a partir do JSON analytics do OLX (novo formato)."""
     titulo = data.get("subject", "")
     preco = _limpar_preco(data.get("price", ""))
@@ -403,6 +480,7 @@ def _montar_dados_analytics(data: dict, url: str, imagens_urls: list) -> dict:
     cidade     = data.get("municipality", "")
     bairro     = data.get("neighbourhood", "")
     estado     = data.get("state", "")
+    endereco   = _extrair_endereco_olx(data, html)
     quartos    = str(data.get("rooms", ""))
     banheiros  = str(data.get("bathrooms", ""))
     vagas      = str(data.get("garage_spaces", ""))
@@ -429,7 +507,7 @@ def _montar_dados_analytics(data: dict, url: str, imagens_urls: list) -> dict:
         "area_m2":         area,
         "cidade_extraida": cidade,
         "bairro_extraido": bairro,
-        "endereco":        estado,
+        "endereco":        endereco,
         "url_publicacao":  url,
         "whatsapp_url":    "",
         "instagram_url":   "",
@@ -766,7 +844,7 @@ class OlxScraper:
                 if descricao_html:
                     analytics["description"] = descricao_html
             imagens_urls = _extrair_imagens_html(html)
-            dados, imagens_urls = _montar_dados_analytics(analytics, url, imagens_urls)
+            dados, imagens_urls = _montar_dados_analytics(analytics, url, imagens_urls, html)
             if dados.get("titulo"):
                 logger.info(
                     f"OLX extraído (analytics): '{dados['titulo'][:60]}' | "

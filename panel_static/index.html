@@ -1732,7 +1732,7 @@ async function inserirDuplicadas() {
     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
   </svg> Inserindo...`;
 
-  const urlsParaForcar = [..._urlsDuplicatasPendentes]; // copia antes de fechar (fechar zera a lista)
+  const urlsParaForcar = _linhasComContatoParaUrls(_urlsDuplicatasPendentes);
   fecharModalDuplicatas();
   await adicionarUrls(true, urlsParaForcar);
 
@@ -1740,6 +1740,33 @@ async function inserirDuplicadas() {
   btn.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/>
   </svg> Inserir mesmo assim`;
+}
+
+function _linhasComContatoParaUrls(urlsAlvo) {
+  const textarea = document.getElementById('textarea-urls');
+  const linhas = textarea.value.split('\n').map(l => l.trim()).filter(Boolean);
+  const alvo = new Set(urlsAlvo);
+  const urlRegex = /(https?:\/\/[^\s<>\]\)"']+|(?:www\.)?(?:instagram\.com|[\w-]+\.)?olx\.com\.br[^\s<>\]\)"']*|(?:www\.)?orulo\.com\.br[^\s<>\]\)"']*)/i;
+  const phoneRegex = /(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)?(?:9[\s.-]*)?\d{4}[\s.-]?\d{4}/;
+  const saida = [];
+  let contatoPendente = '';
+
+  for (const linha of linhas) {
+    const urlMatch = linha.match(urlRegex);
+    const temTelefone = phoneRegex.test(linha);
+    if (!urlMatch) {
+      if (temTelefone) contatoPendente = linha;
+      continue;
+    }
+    const url = urlMatch[0].startsWith('http') ? urlMatch[0] : `https://${urlMatch[0]}`;
+    if (!alvo.has(url)) continue;
+    if (contatoPendente && /olx\.com\.br/i.test(url)) {
+      saida.push(contatoPendente);
+      contatoPendente = '';
+    }
+    saida.push(linha);
+  }
+  return saida.length ? saida : [...urlsAlvo];
 }
 
 function retirarDuplicadas() {

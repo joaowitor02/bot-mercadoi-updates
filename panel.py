@@ -1213,6 +1213,11 @@ async def adicionar_url(request: Request, body: AdicionarRequest):
             continue
         if url in existentes:
             status_existente = existentes[url]
+            if whatsapp_contato:
+                try:
+                    sheet.atualizar_whatsapp_por_url(originais_existentes.get(url, url), whatsapp_contato)
+                except Exception:
+                    pass
             if body.forcar and _pode_inserir_novamente(status_existente):
                 try:
                     linha = sheet.adicionar_pendente(url, whatsapp_contato=whatsapp_contato)
