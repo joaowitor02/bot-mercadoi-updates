@@ -363,11 +363,9 @@ class MercadoiDriver:
                 '#prop_size':   dados.get("area_m2",  "").strip(),
             })
 
-            # Seleciona todos os selects simples em uma única chamada JS
+            # Seleciona select de elevador (nome sem acento — outros campos via _preencher_detalhes_adicionais)
             await self._selecionar_batch(page, [
-                ('select[name="estagio-da-obra-imc3b3vel[]"]', dados.get("estagio_imovel","").strip()),
-                ('select[name="no-tc3a9rreo[]"]',              dados.get("andar",         "").strip()),
-                ('select[name="tem-elevador"]',                dados.get("elevador",      "").strip()),
+                ('select[name="tem-elevador"]', dados.get("elevador", "").strip()),
             ])
 
             # CARACTERISTICAS
@@ -436,13 +434,15 @@ class MercadoiDriver:
                 and bool(dados.get("tipo_imovel", "").strip())
             )
 
+            agent_id_post = dados.get("_mercadoi_agent_id", "") if dados.get("_fonte") == "orulo" else ""
+
             if publicar_direto:
                 logger.info("Criterios atendidos — publicando diretamente")
-                salvamento = await self._publicar(page)
+                salvamento = await self._publicar(page, agent_id=agent_id_post)
                 modo = "Publicado"
                 if not salvamento.get("ok"):
                     logger.warning("Publicacao direta falhou — salvando como rascunho")
-                    salvamento = await self._salvar_rascunho(page)
+                    salvamento = await self._salvar_rascunho(page, agent_id=agent_id_post)
                     modo = "Rascunho salvo"
             else:
                 motivos = []
@@ -453,7 +453,7 @@ class MercadoiDriver:
                 if not dados.get("tipo_imovel", "").strip():
                     motivos.append("sem tipo")
                 logger.info(f"Salvando como rascunho ({', '.join(motivos)})")
-                salvamento = await self._salvar_rascunho(page)
+                salvamento = await self._salvar_rascunho(page, agent_id=agent_id_post)
                 modo = "Rascunho salvo"
 
             if not salvamento.get("ok"):
@@ -1717,7 +1717,7 @@ class MercadoiDriver:
     async def _preencher_detalhes_adicionais(self, page, dados: dict):
         detalhes = self._detalhes_adicionais(dados)
         selects = {k: v for k, v in detalhes["selects"].items() if v}
-        inputs = {k: v for k, v in detalhes["inputs"].items() if v}
+        inputs  = {k: v for k, v in detalhes["inputs"].items()  if v}
         if not selects and not inputs:
             return
         try:
@@ -1731,99 +1731,108 @@ class MercadoiDriver:
                         .trim();
 
                     const controles = 'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]), textarea, select';
-                    const visivel = (el) => !!(el && (el.offsetWidth || el.offsetHeight || el.getClientRects().length));
+
+                    const opTexto = (op) => String(op.text || op.label || '').replace(/\\s+/g, ' ').trim();
+
+                    // Encontra campo por label — tenta visível primeiro, depois qualquer
                     const acharCampo = (rotulo) => {
                         const alvo = norm(rotulo);
-                        const porFor = (label) => {
-                            const id = label.getAttribute('for');
-                            return id ? document.getElementById(id) : null;
-                        };
-                        const campoProximo = (label) => {
-                            const direto = porFor(label);
-                            if (direto && direto.matches(controles) && visivel(direto)) return direto;
-                            const candidatos = [];
+                        const labels = Array.from(document.querySelectorAll(
+                            'label, .control-label, .form-label, th, legend'
+                        ));
+                        for (const label of labels) {
+                            const texto = norm(label.innerText || label.textContent || '');
+                            if (!texto) continue;
+                            if (!(texto === alvo || texto.includes(alvo) || alvo.includes(texto))) continue;
+
+                            // Via atributo for
+                            const forId = label.getAttribute('for');
+                            if (forId) {
+                                const el = document.getElementById(forId);
+                                if (el && el.matches(controles)) return el;
+                            }
+
+                            // Campo próximo — sem exigir visibilidade (aceita seções collapsed)
                             let raiz = label.parentElement;
-                            for (let i = 0; i < 5 && raiz; i++, raiz = raiz.parentElement) {
-                                candidatos.push(...Array.from(raiz.querySelectorAll(controles)).filter(visivel));
+                            for (let i = 0; i < 6 && raiz; i++, raiz = raiz.parentElement) {
                                 const depois = Array.from(raiz.querySelectorAll(controles)).filter(c =>
-                                    visivel(c) && !!(label.compareDocumentPosition(c) & Node.DOCUMENT_POSITION_FOLLOWING)
+                                    !!(label.compareDocumentPosition(c) & Node.DOCUMENT_POSITION_FOLLOWING)
                                 );
                                 if (depois.length) return depois[0];
                             }
-                            return candidatos[0] || null;
-                        };
-                        const labels = Array.from(document.querySelectorAll('label, .control-label, .form-label'));
-                        for (const label of labels) {
-                            const texto = norm(label.innerText || label.textContent || '');
-                            if (!texto || !(texto === alvo || texto.includes(alvo) || alvo.includes(texto))) continue;
-                            const campo = campoProximo(label);
-                            if (campo) return campo;
                         }
-                        const campos = Array.from(document.querySelectorAll(controles));
-                        return campos.find(c => {
+                        // Fallback: name / placeholder / id
+                        return Array.from(document.querySelectorAll(controles)).find(c => {
                             const ph = norm(c.getAttribute('placeholder') || '');
-                            const name = norm(c.getAttribute('name') || c.id || '');
-                            return (ph && (ph.includes(alvo) || alvo.includes(ph))) || (name && name.includes(alvo));
+                            const nm = norm(c.getAttribute('name') || c.id || '');
+                            return (ph && (ph.includes(alvo) || alvo.includes(ph)))
+                                || (nm && nm.includes(alvo));
                         }) || null;
                     };
 
-                    const escolherOption = (select, valor) => {
+                    const aplicarSelect = (select, valor) => {
                         const alvo = norm(valor);
                         let melhor = null;
                         for (const op of Array.from(select.options || [])) {
-                            const t = norm(op.text || op.label || '');
-                            const base = t.replace(/^\\d+\\s*[-–]\\s*/, '');
-                            if (!base || base === 'selecione' || base === 'sim nao') continue;
-                            const alvoNum = (alvo.match(/\\d+/) || [''])[0];
-                            const baseNum = (base.match(/\\d+/) || [''])[0];
+                            const t    = norm(op.text || op.label || '');
+                            const base = t.replace(/^\\d+\\s*[-\\u2013]\\s*/, '');
+                            if (!base || base === 'selecione') continue;
                             if (t === alvo || base === alvo || t.includes(alvo) || alvo.includes(base)) {
-                                melhor = op;
-                                break;
+                                melhor = op; break;
                             }
-                            if (alvoNum && baseNum && alvoNum === baseNum && base.includes('andar')) {
-                                melhor = op;
-                                break;
-                            }
+                            // Match numérico para andar (ex: "3" bate em "3 andar")
+                            const alvoN = (alvo.match(/\\d+/) || [''])[0];
+                            const baseN = (base.match(/\\d+/) || [''])[0];
+                            if (alvoN && baseN && alvoN === baseN) { melhor = op; break; }
                         }
-                        if (!melhor) return false;
+                        if (!melhor) return null;
+                        try { select.scrollIntoView({behavior: 'instant', block: 'center'}); } catch(_) {}
+                        select.value = melhor.value;
+                        select.dispatchEvent(new Event('input',  {bubbles: true}));
+                        select.dispatchEvent(new Event('change', {bubbles: true}));
                         if (window.jQuery) {
                             const jq = window.jQuery(select);
                             jq.val(melhor.value).trigger('change');
                             if (jq.data('selectpicker')) jq.selectpicker('refresh');
                             if (jq.data('select2')) jq.trigger('change.select2');
                         }
-                        select.value = melhor.value;
-                        select.dispatchEvent(new Event('input', {bubbles: true}));
-                        select.dispatchEvent(new Event('change', {bubbles: true}));
                         return opTexto(melhor);
                     };
 
-                    const opTexto = (op) => String(op.text || op.label || '').replace(/\\s+/g, ' ').trim();
                     const preenchidos = [];
 
                     for (const [rotulo, valor] of Object.entries(inputs || {})) {
                         if (!valor) continue;
                         const campo = acharCampo(rotulo);
                         if (!campo || campo.tagName === 'SELECT') continue;
+                        try { campo.scrollIntoView({behavior: 'instant', block: 'center'}); } catch(_) {}
                         campo.value = valor;
-                        campo.dispatchEvent(new Event('input', {bubbles: true}));
+                        campo.dispatchEvent(new Event('input',  {bubbles: true}));
                         campo.dispatchEvent(new Event('change', {bubbles: true}));
-                        preenchidos.push(`${rotulo}=${valor}`);
+                        preenchidos.push(rotulo + '=' + valor);
                     }
 
                     for (const [rotulo, valor] of Object.entries(selects || {})) {
                         if (!valor) continue;
                         const campo = acharCampo(rotulo);
-                        if (!campo || campo.tagName !== 'SELECT') continue;
-                        const escolhido = escolherOption(campo, valor);
-                        if (escolhido) preenchidos.push(`${rotulo}=${escolhido}`);
+                        if (!campo || campo.tagName !== 'SELECT') {
+                            preenchidos.push(rotulo + '=NAO_ENCONTRADO');
+                            continue;
+                        }
+                        const escolhido = aplicarSelect(campo, valor);
+                        preenchidos.push(rotulo + '=' + (escolhido || 'OPCAO_NAO_ENCONTRADA(' + valor + ')'));
                     }
 
                     return preenchidos;
                 }
             """, {"selects": selects, "inputs": inputs})
             if resultado:
-                logger.info(f"Detalhes adicionais preenchidos: {', '.join(resultado[:20])}")
+                encontrados = [r for r in resultado if 'NAO_ENCONTRADO' not in r and 'OPCAO_NAO_ENCONTRADA' not in r]
+                falhas = [r for r in resultado if 'NAO_ENCONTRADO' in r or 'OPCAO_NAO_ENCONTRADA' in r]
+                if encontrados:
+                    logger.info(f"Detalhes preenchidos: {', '.join(encontrados)}")
+                if falhas:
+                    logger.warning(f"Detalhes nao encontrados no formulario: {', '.join(falhas)}")
         except Exception as e:
             logger.warning(f"Erro ao preencher detalhes adicionais: {e}")
 
@@ -2177,18 +2186,15 @@ class MercadoiDriver:
         except Exception:
             return None
 
-    async def _salvar_rascunho(self, page):
+    async def _salvar_rascunho(self, page, agent_id: str = ""):
         try:
             try:
                 await page.wait_for_selector('#save_as_draft', timeout=5000)
             except Exception:
                 logger.warning("Timeout aguardando #save_as_draft, tentando mesmo assim")
 
-            # Replicar o AJAX do handler #save_as_draft diretamente.
-            # O handler original usa tinyMCE.get('prop_des').getContent(), mas tinyMCE nao
-            # inicializa o editor neste contexto — usamos o valor do textarea diretamente.
             resultado = await page.evaluate("""
-                () => new Promise((resolve) => {
+                ({agentId}) => new Promise((resolve) => {
                     const $form = jQuery('#submit_property_form');
                     if (!$form.length) { resolve({ok: false, erro: 'form nao encontrado'}); return; }
                     const ed = window.tinymce || window.tinyMCE;
@@ -2197,18 +2203,23 @@ class MercadoiDriver:
                         ? editor.getContent()
                         : (window._botDescricao || (document.querySelector('#prop_des') || {}).value || '');
                     const ajaxUrl = window.ajax_url || window.ajaxurl || '/wp-admin/admin-ajax.php';
+                    let extraAgent = '';
+                    if (agentId) {
+                        extraAgent = '&fave_agents=' + encodeURIComponent(agentId)
+                                   + '&fave_agent_display_option=agent_info';
+                    }
                     jQuery.ajax({
                         type: 'post',
                         url: ajaxUrl,
                         dataType: 'json',
-                        data: $form.serialize() + '&action=save_as_draft&description=' + encodeURIComponent(description),
+                        data: $form.serialize() + '&action=save_as_draft&description=' + encodeURIComponent(description) + extraAgent,
                         success: function(response) { resolve({ok: true, response: JSON.stringify(response)}); },
                         error: function(xhr, status, error) {
                             resolve({ok: false, erro: error, status: status, resp: xhr.responseText.substring(0, 300)});
                         }
                     });
                 })
-            """)
+            """, {"agentId": agent_id})
 
             logger.info(f"Resultado AJAX save_as_draft: {resultado}")
 
@@ -2234,7 +2245,7 @@ class MercadoiDriver:
             logger.error(f"Erro ao salvar rascunho: {e}")
             return {"ok": False}
 
-    async def _publicar(self, page):
+    async def _publicar(self, page, agent_id: str = ""):
         """Publica o imovel diretamente, usando o botao do formulario como caminho principal."""
         try:
             try:
@@ -2242,16 +2253,13 @@ class MercadoiDriver:
             except Exception:
                 logger.warning("Timeout aguardando form, tentando publicar mesmo assim")
 
-            # O envio normal pelo botao e o mesmo caminho usado pelo painel do
-            # Mercadoi. Em alguns ambientes o AJAX direto responde "0" e apenas
-            # adiciona ruido/tempo antes de cair neste fluxo.
             via_botao = await self._publicar_via_botao(page)
             if via_botao.get("ok"):
                 return via_botao
             logger.warning("Publicacao via botao falhou, tentando AJAX submit_property")
 
             resultado = await page.evaluate("""
-                () => new Promise((resolve) => {
+                ({agentId}) => new Promise((resolve) => {
                     const $form = jQuery('#submit_property_form');
                     if (!$form.length) { resolve({ok: false, erro: 'form nao encontrado'}); return; }
                     const ed = window.tinymce || window.tinyMCE;
@@ -2260,18 +2268,23 @@ class MercadoiDriver:
                         ? editor.getContent()
                         : (window._botDescricao || (document.querySelector('#prop_des') || {}).value || '');
                     const ajaxUrl = window.ajax_url || window.ajaxurl || '/wp-admin/admin-ajax.php';
+                    let extraAgent = '';
+                    if (agentId) {
+                        extraAgent = '&fave_agents=' + encodeURIComponent(agentId)
+                                   + '&fave_agent_display_option=agent_info';
+                    }
                     jQuery.ajax({
                         type: 'post',
                         url: ajaxUrl,
                         dataType: 'json',
-                        data: $form.serialize() + '&action=submit_property&description=' + encodeURIComponent(description),
+                        data: $form.serialize() + '&action=submit_property&description=' + encodeURIComponent(description) + extraAgent,
                         success: function(response) { resolve({ok: true, response: JSON.stringify(response)}); },
                         error: function(xhr, status, error) {
                             resolve({ok: false, erro: error, status: status, resp: xhr.responseText.substring(0, 300)});
                         }
                     });
                 })
-            """)
+            """, {"agentId": agent_id})
 
             logger.info(f"Resultado AJAX submit_property: {resultado}")
 
