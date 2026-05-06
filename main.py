@@ -39,13 +39,18 @@ from datetime import date as _date
 def obter_login_mercadoi(config: dict) -> dict:
     """Retorna o login Mercadoi ativo: rotação diária ou seleção manual."""
     logins = config.get("mercadoi_logins", [])
-    if not logins:
-        return {
-            "usuario": config.get("wordpress_xmlrpc_user", ""),
-            "senha":   config.get("wordpress_xmlrpc_password", ""),
-            "idx": -1,
-        }
+    admin_user = config.get("wordpress_xmlrpc_user", "")
+    admin_pass = config.get("wordpress_xmlrpc_password", "")
     manual = config.get("mercadoi_login_manual")
+
+    # Se seleção manual aponta para o login admin (fora da lista de rotação)
+    if manual is not None and isinstance(manual, str):
+        if manual == admin_user and not any(l.get("usuario") == manual for l in logins):
+            return {"usuario": admin_user, "senha": admin_pass, "idx": -1, "admin": True}
+
+    if not logins:
+        return {"usuario": admin_user, "senha": admin_pass, "idx": -1, "admin": True}
+
     if manual is not None:
         if isinstance(manual, int):
             idx = int(manual) % len(logins)
@@ -54,7 +59,7 @@ def obter_login_mercadoi(config: dict) -> dict:
     else:
         idx = _date.today().toordinal() % len(logins)
     login = logins[idx]
-    return {"usuario": login["usuario"], "senha": login["senha"], "idx": idx}
+    return {"usuario": login["usuario"], "senha": login["senha"], "idx": idx, "admin": False}
 
 
 MAX_TENTATIVAS_MERCADOI = 3

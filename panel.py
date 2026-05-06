@@ -860,8 +860,11 @@ async def status(request: Request):
         from datetime import date as _date_local
         cfg_l = _load_config()
         logins = cfg_l.get("mercadoi_logins", [])
-        if logins:
-            manual = cfg_l.get("mercadoi_login_manual")
+        admin_u = cfg_l.get("wordpress_xmlrpc_user", "")
+        manual = cfg_l.get("mercadoi_login_manual")
+        if manual is not None and isinstance(manual, str) and manual == admin_u:
+            login_ativo = admin_u  # login admin selecionado manualmente
+        elif logins:
             if manual is not None:
                 if isinstance(manual, int):
                     idx = int(manual) % len(logins)
@@ -886,15 +889,18 @@ async def status(request: Request):
 
 
 @app.get("/api/logins")
-async def listar_logins():
+async def listar_logins(request: Request):
     from datetime import date as _date_l
+    token = request.cookies.get("mercadoi_session", "")
+    sem_auth = not _SENHA and not _ADMIN_SENHA
+    nivel = "admin" if sem_auth else _get_session_nivel(token)
+
     cfg = _load_config()
     logins = cfg.get("mercadoi_logins", [])
-    if not logins:
-        return JSONResponse([])
+    admin_user = cfg.get("wordpress_xmlrpc_user", "")
     manual = cfg.get("mercadoi_login_manual")
-    auto_idx = _date_l.today().toordinal() % len(logins)
-    # Contagem de cadastros por usuário
+    auto_idx = (_date_l.today().toordinal() % len(logins)) if logins else -1
+
     stats: dict[str, int] = {}
     try:
         db = _db_manager()
@@ -908,7 +914,21 @@ async def listar_logins():
                 stats[r["mercadoi_usuario"]] = r["n"]
     except Exception:
         pass
+
     resultado = []
+    # Login admin: visível apenas para administrador, fora da rotação
+    if nivel == "admin" and admin_user:
+        is_admin_ativo = (manual == admin_user)
+        resultado.append({
+            "idx": -1,
+            "usuario": admin_user,
+            "ativo": is_admin_ativo,
+            "manual": is_admin_ativo,
+            "auto_hoje": False,
+            "cadastros": stats.get(admin_user, 0),
+            "admin_login": True,
+        })
+
     for i, login in enumerate(logins):
         u = login.get("usuario", "")
         is_manual = (manual == u or manual == i)
@@ -920,14 +940,29 @@ async def listar_logins():
             "manual": is_manual,
             "auto_hoje": is_auto_hoje,
             "cadastros": stats.get(u, 0),
+            "admin_login": False,
         })
     return JSONResponse(resultado)
 
 
 @app.post("/api/logins/selecionar/{usuario}")
-async def selecionar_login(usuario: str):
+async def selecionar_login(usuario: str, request: Request):
+    token = request.cookies.get("mercadoi_session", "")
+    sem_auth = not _SENHA and not _ADMIN_SENHA
+    nivel = "admin" if sem_auth else _get_session_nivel(token)
+
     cfg = _load_config()
     logins = cfg.get("mercadoi_logins", [])
+    admin_user = cfg.get("wordpress_xmlrpc_user", "")
+
+    # Login admin: só admin pode selecionar
+    if usuario == admin_user:
+        if nivel != "admin":
+            return JSONResponse({"ok": False, "msg": "Acesso restrito ao administrador"}, status_code=403)
+        cfg["mercadoi_login_manual"] = usuario
+        _save_config(cfg)
+        return JSONResponse({"ok": True, "msg": f"Login admin '{usuario}' selecionado"})
+
     if not any(l.get("usuario") == usuario for l in logins):
         return JSONResponse({"ok": False, "msg": "Login não encontrado"}, status_code=404)
     cfg["mercadoi_login_manual"] = usuario
