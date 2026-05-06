@@ -780,6 +780,12 @@ def _load_config() -> dict:
     return json.loads((BASE_DIR / "config.json").read_text(encoding="utf-8"))
 
 
+def _save_config(cfg: dict) -> None:
+    (BASE_DIR / "config.json").write_text(
+        json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+
+
 def _db_manager():
     sys.path.insert(0, str(BASE_DIR))
     from modules.database_manager import DatabaseManager
