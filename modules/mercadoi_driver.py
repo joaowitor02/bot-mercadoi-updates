@@ -414,9 +414,8 @@ class MercadoiDriver:
                     resultado["mensagem"] = "Nenhum arquivo de midia valido encontrado"
                     return resultado
 
-            if dados.get("_fonte") in ("orulo", "olx"):
-                # Melhorias específicas do Órulo. Mantidas fora do fluxo das demais
-                # fontes para preservar a automação que já estava estável.
+            if dados.get("_fonte") in ("orulo", "olx", "instagram"):
+                # Preenche endereco/mapa quando a fonte trouxe rua ou coordenadas.
                 await self._preencher_endereco_mapa(page, dados)
 
             if dados.get("_fonte") == "orulo":
