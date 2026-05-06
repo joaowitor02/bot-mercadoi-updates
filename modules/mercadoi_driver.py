@@ -1744,13 +1744,22 @@ class MercadoiDriver:
                 return m.group(1)
             return ""
 
-        cond_taxas = []
-        if _s("condominio"):
-            cond_taxas.append(f"Condomínio: {_s('condominio')}")
-        if _s("iptu"):
-            cond_taxas.append(f"IPTU: {_s('iptu')}")
-        if _s("taxas"):
-            cond_taxas.append(f"Taxas: {_s('taxas')}")
+        def _limpar_valor(v: str) -> str:
+            # remove "R$", "r$", "R$ ", pontos de milhar; mantém vírgula decimal
+            v = re.sub(r"[Rr]\$\s*", "", v).strip()
+            # remove pontos de milhar (ex: 1.200 → 1200) mas mantém decimal com vírgula
+            v = re.sub(r"\.(?=\d{3})", "", v)
+            return v.strip()
+
+        cond = _limpar_valor(_s("condominio"))
+        iptu = _limpar_valor(_s("iptu"))
+        taxas = _limpar_valor(_s("taxas"))
+        # monta "cond/iptu/taxas" omitindo trailing slashes vazios
+        partes = [cond, iptu, taxas]
+        # remove vazios do final mas mantém separadores internos
+        while partes and not partes[-1]:
+            partes.pop()
+        cond_taxas_str = "/".join(partes) if partes else ""
 
         return {
             "selects": {
@@ -1768,7 +1777,7 @@ class MercadoiDriver:
             },
             "inputs": {
                 "Área total m²": _s("area_terreno"),
-                "Condomínio - IPTU - Taxas": " | ".join(cond_taxas),
+                "Condomínio - IPTU - Taxas": cond_taxas_str,
                 "Ano de construção": _s("ano_construcao"),
                 "Proximidades": _s("proximidades"),
             },
