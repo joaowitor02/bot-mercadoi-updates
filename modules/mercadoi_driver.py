@@ -796,9 +796,16 @@ class MercadoiDriver:
             else:
                 logger.warning("Opcao de contato do corretor nao encontrada")
 
+            selecionou = False
             if agent_id and await self._selecionar_corretor_por_id(page, str(agent_id).strip()):
+                selecionou = True
+            if not selecionou and await self._selecionar_corretor_por_texto(page, nome_corretor):
+                selecionou = True
+
+            if await self._fixar_corretor_no_formulario(page, nome_corretor, str(agent_id or "").strip()):
                 return
-            if await self._selecionar_corretor_por_texto(page, nome_corretor):
+            if selecionou:
+                logger.warning(f"Corretor '{nome_corretor}' apareceu no Select2, mas nao entrou no formulario")
                 return
             logger.warning(f"Corretor '{nome_corretor}' nao encontrado na lista")
         except Exception as e:
@@ -854,7 +861,15 @@ class MercadoiDriver:
                 const norm = (t) => String(t || '').toLowerCase()
                     .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
                     .replace(/\\s+/g, ' ').trim();
-                const alvo = norm(nome);
+                const alvos = Array.from(new Set([
+                    norm(nome),
+                    norm(String(nome || '').replace(/^augustin/i, 'agustin')),
+                    norm(String(nome || '').replace(/^agustin/i, 'augustin'))
+                ])).filter(Boolean);
+                const bate = (texto) => {
+                    const t = norm(texto);
+                    return alvos.some(alvo => t === alvo || t.includes(alvo) || alvo.includes(t));
+                };
                 const aplicar = (sel, opt) => {
                     if (sel.multiple) {
                         Array.from(sel.options).forEach(o => o.selected = false);
@@ -882,8 +897,7 @@ class MercadoiDriver:
                 ));
                 for (const sel of selects) {
                     const opt = Array.from(sel.options).find(o => {
-                        const t = norm(o.text || o.label || '');
-                        return t === alvo || t.includes(alvo) || alvo.includes(t);
+                        return bate(o.text || o.label || '');
                     });
                     if (!opt) continue;
                     return aplicar(sel, opt);
@@ -930,7 +944,9 @@ class MercadoiDriver:
             """)
             if aberto:
                 await page.wait_for_timeout(400)
-                busca = page.locator('.select2-search__field').last
+                busca = page.locator('.select2-container--open .select2-search__field').last
+                if not await busca.count():
+                    busca = page.locator('.select2-search__field').last
                 if await busca.count():
                     await busca.fill(nome_corretor, timeout=3000)
                     await page.wait_for_timeout(900)
@@ -940,13 +956,20 @@ class MercadoiDriver:
                         const norm = (t) => String(t || '').toLowerCase()
                             .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
                             .replace(/\\s+/g, ' ').trim();
-                        const alvo = norm(nome);
+                        const alvos = Array.from(new Set([
+                            norm(nome),
+                            norm(String(nome || '').replace(/^augustin/i, 'agustin')),
+                            norm(String(nome || '').replace(/^agustin/i, 'augustin'))
+                        ])).filter(Boolean);
+                        const bate = (texto) => {
+                            const t = norm(texto);
+                            return alvos.some(alvo => t === alvo || t.includes(alvo) || alvo.includes(t));
+                        };
                         const opcoes = Array.from(document.querySelectorAll(
                             '.select2-results__option:not(.loading-results):not(.select2-results__message)'
                         ));
                         const opcao = opcoes.find(o => {
-                            const t = norm(o.innerText || o.textContent || '');
-                            return t === alvo || t.includes(alvo);
+                            return bate(o.innerText || o.textContent || '');
                         });
                         if (!opcao) return false;
                         opcao.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
@@ -963,12 +986,20 @@ class MercadoiDriver:
                             const norm = (t) => String(t || '').toLowerCase()
                                 .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
                                 .replace(/\\s+/g, ' ').trim();
-                            const alvo = norm(nome);
+                            const alvos = Array.from(new Set([
+                                norm(nome),
+                                norm(String(nome || '').replace(/^augustin/i, 'agustin')),
+                                norm(String(nome || '').replace(/^agustin/i, 'augustin'))
+                            ])).filter(Boolean);
+                            const bate = (texto) => {
+                                const t = norm(texto);
+                                return alvos.some(alvo => t === alvo || t.includes(alvo) || alvo.includes(t));
+                            };
                             const selects = Array.from(document.querySelectorAll(
                                 'select[name="fave_agents"], select[name="fave_agents[]"], select[id*="agent"], select[name*="agent"]'
                             ));
                             for (const sel of selects) {
-                                const opt = Array.from(sel.options).find(o => norm(o.text || o.label || '').includes(alvo));
+                                const opt = Array.from(sel.options).find(o => bate(o.text || o.label || ''));
                                 if (!opt) continue;
                                 const val = sel.multiple ? [opt.value] : opt.value;
                                 opt.selected = true;
@@ -999,13 +1030,143 @@ class MercadoiDriver:
             logger.debug(f"Select2 corretor falhou: {e}")
         return False
 
+    async def _fixar_corretor_no_formulario(self, page, nome_corretor: str, agent_id: str = "") -> bool:
+        """
+        Garante que o corretor visivel no Select2 tambem vai no serialize() do formulario.
+        O Select2 do Mercadoi pode mostrar o nome escolhido sem deixar o <select> pronto
+        para o AJAX save_as_draft/submit_property; aqui sincronizamos os dois estados.
+        """
+        resultado = await page.evaluate("""
+            ({nome, agentId}) => {
+                const norm = (t) => String(t || '').toLowerCase()
+                    .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
+                    .replace(/\\s+/g, ' ').trim();
+                const alvos = Array.from(new Set([
+                    norm(nome),
+                    norm(String(nome || '').replace(/^augustin/i, 'agustin')),
+                    norm(String(nome || '').replace(/^agustin/i, 'augustin'))
+                ])).filter(Boolean);
+                const bate = (texto) => {
+                    const t = norm(texto);
+                    return alvos.some(alvo => t === alvo || t.includes(alvo) || alvo.includes(t));
+                };
+
+                const radios = Array.from(document.querySelectorAll('input[name="fave_agent_display_option"]'));
+                const radio = radios.find(r => String(r.value) === 'agent_info')
+                    || radios.find(r => /agent|corretor/i.test(String(r.value || '')))
+                    || radios[0];
+                if (radio) {
+                    radios.forEach(r => { r.checked = false; });
+                    radio.checked = true;
+                    radio.dispatchEvent(new Event('input', { bubbles: true }));
+                    radio.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+
+                const selects = Array.from(document.querySelectorAll(
+                    'select[name="fave_agents"], select[name="fave_agents[]"], select[id*="agent"], select[name*="agent"]'
+                )).filter(sel => /(fave[_-]?agents?|agent)/i.test(`${sel.name || ''} ${sel.id || ''}`));
+
+                let valor = String(agentId || '').trim();
+                let texto = nome;
+                for (const sel of selects) {
+                    const opt = Array.from(sel.options || []).find(o => {
+                        if (valor && String(o.value) === valor) return true;
+                        return bate(o.text || o.label || '');
+                    });
+                    if (!opt) continue;
+                    valor = String(opt.value || valor).trim();
+                    texto = opt.text || opt.label || texto;
+                    break;
+                }
+
+                if (!valor && window.jQuery) {
+                    for (const sel of selects) {
+                        try {
+                            const data = window.jQuery(sel).select2 ? window.jQuery(sel).select2('data') : [];
+                            const item = Array.from(data || []).find(d => bate(d && d.text));
+                            if (!item) continue;
+                            valor = String(item.id || '').trim();
+                            texto = item.text || texto;
+                            break;
+                        } catch (_) {}
+                    }
+                }
+
+                if (!valor) return { ok: false, motivo: 'sem valor do corretor' };
+
+                for (const sel of selects) {
+                    sel.disabled = false;
+                    let opt = Array.from(sel.options || []).find(o => String(o.value) === valor);
+                    if (!opt) {
+                        opt = new Option(texto || nome, valor, true, true);
+                        sel.add(opt);
+                    }
+                    Array.from(sel.options || []).forEach(o => { o.selected = false; });
+                    opt.selected = true;
+                    if (!sel.multiple) sel.value = valor;
+                    sel.dispatchEvent(new Event('input', { bubbles: true }));
+                    sel.dispatchEvent(new Event('change', { bubbles: true }));
+                    if (window.jQuery) {
+                        const jq = window.jQuery(sel);
+                        jq.val(sel.multiple ? [valor] : valor);
+                        jq.trigger('change');
+                        jq.trigger('change.select2');
+                        jq.trigger({
+                            type: 'select2:select',
+                            params: { data: { id: valor, text: texto || nome } }
+                        });
+                        try { if (jq.data('select2')) jq.select2('close'); } catch (_) {}
+                    }
+                }
+
+                const $form = window.jQuery && window.jQuery('#submit_property_form');
+                if ($form && $form.length) {
+                    $form.find('input[data-bot-agent-hidden="1"]').remove();
+                    const serializadoAtual = $form.serializeArray();
+                    const temAgente = serializadoAtual.some(i =>
+                        /fave_agents?/i.test(i.name) && String(i.value) === String(valor)
+                    );
+                    if (!temAgente) {
+                        const hidden = document.createElement('input');
+                        hidden.type = 'hidden';
+                        hidden.name = 'fave_agents[]';
+                        hidden.value = valor;
+                        hidden.setAttribute('data-bot-agent-hidden', '1');
+                        $form[0].appendChild(hidden);
+                    }
+                }
+                const serializado = $form && $form.length
+                    ? $form.serializeArray().filter(i => /fave_agent_display_option|fave_agents?/i.test(i.name))
+                    : [];
+                return { ok: true, valor, texto, serializado };
+            }
+        """, {"nome": nome_corretor, "agentId": agent_id})
+        if resultado and resultado.get("ok"):
+            await page.keyboard.press("Escape")
+            await page.wait_for_timeout(250)
+            logger.info(
+                f"Corretor fixado no formulario: {resultado.get('texto') or nome_corretor} "
+                f"(id={resultado.get('valor')})"
+            )
+            return True
+        logger.warning(f"Corretor nao fixado no formulario: {resultado}")
+        return False
+
     async def _corretor_selecionado(self, page, nome_corretor: str) -> bool:
         return await page.evaluate("""
             ({nome}) => {
                 const norm = (t) => String(t || '').toLowerCase()
                     .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
                     .replace(/\\s+/g, ' ').trim();
-                const alvo = norm(nome);
+                const alvos = Array.from(new Set([
+                    norm(nome),
+                    norm(String(nome || '').replace(/^augustin/i, 'agustin')),
+                    norm(String(nome || '').replace(/^agustin/i, 'augustin'))
+                ])).filter(Boolean);
+                const bate = (texto) => {
+                    const t = norm(texto);
+                    return alvos.some(alvo => t === alvo || t.includes(alvo));
+                };
                 const textos = Array.from(document.querySelectorAll(
                     '.select2-selection__rendered, .select2-selection__choice'
                 )).map(e => norm(e.innerText || e.getAttribute('title')));
@@ -1017,7 +1178,7 @@ class MercadoiDriver:
                         textos.push(norm(opt.text || opt.label || ''));
                     }
                 }
-                return textos.some(t => t === alvo || t.includes(alvo));
+                return textos.some(t => bate(t));
             }
         """, {"nome": nome_corretor})
 
