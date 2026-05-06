@@ -1790,14 +1790,32 @@ class MercadoiDriver:
                         }
                         if (!melhor) return null;
                         try { select.scrollIntoView({behavior: 'instant', block: 'center'}); } catch(_) {}
-                        select.value = melhor.value;
+
+                        // Marca a opcao no elemento nativo
+                        if (select.multiple) {
+                            Array.from(select.options).forEach(o => { o.selected = false; });
+                        }
+                        melhor.selected = true;
+                        if (!select.multiple) select.value = melhor.value;
                         select.dispatchEvent(new Event('input',  {bubbles: true}));
                         select.dispatchEvent(new Event('change', {bubbles: true}));
+
                         if (window.jQuery) {
                             const jq = window.jQuery(select);
-                            jq.val(melhor.value).trigger('change');
-                            if (jq.data('selectpicker')) jq.selectpicker('refresh');
-                            if (jq.data('select2')) jq.trigger('change.select2');
+                            // Bootstrap-select (selectpicker)
+                            if (jq.data('selectpicker')) {
+                                try { jq.selectpicker('val', [melhor.value]); } catch(_) {}
+                                try { jq.selectpicker('refresh'); } catch(_) {}
+                            }
+                            // Select2
+                            if (jq.data('select2')) {
+                                jq.val(select.multiple ? [melhor.value] : melhor.value).trigger('change');
+                                try { jq.trigger('change.select2'); } catch(_) {}
+                            }
+                            // Fallback genérico
+                            if (!jq.data('selectpicker') && !jq.data('select2')) {
+                                jq.val(select.multiple ? [melhor.value] : melhor.value).trigger('change');
+                            }
                         }
                         return opTexto(melhor);
                     };
@@ -2211,11 +2229,12 @@ class MercadoiDriver:
                         extraAgent = '&fave_agents=' + encodeURIComponent(agentId)
                                    + '&fave_agent_display_option=agent_info';
                     }
+                    const formData = $form.serialize() + '&action=save_as_draft&description=' + encodeURIComponent(description) + extraAgent;
                     jQuery.ajax({
                         type: 'post',
                         url: ajaxUrl,
                         dataType: 'json',
-                        data: $form.serialize() + '&action=save_as_draft&description=' + encodeURIComponent(description) + extraAgent,
+                        data: formData,
                         success: function(response) { resolve({ok: true, response: JSON.stringify(response)}); },
                         error: function(xhr, status, error) {
                             resolve({ok: false, erro: error, status: status, resp: xhr.responseText.substring(0, 300)});
