@@ -948,11 +948,20 @@ async def listar_logins(request: Request):
     return JSONResponse(resultado)
 
 
-@app.post("/api/logins/selecionar/{usuario}")
-async def selecionar_login(usuario: str, request: Request):
+@app.post("/api/logins/selecionar")
+async def selecionar_login(request: Request):
     token = request.cookies.get("mercadoi_session", "")
     sem_auth = not _SENHA and not _ADMIN_SENHA
     nivel = "admin" if sem_auth else _get_session_nivel(token)
+
+    try:
+        body = await request.json()
+        usuario = str(body.get("usuario", "")).strip()
+    except Exception:
+        return JSONResponse({"ok": False, "msg": "Dados inválidos"}, status_code=400)
+
+    if not usuario:
+        return JSONResponse({"ok": False, "msg": "Usuário não informado"}, status_code=400)
 
     cfg = _load_config()
     logins = cfg.get("mercadoi_logins", [])
@@ -970,7 +979,7 @@ async def selecionar_login(usuario: str, request: Request):
         return JSONResponse({"ok": False, "msg": "Login não encontrado"}, status_code=404)
     cfg["mercadoi_login_manual"] = usuario
     _save_config(cfg)
-    return JSONResponse({"ok": True, "msg": f"Login '{usuario}' selecionado manualmente"})
+    return JSONResponse({"ok": True, "msg": f"Login '{usuario}' selecionado"})
 
 
 @app.delete("/api/logins/manual")

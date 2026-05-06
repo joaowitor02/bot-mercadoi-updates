@@ -2842,7 +2842,11 @@ async function carregarLogins() {
 
 async function selecionarLogin(usuario) {
   try {
-    const r = await fetch(`/api/logins/selecionar/${encodeURIComponent(usuario)}`, { method: 'POST' });
+    const r = await fetch('/api/logins/selecionar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usuario }),
+    });
     const d = await r.json();
     if (d.ok) {
       toast(`Login alterado: ${usuario}`);
