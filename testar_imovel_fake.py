@@ -120,8 +120,8 @@ async def main():
         print("  [ ] Aceita Airbnb       → Sim")
         print("  [ ] Posição Solar       → Sol da manhã")
         print("  [ ] Posição no Prédio   → Frente")
-        print("  [ ] Andar               → 5
-  [ ] Perto do Mar        → Próximo ao mar")
+        print("  [ ] Andar               -> 5")
+        print("  [ ] Perto do Mar        -> Proximo ao mar")
         print("  [ ] Ano de construção   → 2026")
         print("  [ ] Condomínio          → R$ 800")
         print("  [ ] Corretor            → Agustin Machado")
