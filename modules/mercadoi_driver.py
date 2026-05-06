@@ -1774,10 +1774,13 @@ class MercadoiDriver:
                         const alvo = norm(valor);
                         let melhor = null;
                         for (const op of Array.from(select.options || [])) {
+                            if (!op.value || op.value === '0') continue; // pula placeholder sem valor
                             const t    = norm(op.text || op.label || '');
                             const base = t.replace(/^\\d+\\s*[-\\u2013]\\s*/, '');
-                            if (!base || base === 'selecione') continue;
-                            if (t === alvo || base === alvo || t.includes(alvo) || alvo.includes(base)) {
+                            // pula opções placeholder combinadas (ex: "Sim/Não", "Selecione")
+                            if (!base || base === 'selecione' || /sim.n.o|nao.sim/i.test(base)) continue;
+                            if (t === alvo || base === alvo) { melhor = op; break; }
+                            if (alvo.length > 2 && (t.includes(alvo) || alvo.includes(base))) {
                                 melhor = op; break;
                             }
                             // Match numérico para andar (ex: "3" bate em "3 andar")

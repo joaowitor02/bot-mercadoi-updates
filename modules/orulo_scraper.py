@@ -550,6 +550,12 @@ class OruloScraper:
         latitude, longitude = self._extrair_coordenadas(html)
         cep = self._extrair_cep(html)
 
+        estagio = self._extrair_estagio(html)
+        elevador = self._extrair_elevador(html, caracteristicas)
+        ano_construcao = self._extrair_ano_construcao(html)
+        condominio = self._extrair_condominio(html)
+        perto_do_mar = self._extrair_perto_do_mar(bairro, cidade, html)
+
         dados = {
             "titulo": titulo,
             "descricao_util": descricao,
@@ -563,11 +569,12 @@ class OruloScraper:
             "vagas": vagas,
             "area_m2": area,
             "area_terreno": "",
-            "ano_construcao": "",
-            "condominio": "",
+            "ano_construcao": ano_construcao,
+            "condominio": condominio,
             "andar": "",
-            "elevador": "",
-            "estagio_imovel": self._extrair_estagio(html),
+            "elevador": elevador,
+            "estagio_imovel": estagio,
+            "perto_do_mar": perto_do_mar,
             "endereco": endereco,
             "cep": cep,
             "latitude": latitude,
@@ -698,6 +705,68 @@ class OruloScraper:
             return "Novo"
         if any(p in html_low for p in ["em obras", "em construcao", "em construção"]):
             return "Em Construção"
+        return ""
+
+    def _extrair_elevador(self, html: str, caracteristicas: list) -> str:
+        nomes_car = [str(c).lower() for c in (caracteristicas or [])]
+        if any("elevador" in c for c in nomes_car):
+            return "Sim"
+        html_low = html.lower()
+        if "sem elevador" in html_low or "nao possui elevador" in html_low or "não possui elevador" in html_low:
+            return "Não"
+        if re.search(r"\belevador\b", html_low):
+            return "Sim"
+        return ""
+
+    def _extrair_ano_construcao(self, html: str) -> str:
+        padroes = [
+            r"previs[aã]o\s+de\s+entrega[:\s]+(?:(?:jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[^\d]*)?(\d{4})",
+            r"entrega\s+(?:prevista\s+)?(?:para\s+)?(?:\d+[ºo°]?\s+trim\w*\s+(?:de\s+)?)?(\d{4})",
+            r"ano\s+de\s+constru[çc][aã]o[:\s]+(\d{4})",
+            r"constru[íi]do\s+em\s+(\d{4})",
+            r"conclu[íi]do\s+em\s+(\d{4})",
+            r"inaugurado\s+em\s+(\d{4})",
+            r"entregue\s+em\s+(\d{4})",
+            r'"yearBuilt"\s*:\s*"?(\d{4})"?',
+            r'"year_built"\s*:\s*"?(\d{4})"?',
+        ]
+        for pat in padroes:
+            m = re.search(pat, html, re.IGNORECASE)
+            if m:
+                ano = int(m.group(1))
+                if 1950 <= ano <= 2040:
+                    return str(ano)
+        return ""
+
+    def _extrair_condominio(self, html: str) -> str:
+        padroes = [
+            r"condom[íi]nio[:\s]+R?\$?\s*([\d.,]+)",
+            r"taxa\s+(?:de\s+)?condom[íi]nio[:\s]+R?\$?\s*([\d.,]+)",
+            r'"condominium_fee"\s*:\s*"?([\d.,]+)"?',
+        ]
+        for pat in padroes:
+            m = re.search(pat, html, re.IGNORECASE)
+            if m:
+                valor = re.sub(r"[.,](?=\d{3})", "", m.group(1)).replace(",", ".")
+                try:
+                    v = float(valor)
+                    if 50 <= v <= 50000:
+                        return str(int(v))
+                except ValueError:
+                    pass
+        return ""
+
+    def _extrair_perto_do_mar(self, bairro: str, cidade: str, html: str) -> str:
+        texto = (bairro + " " + cidade + " " + html[:3000]).lower()
+        if any(p in texto for p in ["frente ao mar", "beira-mar", "beira mar", "frente para o mar"]):
+            return "Frente para o mar"
+        if any(p in texto for p in ["vista para o mar", "vista mar", "vista ao mar"]):
+            return "Vista para o mar"
+        if any(p in texto for p in ["quadra do mar", "quadra mar", "a quadra do mar"]):
+            return "Quadra do mar"
+        if any(p in texto for p in ["perto do mar", "proximo ao mar", "próximo ao mar", "próximo a praia",
+                                      "perto da praia", "a beira mar"]):
+            return "Próximo ao mar"
         return ""
 
     def _extrair_coordenadas(self, html: str) -> tuple[str, str]:
