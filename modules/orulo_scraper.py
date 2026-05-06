@@ -547,6 +547,7 @@ class OruloScraper:
         caracteristicas = self._extrair_caracteristicas(html)
         resumo_empreendimento = self._resumo_empreendimento(html, caracteristicas)
         descricao = "\n\n".join(p for p in [og_desc, resumo_empreendimento, resumo] if p).strip()
+        latitude, longitude = self._extrair_coordenadas(html)
 
         dados = {
             "titulo": titulo,
@@ -567,6 +568,8 @@ class OruloScraper:
             "elevador": "",
             "estagio_imovel": self._extrair_estagio(html),
             "endereco": endereco,
+            "latitude": latitude,
+            "longitude": longitude,
             "bairro_extraido": bairro,
             "cidade_extraida": cidade,
             "url_publicacao": url,
@@ -694,6 +697,39 @@ class OruloScraper:
         if any(p in html_low for p in ["em obras", "em construcao", "em construção"]):
             return "Em Construção"
         return ""
+
+    def _extrair_coordenadas(self, html: str) -> tuple[str, str]:
+        texto = html_lib.unescape(html or "")
+        pares = [
+            (
+                r'"latitude"\s*:\s*"?(-?\d{1,3}\.\d+)"?',
+                r'"longitude"\s*:\s*"?(-?\d{1,3}\.\d+)"?',
+            ),
+            (
+                r'"lat"\s*:\s*"?(-?\d{1,3}\.\d+)"?',
+                r'"lng"\s*:\s*"?(-?\d{1,3}\.\d+)"?',
+            ),
+            (
+                r'latitude\s*=\s*["\'](-?\d{1,3}\.\d+)["\']',
+                r'longitude\s*=\s*["\'](-?\d{1,3}\.\d+)["\']',
+            ),
+        ]
+        for lat_pat, lng_pat in pares:
+            lat = re.search(lat_pat, texto, re.IGNORECASE)
+            lng = re.search(lng_pat, texto, re.IGNORECASE)
+            if lat and lng:
+                return lat.group(1), lng.group(1)
+
+        # Fallback para arrays/pares no padrao [latitude, longitude].
+        for lat, lng in re.findall(r"\[\s*(-?\d{1,3}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)\s*\]", texto):
+            try:
+                lat_f = float(lat)
+                lng_f = float(lng)
+            except ValueError:
+                continue
+            if -35 <= lat_f <= 10 and -75 <= lng_f <= -30:
+                return lat, lng
+        return "", ""
 
     def _resumo_tipologias(self, tipologias: list, html: str) -> str:
         if tipologias:

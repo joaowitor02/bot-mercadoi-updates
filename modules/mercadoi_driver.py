@@ -396,6 +396,9 @@ class MercadoiDriver:
             bairro_aplicado = await self._selecionar_bairro(page, bairro)
             resultado["bairro_aplicado"] = bairro_aplicado
 
+            # ENDERECO / MAPA
+            await self._preencher_endereco_mapa(page, dados)
+
             # MIDIA
             if arquivo_midia:
                 validos = [f for f in arquivo_midia if os.path.exists(f)]
@@ -415,7 +418,11 @@ class MercadoiDriver:
                     return resultado
 
             if dados.get("_fonte") == "orulo":
-                await self._selecionar_contato_corretor(page, "Agustin Machado")
+                await self._selecionar_contato_corretor(
+                    page,
+                    "Agustin Machado",
+                    dados.get("_mercadoi_agent_id", ""),
+                )
             else:
                 await self._marcar_nao_exibir_contato(page)
 
@@ -757,7 +764,7 @@ class MercadoiDriver:
         except Exception as e:
             logger.warning(f"Erro ao marcar nao exibir contato: {e}")
 
-    async def _selecionar_contato_corretor(self, page, nome_corretor: str):
+    async def _selecionar_contato_corretor(self, page, nome_corretor: str, agent_id: str = ""):
         """Marca contato do corretor e seleciona o corretor informado."""
         try:
             marcado = await page.evaluate("""
@@ -789,11 +796,57 @@ class MercadoiDriver:
             else:
                 logger.warning("Opcao de contato do corretor nao encontrada")
 
+            if agent_id and await self._selecionar_corretor_por_id(page, str(agent_id).strip()):
+                return
             if await self._selecionar_corretor_por_texto(page, nome_corretor):
                 return
             logger.warning(f"Corretor '{nome_corretor}' nao encontrado na lista")
         except Exception as e:
             logger.warning(f"Erro ao selecionar corretor '{nome_corretor}': {e}")
+
+    async def _selecionar_corretor_por_id(self, page, agent_id: str) -> bool:
+        if not agent_id:
+            return False
+        selecionado = await page.evaluate("""
+            ({agentId}) => {
+                const selects = Array.from(document.querySelectorAll(
+                    'select[name="fave_agents"], select[name="fave_agents[]"], select[id*="agent"], select[name*="agent"]'
+                ));
+                const aplicar = (sel, opt) => {
+                    if (sel.multiple) {
+                        Array.from(sel.options).forEach(o => o.selected = false);
+                        opt.selected = true;
+                    } else {
+                        sel.value = opt.value;
+                        opt.selected = true;
+                    }
+                    sel.dispatchEvent(new Event('input', { bubbles: true }));
+                    sel.dispatchEvent(new Event('change', { bubbles: true }));
+                    if (window.jQuery) {
+                        const val = sel.multiple ? [opt.value] : opt.value;
+                        const jq = window.jQuery(sel);
+                        jq.val(val).trigger('change');
+                        jq.trigger({
+                            type: 'select2:select',
+                            params: { data: { id: opt.value, text: opt.text || opt.label || '' } }
+                        });
+                        if (jq.data('selectpicker')) jq.selectpicker('refresh');
+                    }
+                    return {ok: true, texto: opt.text || opt.label || '', value: opt.value};
+                };
+                for (const sel of selects) {
+                    const opt = Array.from(sel.options || []).find(o => String(o.value) === String(agentId));
+                    if (opt) return aplicar(sel, opt);
+                }
+                return {ok: false};
+            }
+        """, {"agentId": agent_id})
+        if selecionado and selecionado.get("ok"):
+            await page.keyboard.press("Escape")
+            await page.wait_for_timeout(300)
+            logger.info(f"Corretor selecionado por ID: {selecionado.get('texto') or agent_id}")
+            return True
+        return False
 
     async def _selecionar_corretor_por_texto(self, page, nome_corretor: str) -> bool:
         selecionado = await page.evaluate("""
@@ -1001,6 +1054,77 @@ class MercadoiDriver:
                         f"{'Instagram' if instagram else ''}")
         bloco_html = ("\n\n<pre>" + "".join(icones) + "</pre>") if icones else ""
         return descricao + bloco_html
+
+    async def _preencher_endereco_mapa(self, page, dados: dict):
+        endereco = str(dados.get("endereco", "") or dados.get("rua", "") or "").strip()
+        latitude = str(dados.get("latitude", "") or dados.get("lat", "") or "").strip()
+        longitude = str(dados.get("longitude", "") or dados.get("lng", "") or dados.get("lon", "") or "").strip()
+        if not endereco and not latitude and not longitude:
+            return
+        try:
+            resultado = await page.evaluate("""
+                ({endereco, latitude, longitude}) => {
+                    const visivel = (el) => !!(el && (el.offsetWidth || el.offsetHeight || el.getClientRects().length));
+                    const preencher = (seletores, valor) => {
+                        if (!valor) return false;
+                        for (const seletor of seletores) {
+                            const campos = Array.from(document.querySelectorAll(seletor));
+                            for (const el of campos) {
+                                if (!el || el.disabled || el.readOnly) continue;
+                                if (el.type === 'hidden' && !/(lat|lng|long|map)/i.test(el.name || el.id || '')) continue;
+                                if (el.type !== 'hidden' && !visivel(el)) continue;
+                                el.value = valor;
+                                el.dispatchEvent(new Event('input', {bubbles: true}));
+                                el.dispatchEvent(new Event('change', {bubbles: true}));
+                                if (window.jQuery) window.jQuery(el).val(valor).trigger('change');
+                                return true;
+                            }
+                        }
+                        return false;
+                    };
+                    const ok = {};
+                    ok.endereco = preencher([
+                        '#property_map_address',
+                        '#prop_address',
+                        '#fave_property_address',
+                        'input[name="property_map_address"]',
+                        'input[name="fave_property_address"]',
+                        'input[name="property_address"]',
+                        'input[name*="map"][name*="address"]',
+                        'input[name*="address"]'
+                    ], endereco);
+                    ok.latitude = preencher([
+                        '#latitude',
+                        '#property_map_lat',
+                        '#fave_property_location_lat',
+                        'input[name="latitude"]',
+                        'input[name="lat"]',
+                        'input[name*="latitude"]',
+                        'input[name*="[lat]"]',
+                        'input[name*="map"][name*="lat"]'
+                    ], latitude);
+                    ok.longitude = preencher([
+                        '#longitude',
+                        '#property_map_lng',
+                        '#property_map_long',
+                        '#fave_property_location_lng',
+                        'input[name="longitude"]',
+                        'input[name="lng"]',
+                        'input[name="long"]',
+                        'input[name*="longitude"]',
+                        'input[name*="[lng]"]',
+                        'input[name*="map"][name*="lng"]'
+                    ], longitude);
+                    return ok;
+                }
+            """, {"endereco": endereco, "latitude": latitude, "longitude": longitude})
+            marcados = [k for k, ok in (resultado or {}).items() if ok]
+            if marcados:
+                logger.info(f"Endereco/mapa preenchido: {', '.join(marcados)}")
+            else:
+                logger.info("Campos de endereco/mapa nao encontrados no formulario")
+        except Exception as e:
+            logger.warning(f"Erro ao preencher endereco/mapa: {e}")
 
     @staticmethod
     def _normalizar_url(v: str) -> str:

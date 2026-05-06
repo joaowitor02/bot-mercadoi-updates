@@ -530,6 +530,8 @@ async def processar_link(row: dict, sheet, config: dict):
         dados, tipo_midia, arquivo_midia, motivo_falha = await _extrair_orulo(url, config)
         if dados:
             dados["_fonte"] = "orulo"
+            if config.get("orulo_agent_id", "").strip():
+                dados["_mercadoi_agent_id"] = str(config["orulo_agent_id"]).strip()
     elif olx_url_valida(url):
         logger.info(f"[{execution_id}] Fonte: OLX")
         sheet.atualizar_campo(row_index, "origem", "OLX")
@@ -661,6 +663,8 @@ async def processar_link(row: dict, sheet, config: dict):
             for idx, dados_extra in enumerate(extras_orulo[1:], 2):
                 dados_extra = dict(dados_extra)
                 dados_extra["_fonte"] = "orulo"
+                if config.get("orulo_agent_id", "").strip():
+                    dados_extra["_mercadoi_agent_id"] = str(config["orulo_agent_id"]).strip()
                 if not dados_extra.get("url_publicacao"):
                     dados_extra["url_publicacao"] = url
                 if not dados_extra.get("whatsapp_url") and config.get("whatsapp_default", "").strip():

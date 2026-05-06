@@ -1347,6 +1347,7 @@ async def get_config():
             "whatsapp_default":         cfg.get("whatsapp_default", ""),
             "cache_extracao_ttl_horas": cfg.get("cache_extracao_ttl_horas", 12),
             "limpeza_auto_dias":        cfg.get("limpeza_auto_dias", 15),
+            "orulo_agent_id":           cfg.get("orulo_agent_id", ""),
         })
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
@@ -1497,6 +1498,7 @@ class ConfigAvancadaRequest(BaseModel):
     whatsapp_default:      str | None = None
     cache_extracao_ttl_horas: int | None = None
     limpeza_auto_dias:        int | None = None
+    orulo_agent_id:        str | None = None
 
 
 @app.post("/api/config/avancada")

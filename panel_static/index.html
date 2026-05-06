@@ -744,6 +744,13 @@
           </div>
 
           <div class="space-y-1">
+            <label class="block text-xs text-slate-400">ID do corretor Órulo</label>
+            <input id="adv-orulo-agent-id" type="text" autocomplete="off"
+              placeholder="ex: 37016"
+              class="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 font-mono focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-transparent" />
+          </div>
+
+          <div class="space-y-1">
             <label class="block text-xs text-slate-400">Cache de extração (horas)</label>
             <input id="adv-cache-ttl" type="number" min="0" max="168" step="1"
               placeholder="12"
@@ -2156,6 +2163,7 @@ async function carregarConfig() {
     set('adv-version-url',        d.version_check_url);
     set('adv-update-zip-url',     d.update_zip_url);
     set('adv-whatsapp-default',   d.whatsapp_default);
+    set('adv-orulo-agent-id',     d.orulo_agent_id);
     set('adv-cache-ttl',          d.cache_extracao_ttl_horas);
     set('adv-limpeza-dias',       d.limpeza_auto_dias);
     setChk('adv-usar-deepseek',   d.usar_deepseek_api);
@@ -2468,6 +2476,7 @@ async function salvarAvancada() {
     version_check_url:     document.getElementById('adv-version-url').value,
     update_zip_url:        document.getElementById('adv-update-zip-url').value,
     whatsapp_default:      document.getElementById('adv-whatsapp-default').value,
+    orulo_agent_id:        document.getElementById('adv-orulo-agent-id').value,
     cache_extracao_ttl_horas: Number(document.getElementById('adv-cache-ttl').value || 0),
     limpeza_auto_dias:        Number(document.getElementById('adv-limpeza-dias').value || 0),
     usar_deepseek_api:     document.getElementById('adv-usar-deepseek').checked,
