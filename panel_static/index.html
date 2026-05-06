@@ -1002,6 +1002,8 @@ let _watchAtivo = false;
 let _isAdmin = false;
 let _toastTimer = null;
 let _mainTab = 'dashboard';
+let _lastLogLine = '';           // última linha do log para detectar progressão
+let _lastFinalizados = -1;       // total de finalizados (sucesso+falha) para detectar novo cadastro
 
 // ---------------------------------------------------------------------------
 // Navegação principal
@@ -1299,13 +1301,19 @@ function fecharModalDet(e) {
 // ---------------------------------------------------------------------------
 // API
 // ---------------------------------------------------------------------------
-async function carregarExecucoes() {
+async function carregarExecucoes(forcar = false) {
   try {
     const r = await fetch(`/api/execucoes?dias=${_filtroDias}&_=${Date.now()}`, { cache: 'no-store' });
-    _execucoes = await r.json();
-    renderStats(_execucoes);
-    renderResumoDiario(_execucoes);
-    renderTabela(_execucoesFiltradas());
+    const novas = await r.json();
+    const finalizados = novas.filter(e => e.status === 'sucesso' || e.status === 'falha').length;
+    // Só re-renderiza quando um novo cadastro for finalizado (ou chamada forçada)
+    if (forcar || finalizados !== _lastFinalizados) {
+      _lastFinalizados = finalizados;
+      _execucoes = novas;
+      renderStats(_execucoes);
+      renderResumoDiario(_execucoes);
+      renderTabela(_execucoesFiltradas());
+    }
   } catch {
     document.getElementById('tabela-body').innerHTML =
       '<tr><td colspan="6" class="text-center py-16 text-red-400 text-sm">Erro ao carregar execuções</td></tr>';
@@ -1331,7 +1339,7 @@ async function atualizarPainel(opts = {}) {
   } = opts;
   const tarefas = [];
   if (status) tarefas.push(atualizarStatus());
-  if (execucoes) tarefas.push(carregarExecucoes());
+  if (execucoes) tarefas.push(carregarExecucoes(true));
   if (pendentes) tarefas.push(carregarPendentes());
   if (fila) tarefas.push(carregarFila());
   if (diagnostico && _isAdmin) tarefas.push(carregarDiagnostico());
@@ -1524,15 +1532,18 @@ async function atualizarLogs() {
   try {
     const r = await fetch(`/api/logs/live?ultimas=80&_=${Date.now()}`, { cache: 'no-store' });
     const linhas = await r.json();
-    const container = document.getElementById('log-content');
-    if (linhas.length) {
+    const ultimaLinha = linhas.length ? linhas[linhas.length - 1] : '';
+    // Só atualiza DOM quando houver uma linha nova (progressão de etapa)
+    if (ultimaLinha && ultimaLinha !== _lastLogLine) {
+      _lastLogLine = ultimaLinha;
+      const container = document.getElementById('log-content');
       container.innerHTML = linhas.map(l =>
         `<p class="log-line ${logColor(l)}">${esc(l)}</p>`
       ).join('');
       container.scrollTop = container.scrollHeight;
+      const ts = document.getElementById('log-last-update');
+      if (ts) ts.textContent = new Date().toLocaleTimeString('pt-BR');
     }
-    const ts = document.getElementById('log-last-update');
-    if (ts) ts.textContent = new Date().toLocaleTimeString('pt-BR');
   } catch {
     const ts = document.getElementById('log-last-update');
     if (ts) ts.textContent = 'erro de conexão';
@@ -1843,7 +1854,7 @@ function setPeriodo(dias) {
   });
   const btn = document.getElementById(`p-${dias}`);
   if (btn) btn.className = 'periodo-btn active px-3 py-1 rounded-lg text-xs font-semibold transition-colors bg-slate-800 text-white';
-  carregarExecucoes();
+  carregarExecucoes(true);
 }
 
 function _execucoesFiltradas() {
@@ -2729,7 +2740,7 @@ async function atualizarLimite() {
 // Init + polling
 // ---------------------------------------------------------------------------
 async function init() {
-  await Promise.all([carregarExecucoes(), atualizarStatus(), carregarPendentes(), carregarConfig(), atualizarChromeStatus(), verificarAtualizacao(), verificarTunnel(), atualizarLimite()]);
+  await Promise.all([carregarExecucoes(true), atualizarStatus(), carregarPendentes(), carregarConfig(), atualizarChromeStatus(), verificarAtualizacao(), verificarTunnel(), atualizarLimite()]);
 
   setInterval(verificarTunnel, 10000);
 
