@@ -478,6 +478,11 @@ class MercadoiDriver:
                 resultado["screenshot_path"] = await self._tirar_screenshot("erro_salvamento")
                 return resultado
 
+            # Atualiza meta de detalhes diretamente via XML-RPC (contorna limitações do form serialize)
+            property_id = salvamento.get("property_id")
+            if property_id:
+                self._atualizar_meta_detalhes(property_id, dados)
+
             resultado["sucesso"] = True
             resultado["mensagem"] = f"{modo} com sucesso"
             resultado["mercadoi_url"] = salvamento.get("url", "")
@@ -2310,6 +2315,56 @@ class MercadoiDriver:
         except Exception as e:
             logger.error(f"Erro ao salvar rascunho: {e}")
             return {"ok": False}
+
+    def _atualizar_meta_detalhes(self, post_id, dados: dict):
+        """Atualiza meta de detalhes via XML-RPC apos salvar o post no Mercadoi."""
+        if not post_id or not self._wp_user or not self._wp_pass:
+            return
+        try:
+            import xmlrpc.client
+            det = self._detalhes_adicionais(dados)
+            dv = det["selects"]
+            iv = det["inputs"]
+
+            mapeamento = {
+                "fave_tem-elevador":              dv.get("Tem elevador?", ""),
+                "fave_mobiliado":                 dv.get("Mobiliado?", ""),
+                "fave_escriturado":               dv.get("Escriturado?", ""),
+                "fave_aceita-airbnb-temporada":   dv.get("Aceita Airbnb/Temporada", ""),
+                "fave_aceita-permuta":            dv.get("Aceita Permuta?", ""),
+                "fave_aceita-financiamento":      dv.get("Aceita Financiamento?", ""),
+                "fave_posic3a7c3a3o-do-imovel":  dv.get("Posição Solar", ""),
+                "fave_posic3a7c3a3o":             dv.get("Posição no Prédio", ""),
+                "fave_estagio-da-obra-imc3b3vel": dv.get("Estágio do Imovel", ""),
+                "fave_no-tc3a9rreo":              dv.get("Andar", ""),
+                "fave_perto-do-mar":              dv.get("Perto do mar?", ""),
+                "fave_condomc3adnio-iptu-taxas":  iv.get("Condomínio - IPTU - Taxas", ""),
+                "fave_property_year":             iv.get("Ano de construção", ""),
+            }
+
+            # Para posts Orulo, garante o corretor via meta também
+            agent_id = str(dados.get("_mercadoi_agent_id", "")).strip()
+            if dados.get("_fonte") == "orulo" and agent_id:
+                mapeamento["fave_agents"] = agent_id
+                mapeamento["fave_agent_display_option"] = "agent_info"
+
+            custom_fields = [
+                {"key": k, "value": v}
+                for k, v in mapeamento.items()
+                if v
+            ]
+            if not custom_fields:
+                return
+
+            xmlrpc_url = self.base_url.rstrip("/") + "/xmlrpc.php"
+            proxy = xmlrpc.client.ServerProxy(xmlrpc_url)
+            proxy.wp.editPost("1", self._wp_user, self._wp_pass, int(post_id), {
+                "custom_fields": custom_fields
+            })
+            nomes = [f"{f['key'].replace('fave_','')}={f['value']}" for f in custom_fields]
+            logger.info(f"Meta atualizada via XML-RPC (post {post_id}): {', '.join(nomes)}")
+        except Exception as e:
+            logger.warning(f"Falha ao atualizar meta via XML-RPC: {e}")
 
     async def _publicar(self, page, agent_id: str = ""):
         """Publica o imovel diretamente, usando o botao do formulario como caminho principal."""
