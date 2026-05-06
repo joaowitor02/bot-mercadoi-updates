@@ -396,9 +396,6 @@ class MercadoiDriver:
             bairro_aplicado = await self._selecionar_bairro(page, bairro)
             resultado["bairro_aplicado"] = bairro_aplicado
 
-            # ENDERECO / MAPA
-            await self._preencher_endereco_mapa(page, dados)
-
             # MIDIA
             if arquivo_midia:
                 validos = [f for f in arquivo_midia if os.path.exists(f)]
@@ -418,6 +415,9 @@ class MercadoiDriver:
                     return resultado
 
             if dados.get("_fonte") == "orulo":
+                # Melhorias específicas do Órulo. Mantidas fora do fluxo das demais
+                # fontes para preservar a automação que já estava estável.
+                await self._preencher_endereco_mapa(page, dados)
                 await self._selecionar_contato_corretor(
                     page,
                     "Agustin Machado",
@@ -1090,8 +1090,7 @@ class MercadoiDriver:
                         'input[name="property_map_address"]',
                         'input[name="fave_property_address"]',
                         'input[name="property_address"]',
-                        'input[name*="map"][name*="address"]',
-                        'input[name*="address"]'
+                        'input[name*="map"][name*="address"]'
                     ], endereco);
                     ok.latitude = preencher([
                         '#latitude',
