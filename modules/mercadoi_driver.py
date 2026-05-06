@@ -1754,9 +1754,9 @@ class MercadoiDriver:
         cond = _limpar_valor(_s("condominio"))
         iptu = _limpar_valor(_s("iptu"))
         taxas = _limpar_valor(_s("taxas"))
-        # monta "cond/iptu/taxas" omitindo trailing slashes vazios
+        # monta "cond/iptu/taxas" preservando slots vazios internos (ex: 100//500)
+        # mas omite trailing separadores se os últimos slots estiverem vazios
         partes = [cond, iptu, taxas]
-        # remove vazios do final mas mantém separadores internos
         while partes and not partes[-1]:
             partes.pop()
         cond_taxas_str = "/".join(partes) if partes else ""
