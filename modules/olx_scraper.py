@@ -210,6 +210,35 @@ def _enriquecer_por_texto(dados: dict) -> dict:
             dados["aceita_permuta"] = "Não"
         elif "aceita permuta" in n:
             dados["aceita_permuta"] = "Sim"
+    if not dados.get("aceita_airbnb"):
+        if "nao aceita airbnb" in n or "nao aceita temporada" in n:
+            dados["aceita_airbnb"] = "Não"
+        elif "aceita airbnb" in n or "aceita temporada" in n or "aluguel por temporada" in n:
+            dados["aceita_airbnb"] = "Sim"
+    if not dados.get("estagio_imovel"):
+        if re.search(r"\bem\s*constru[cç][aã]o\b|\bem\s*obras?\b", texto, re.IGNORECASE):
+            dados["estagio_imovel"] = "Em Construção"
+        elif re.search(r"\blan[cç]amento\b", texto, re.IGNORECASE):
+            dados["estagio_imovel"] = "Lançamento"
+        elif re.search(r"\bpronto\s+para\s+morar\b|\bprontas?\s+para\s+morar\b", texto, re.IGNORECASE):
+            dados["estagio_imovel"] = "Pronto para morar"
+        elif re.search(r"\breformad[oa]\b", texto, re.IGNORECASE):
+            dados["estagio_imovel"] = "Reformado"
+        elif re.search(r"\bsemi.?nov[oa]\b", texto, re.IGNORECASE):
+            dados["estagio_imovel"] = "Semi Novo"
+    if not dados.get("ano_construcao"):
+        m = re.search(r"\b(?:ano\s+de\s+constru[cç][aã]o|constru[ií]do\s+em|entregue\s+em|entrega\s+em)[:\s]+(\d{4})\b", texto, re.IGNORECASE)
+        if not m:
+            m = re.search(r"\b(19[5-9]\d|20[0-3]\d)\b", texto)
+        if m:
+            dados["ano_construcao"] = m.group(1)
+    if not dados.get("posicao_predio"):
+        if re.search(r"\bfrente\b", texto, re.IGNORECASE) and not re.search(r"frente\s+(?:ao\s+mar|para\s+o\s+mar|praia)", texto, re.IGNORECASE):
+            dados["posicao_predio"] = "Frente"
+        elif "fundos" in n or re.search(r"\bfundo\b", texto, re.IGNORECASE):
+            dados["posicao_predio"] = "Fundo"
+        elif "lateral" in n:
+            dados["posicao_predio"] = "Lateral"
     if not dados.get("posicao_solar"):
         for chave, valor in [
             ("nascente", "Leste"), ("poente", "Oeste"), ("nordeste", "Nordeste"),
