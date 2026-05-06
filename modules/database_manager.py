@@ -109,6 +109,8 @@ class DatabaseManager:
                     conn.execute("ALTER TABLE imoveis ADD COLUMN prioridade INTEGER DEFAULT 0")
                 if "whatsapp_contato" not in cols:
                     conn.execute("ALTER TABLE imoveis ADD COLUMN whatsapp_contato TEXT DEFAULT ''")
+                if "mercadoi_usuario" not in cols:
+                    conn.execute("ALTER TABLE imoveis ADD COLUMN mercadoi_usuario TEXT DEFAULT ''")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_imoveis_status_id ON imoveis(status, id)")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_imoveis_url ON imoveis(url_instagram)")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_imoveis_atualizado ON imoveis(atualizado_em)")

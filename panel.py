@@ -854,6 +854,24 @@ async def status(request: Request):
         pass
 
     rodando_real = _bot_em_execucao()
+    # Login Mercadoi ativo
+    login_ativo = ""
+    try:
+        from datetime import date as _date_local
+        cfg_l = _load_config()
+        logins = cfg_l.get("mercadoi_logins", [])
+        if logins:
+            manual = cfg_l.get("mercadoi_login_manual")
+            if manual is not None:
+                if isinstance(manual, int):
+                    idx = int(manual) % len(logins)
+                else:
+                    idx = next((i for i, l in enumerate(logins) if l.get("usuario") == manual), 0)
+            else:
+                idx = _date_local.today().toordinal() % len(logins)
+            login_ativo = logins[idx].get("usuario", "")
+    except Exception:
+        pass
     return JSONResponse({
         "rodando":        rodando_real,
         "watch_ativo":    _watch_ativo,
@@ -863,7 +881,66 @@ async def status(request: Request):
         "nivel":          nivel,
         "tempo_medio":    tempo_medio,
         "workers_ativos": workers_ativos,
+        "login_ativo":    login_ativo,
     })
+
+
+@app.get("/api/logins")
+async def listar_logins():
+    from datetime import date as _date_l
+    cfg = _load_config()
+    logins = cfg.get("mercadoi_logins", [])
+    if not logins:
+        return JSONResponse([])
+    manual = cfg.get("mercadoi_login_manual")
+    auto_idx = _date_l.today().toordinal() % len(logins)
+    # Contagem de cadastros por usuário
+    stats: dict[str, int] = {}
+    try:
+        db = _db_manager()
+        with db._conn() as conn:
+            rows = conn.execute(
+                "SELECT mercadoi_usuario, COUNT(*) as n FROM imoveis "
+                "WHERE status IN ('sucesso','rascunho_salvo','publicado','rascunho_salvo_sem_midia_video') "
+                "AND mercadoi_usuario != '' GROUP BY mercadoi_usuario"
+            ).fetchall()
+            for r in rows:
+                stats[r["mercadoi_usuario"]] = r["n"]
+    except Exception:
+        pass
+    resultado = []
+    for i, login in enumerate(logins):
+        u = login.get("usuario", "")
+        is_manual = (manual == u or manual == i)
+        is_auto_hoje = (i == auto_idx and manual is None)
+        resultado.append({
+            "idx": i,
+            "usuario": u,
+            "ativo": is_manual or is_auto_hoje,
+            "manual": is_manual,
+            "auto_hoje": is_auto_hoje,
+            "cadastros": stats.get(u, 0),
+        })
+    return JSONResponse(resultado)
+
+
+@app.post("/api/logins/selecionar/{usuario}")
+async def selecionar_login(usuario: str):
+    cfg = _load_config()
+    logins = cfg.get("mercadoi_logins", [])
+    if not any(l.get("usuario") == usuario for l in logins):
+        return JSONResponse({"ok": False, "msg": "Login não encontrado"}, status_code=404)
+    cfg["mercadoi_login_manual"] = usuario
+    _save_config(cfg)
+    return JSONResponse({"ok": True, "msg": f"Login '{usuario}' selecionado manualmente"})
+
+
+@app.delete("/api/logins/manual")
+async def resetar_login_manual():
+    cfg = _load_config()
+    cfg["mercadoi_login_manual"] = None
+    _save_config(cfg)
+    return JSONResponse({"ok": True, "msg": "Voltando à rotação automática diária"})
 
 
 @app.post("/api/processar")

@@ -34,6 +34,29 @@ from modules.property_types import aplicar_tipos_imovel
 
 logger = Logger("main")
 
+from datetime import date as _date
+
+def obter_login_mercadoi(config: dict) -> dict:
+    """Retorna o login Mercadoi ativo: rotação diária ou seleção manual."""
+    logins = config.get("mercadoi_logins", [])
+    if not logins:
+        return {
+            "usuario": config.get("wordpress_xmlrpc_user", ""),
+            "senha":   config.get("wordpress_xmlrpc_password", ""),
+            "idx": -1,
+        }
+    manual = config.get("mercadoi_login_manual")
+    if manual is not None:
+        if isinstance(manual, int):
+            idx = int(manual) % len(logins)
+        else:
+            idx = next((i for i, l in enumerate(logins) if l.get("usuario") == manual), 0)
+    else:
+        idx = _date.today().toordinal() % len(logins)
+    login = logins[idx]
+    return {"usuario": login["usuario"], "senha": login["senha"], "idx": idx}
+
+
 MAX_TENTATIVAS_MERCADOI = 3
 ESPERA_ENTRE_TENTATIVAS = 5  # segundos
 SALVAR_TUDO_COMO_RASCUNHO = True
@@ -459,19 +482,21 @@ async def _publicar_com_retry(
     usar_browser_mercadoi = _forcar_fluxo_browser_mercadoi(config) or dados.get("_fonte") == "orulo"
 
     if usar_browser_mercadoi:
-        logger.info(f"[{execution_id}] Usando Playwright Mercadoi (fluxo formulario)")
+        login_mc = obter_login_mercadoi(config)
+        logger.info(f"[{execution_id}] Usando Playwright Mercadoi (fluxo formulario) | login: {login_mc['usuario']}")
         async with MercadoiDriver(
             config["mercadoi_url"],
             config.get("mercadoi_profile_path", r"C:\chrome_bot_mercadoi"),
             execution_id=execution_id,
-            wp_user=config.get("wordpress_xmlrpc_user", "") or config.get("wordpress_wp_user", ""),
-            wp_pass=config.get("wordpress_xmlrpc_password", "") or config.get("wordpress_app_password", ""),
+            wp_user=login_mc["usuario"] or config.get("wordpress_xmlrpc_user", "") or config.get("wordpress_wp_user", ""),
+            wp_pass=login_mc["senha"] or config.get("wordpress_xmlrpc_password", "") or config.get("wordpress_app_password", ""),
         ) as driver:
             for tentativa in range(1, MAX_TENTATIVAS_MERCADOI + 1):
                 if tentativa > 1:
                     logger.info(f"[{execution_id}] Tentativa {tentativa}/{MAX_TENTATIVAS_MERCADOI}...")
                 resultado = await driver.preencher_e_salvar(dados, tipo_midia, arquivo_midia)
                 if resultado["sucesso"]:
+                    resultado["_mercadoi_usuario"] = login_mc["usuario"]
                     break
                 if tentativa < MAX_TENTATIVAS_MERCADOI:
                     logger.warning(
@@ -687,6 +712,8 @@ async def processar_link(row: dict, sheet, config: dict):
         mercadoi_url = resultado.get("mercadoi_url", "")
         sheet.atualizar_campo(row_index, "mercadoi_url", mercadoi_url)
         sheet.atualizar_campo(row_index, "url_publica", resultado.get("url_publica", ""))
+        if resultado.get("_mercadoi_usuario"):
+            sheet.atualizar_campo(row_index, "mercadoi_usuario", resultado["_mercadoi_usuario"])
         # Define status: publicado diretamente ou rascunho
         msg = resultado.get("mensagem", "")
         status_final = "publicado" if "Publicado" in msg else "rascunho_salvo"
