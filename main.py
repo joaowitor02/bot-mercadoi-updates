@@ -34,7 +34,12 @@ from modules.property_types import aplicar_tipos_imovel
 
 logger = Logger("main")
 
-from datetime import date as _date
+from datetime import date as _date, datetime as _datetime, timezone as _tz, timedelta as _td
+
+_BRASILIA = _tz(_td(hours=-3))
+
+def _hoje_brasilia() -> _date:
+    return _datetime.now(_BRASILIA).date()
 
 def obter_login_mercadoi(config: dict) -> dict:
     """Retorna o login Mercadoi ativo: rotação diária ou seleção manual."""
@@ -57,7 +62,7 @@ def obter_login_mercadoi(config: dict) -> dict:
         else:
             idx = next((i for i, l in enumerate(logins) if l.get("usuario") == manual), 0)
     else:
-        idx = _date.today().toordinal() % len(logins)
+        idx = _hoje_brasilia().toordinal() % len(logins)
     login = logins[idx]
     return {"usuario": login["usuario"], "senha": login["senha"], "idx": idx, "admin": False}
 

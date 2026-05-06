@@ -857,7 +857,9 @@ async def status(request: Request):
     # Login Mercadoi ativo
     login_ativo = ""
     try:
-        from datetime import date as _date_local
+        from datetime import datetime as _dt_local, timezone as _tz_local, timedelta as _td_local
+        _brasilia = _tz_local(_td_local(hours=-3))
+        hoje_br = _dt_local.now(_brasilia).date()
         cfg_l = _load_config()
         logins = cfg_l.get("mercadoi_logins", [])
         admin_u = cfg_l.get("wordpress_xmlrpc_user", "")
@@ -871,7 +873,7 @@ async def status(request: Request):
                 else:
                     idx = next((i for i, l in enumerate(logins) if l.get("usuario") == manual), 0)
             else:
-                idx = _date_local.today().toordinal() % len(logins)
+                idx = hoje_br.toordinal() % len(logins)
             login_ativo = logins[idx].get("usuario", "")
     except Exception:
         pass
@@ -890,7 +892,8 @@ async def status(request: Request):
 
 @app.get("/api/logins")
 async def listar_logins(request: Request):
-    from datetime import date as _date_l
+    from datetime import datetime as _dt_l, timezone as _tz_l, timedelta as _td_l
+    hoje_br_l = _dt_l.now(_tz_l(_td_l(hours=-3))).date()
     token = request.cookies.get("mercadoi_session", "")
     sem_auth = not _SENHA and not _ADMIN_SENHA
     nivel = "admin" if sem_auth else _get_session_nivel(token)
@@ -899,7 +902,7 @@ async def listar_logins(request: Request):
     logins = cfg.get("mercadoi_logins", [])
     admin_user = cfg.get("wordpress_xmlrpc_user", "")
     manual = cfg.get("mercadoi_login_manual")
-    auto_idx = (_date_l.today().toordinal() % len(logins)) if logins else -1
+    auto_idx = (hoje_br_l.toordinal() % len(logins)) if logins else -1
 
     stats: dict[str, int] = {}
     try:
