@@ -342,17 +342,19 @@
         </div>
         <div>
           <h2 class="text-sm font-semibold text-slate-800">Adicionar Links à Fila</h2>
-          <p class="text-xs text-slate-400">Cole links do Instagram, OLX ou Órulo; para OLX, pode colar o telefone antes do link</p>
+          <p class="text-xs text-slate-400">Cole links do Instagram, OLX ou Órulo; para OLX, cole o telefone na linha abaixo do link</p>
         </div>
       </div>
 
       <div class="p-5 space-y-3">
         <div class="flex rounded-xl border border-slate-200 focus-within:ring-2 focus-within:ring-brand-400 focus-within:border-transparent overflow-hidden transition-shadow">
-          <div id="line-numbers" class="select-none bg-slate-50 border-r border-slate-200 px-3 py-3 text-right min-w-[2.5rem]">
-            <div class="text-xs text-slate-300 leading-[1.625rem] font-mono">1</div>
+          <div id="line-numbers" class="select-none bg-slate-50 border-r border-slate-200 px-2 py-3 min-w-[6.5rem]">
+            <div class="text-xs text-slate-300 leading-[1.625rem] font-mono flex items-center justify-end gap-1.5">
+              <span class="text-[10px]">&nbsp;</span><span>1</span>
+            </div>
           </div>
           <textarea id="textarea-urls" rows="5"
-            placeholder="https://www.instagram.com/p/ABC123/&#10;https://www.olx.com.br/imoveis/...&#10;https://www.orulo.com.br/s/abc123/share?jwt=..."
+            placeholder="https://www.instagram.com/p/ABC123/&#10;https://www.olx.com.br/imoveis/...&#10;85999887766&#10;https://www.orulo.com.br/buildings/12345"
             class="flex-1 px-4 py-3 text-sm text-slate-700 resize-none focus:outline-none placeholder-slate-300 font-mono leading-[1.625rem]"
             oninput="atualizarContador()"
             onkeydown="if(event.ctrlKey&&event.key==='Enter') adicionarUrls()"></textarea>
@@ -1811,22 +1813,22 @@ function _linhasComContatoParaUrls(urlsAlvo) {
   const urlRegex = /(https?:\/\/[^\s<>\]\)"']+|(?:www\.)?(?:instagram\.com|[\w-]+\.)?olx\.com\.br[^\s<>\]\)"']*|(?:www\.)?orulo\.com\.br[^\s<>\]\)"']*)/i;
   const phoneRegex = /(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)?(?:9[\s.-]*)?\d{4}[\s.-]?\d{4}/;
   const saida = [];
-  let contatoPendente = '';
 
-  for (const linha of linhas) {
+  for (let i = 0; i < linhas.length; i++) {
+    const linha = linhas[i];
     const urlMatch = linha.match(urlRegex);
-    const temTelefone = phoneRegex.test(linha);
-    if (!urlMatch) {
-      if (temTelefone) contatoPendente = linha;
-      continue;
-    }
+    if (!urlMatch) continue;
     const url = urlMatch[0].startsWith('http') ? urlMatch[0] : `https://${urlMatch[0]}`;
     if (!alvo.has(url)) continue;
-    if (contatoPendente && /olx\.com\.br/i.test(url)) {
-      saida.push(contatoPendente);
-      contatoPendente = '';
-    }
     saida.push(linha);
+    // Contato vai na linha ABAIXO do link OLX
+    if (/olx\.com\.br/i.test(url) && i + 1 < linhas.length) {
+      const proxima = linhas[i + 1];
+      if (phoneRegex.test(proxima) && !urlRegex.test(proxima)) {
+        saida.push(proxima);
+        i++;
+      }
+    }
   }
   return saida.length ? saida : [...urlsAlvo];
 }
@@ -1846,12 +1848,15 @@ function retirarDuplicadas() {
 // ---------------------------------------------------------------------------
 function atualizarContador() {
   const textarea = document.getElementById('textarea-urls');
-  const linhas = textarea.value.split('\n').map(l => l.trim()).filter(Boolean);
+  const rawLinhas = textarea.value.split('\n');
   const urlRegex = /(https?:\/\/[^\s<>\]\)"']+|(?:www\.)?(?:instagram\.com|[\w-]+\.)?olx\.com\.br[^\s<>\]\)"']*|(?:www\.)?orulo\.com\.br[^\s<>\]\)"']*)/i;
   const phoneRegex = /(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)?(?:9[\s.-]*)?\d{4}[\s.-]?\d{4}/;
-  const count = linhas.filter(l => urlRegex.test(l)).length;
-  const temContatoOlx = linhas.some(l => phoneRegex.test(l) && !urlRegex.test(l))
-    && linhas.some(l => /olx\.com\.br/i.test(l));
+  const olxRegex = /olx\.com\.br/i;
+
+  const linhasTrimmed = rawLinhas.map(l => l.trim());
+  const count = linhasTrimmed.filter(l => urlRegex.test(l)).length;
+  const temContatoOlx = linhasTrimmed.some(l => phoneRegex.test(l) && !urlRegex.test(l))
+    && linhasTrimmed.some(l => olxRegex.test(l));
 
   const counter = document.getElementById('link-counter');
   const counterTxt = document.getElementById('counter-txt');
@@ -1864,11 +1869,32 @@ function atualizarContador() {
     counter.classList.remove('inline-flex');
   }
 
-  const totalLinhas = textarea.value.split('\n').length;
+  // Determina o label de cada linha para o gutter
+  const labels = rawLinhas.map((linha, i) => {
+    const t = linha.trim();
+    if (urlRegex.test(t)) return 'url';
+    if (phoneRegex.test(t) && !urlRegex.test(t)) return 'contato';
+    // Linha vazia logo após URL da OLX → dica "Contato:"
+    if (!t && i > 0 && olxRegex.test(rawLinhas[i-1].trim()) && urlRegex.test(rawLinhas[i-1].trim())) return 'hint';
+    return '';
+  });
+
+  const total = rawLinhas.length;
   const nums = document.getElementById('line-numbers');
-  nums.innerHTML = Array.from({ length: totalLinhas }, (_, i) =>
-    `<div class="text-xs leading-[1.625rem] font-mono ${i < totalLinhas - 1 || textarea.value.endsWith('\n') ? 'text-slate-400' : 'text-slate-300'}">${i + 1}</div>`
-  ).join('');
+  nums.innerHTML = labels.map((label, i) => {
+    const ativo = i < total - 1 || textarea.value.endsWith('\n');
+    const numCor = ativo ? 'text-slate-400' : 'text-slate-300';
+    const labelHtml = label === 'url'
+      ? `<span class="text-[10px] font-semibold text-brand-500">URL:</span>`
+      : label === 'contato'
+        ? `<span class="text-[10px] font-semibold text-amber-500">Contato:</span>`
+        : label === 'hint'
+          ? `<span class="text-[10px] font-medium text-amber-300">Contato:</span>`
+          : `<span class="text-[10px]">&nbsp;</span>`;
+    return `<div class="leading-[1.625rem] font-mono flex items-center justify-end gap-1.5">
+      ${labelHtml}<span class="text-xs ${numCor}">${i + 1}</span>
+    </div>`;
+  }).join('');
 }
 
 // ---------------------------------------------------------------------------
