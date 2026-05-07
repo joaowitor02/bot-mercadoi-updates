@@ -99,9 +99,24 @@ _AMENIDADES = [
     ("Espaco zen",        ["espaco zen", "espaço zen", "jardim zen"]),
 ]
 
-# Termos que devem ser IGNORADOS nas características (nunca aparecem)
+# Amenidades que nunca devem aparecer nas características (política do cliente)
 _AMENIDADES_EXCLUIR = {
-    "spa", "seguranca 24h", "seguranca 24 horas", "seguranca eletronica",
+    "academia", "fitness",
+    "banheiro social",
+    "biblioteca",
+    "circuito de seguranca", "camera de seguranca",
+    "espaco gourmet", "espaco gourmet privativo",
+    "lounge",
+    "piscina adulto", "piscina infantil", "piscina kids",
+    "piscina privativa",
+    "portaria 24h", "portaria 24 horas", "portaria eletronica",
+    "salao de festas", "salao de festas sum",
+    "salao de jogos",
+    "solarium",
+    "spa",
+    "terraco", "terraco rooftop", "rooftop",
+    "sistema de alarme",
+    "seguranca 24h", "seguranca 24 horas", "seguranca eletronica",
     "segurança 24h", "segurança eletrônica",
 }
 

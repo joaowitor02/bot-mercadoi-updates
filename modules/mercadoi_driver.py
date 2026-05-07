@@ -21,6 +21,36 @@ def normalizar(texto):
     return re.sub(r"\s+", " ", sem_acento.lower().strip())
 
 
+# Características que NUNCA devem ser marcadas no formulário Mercadoi
+# (independente da seção — comum ou privativa)
+_NUNCA_MARCAR: set[str] = {normalizar(x) for x in [
+    # Áreas Comuns — amenidades de uso coletivo do prédio
+    "Academia",
+    "Banheiro social",
+    "Biblioteca",
+    "Circuito de seguranca",
+    "Camera de seguranca",
+    "Espaco gourmet",
+    "Lounge",
+    "Piscina adulto",
+    "Piscina infantil",
+    "Portaria 24h",
+    "Portaria eletronica",
+    "Salao de festas / SUM",
+    "Salao de festas",
+    "Salao de jogos",
+    "Solarium",
+    "Spa",
+    "Terraco",
+    "Terraco Rooftop",
+    "Rooftop",
+    "Sistema de alarme",
+    # Áreas Privativas — nunca marcar automaticamente
+    "Piscina Privativa",
+    "Espaco Gourmet",           # versão privativa igual à comum — ambas bloqueadas
+]}
+
+
 # Mapeamento bairro → cidade para municípios da Paraíba
 _BAIRRO_CIDADE_PB: dict[str, str] = {
     # João Pessoa
@@ -1651,7 +1681,17 @@ class MercadoiDriver:
         """Marca checkboxes de caracteristicas pelo texto visivel do formulario."""
         if isinstance(caracteristicas, str):
             caracteristicas = [p.strip() for p in re.split(r"[,;\n]+", caracteristicas) if p.strip()]
-        alvos = list(dict.fromkeys([str(c).strip() for c in (caracteristicas or []) if str(c).strip()]))
+        alvos_raw = list(dict.fromkeys([str(c).strip() for c in (caracteristicas or []) if str(c).strip()]))
+
+        # Filtra itens da blocklist antes de enviar ao JS
+        def _bloqueado(c: str) -> bool:
+            cn = normalizar(c)
+            return any(b == cn or b in cn or cn in b for b in _NUNCA_MARCAR)
+
+        alvos = [c for c in alvos_raw if not _bloqueado(c)]
+        if alvos_raw != alvos:
+            bloq = [c for c in alvos_raw if _bloqueado(c)]
+            logger.info(f"Caracteristicas bloqueadas (nunca marcar): {', '.join(bloq)}")
         if not alvos:
             return
         try:
@@ -1663,6 +1703,36 @@ class MercadoiDriver:
                         .replace(/[^a-z0-9]+/g, ' ')
                         .replace(/\\s+/g, ' ')
                         .trim();
+
+                    // Labels que nunca devem ser marcados no formulário (segurança extra)
+                    const BLOQUEADOS = new Set([
+                        'academia', 'banheiro social', 'biblioteca',
+                        'circuito de seguranca', 'camera de seguranca',
+                        'espaco gourmet', 'lounge',
+                        'piscina adulto', 'piscina infantil',
+                        'portaria 24h', 'portaria eletronica',
+                        'salao de festas / sum', 'salao de festas', 'salao de jogos',
+                        'solarium', 'spa',
+                        'terraco', 'terraco rooftop', 'rooftop',
+                        'sistema de alarme', 'piscina privativa',
+                    ]);
+
+                    // Detecta se o checkbox está na seção "Áreas Privativas"
+                    function secao(el) {
+                        let cur = el;
+                        for (let i = 0; i < 12 && cur && cur !== document.body; i++) {
+                            // Verifica irmão anterior (heading de seção)
+                            let prev = cur.previousElementSibling;
+                            while (prev) {
+                                const t = norm(prev.textContent || '');
+                                if (t.includes('privat')) return 'privativa';
+                                if (t.includes('comum')) return 'comum';
+                                prev = prev.previousElementSibling;
+                            }
+                            cur = cur.parentElement;
+                        }
+                        return '';
+                    }
 
                     const textoCheckbox = (input) => {
                         const textos = [];
@@ -1700,18 +1770,33 @@ class MercadoiDriver:
                         const texto = textoCheckbox(box);
                         const textoNorm = norm(texto);
                         if (!textoNorm) continue;
-                        const alvo = alvosNorm.find(a =>
-                            textoNorm === a.norm ||
-                            textoNorm.includes(a.norm) ||
-                            a.norm.includes(textoNorm)
-                        );
+
+                        // Nunca marcar itens da blocklist (independente da seção)
+                        if (BLOQUEADOS.has(textoNorm)) continue;
+
+                        const sec = secao(box);
+
+                        let alvo;
+                        if (sec === 'privativa') {
+                            // Áreas Privativas: apenas match exato — não aceita substring
+                            // para evitar marcar itens coletivos do prédio na área privativa
+                            alvo = alvosNorm.find(a => textoNorm === a.norm);
+                        } else {
+                            // Áreas Comuns / seção desconhecida: match normal (inclui substring)
+                            alvo = alvosNorm.find(a =>
+                                textoNorm === a.norm ||
+                                textoNorm.includes(a.norm) ||
+                                a.norm.includes(textoNorm)
+                            );
+                        }
+
                         if (!alvo) continue;
                         if (!box.checked) {
                             box.click();
                         }
                         box.dispatchEvent(new Event('input', {bubbles: true}));
                         box.dispatchEvent(new Event('change', {bubbles: true}));
-                        marcadas.push(texto);
+                        marcadas.push(`${texto}${sec === 'privativa' ? ' [priv]' : ''}`);
                         faltantes.delete(alvo.norm);
                     }
 
