@@ -535,6 +535,9 @@ class OruloScraper:
         og_desc = self._meta(html, "og:description") or self._meta(html, "description")
 
         tipo_imovel, endereco, bairro, cidade = self._parse_og_title(og_title)
+        # Fallback: tenta extrair endereço do HTML quando og:title não trouxe rua
+        if not endereco:
+            endereco = self._extrair_endereco_html(html)
         tipos_imovel_lista = self._tipos_orulo(tipo_imovel, og_title)
         tipo_imovel = tipos_imovel_lista[0] if tipos_imovel_lista else "Apartamento"
 
@@ -650,16 +653,40 @@ class OruloScraper:
             text = (text[:m.start()] + text[m.end():]).strip(" -")
 
         endereco, bairro = "", ""
-        if "." in text:
-            partes = text.split(".", 1)
-            endereco = partes[0].strip(" -")
-            bairro = re.split(r"\s*[-–]\s*", partes[1].strip())[0].strip()
-        else:
-            partes = re.split(r"\s*[-–]\s*", text, maxsplit=1)
-            endereco = partes[0].strip()
-            bairro = partes[1].strip() if len(partes) > 1 else ""
+        # Divide pelas partes separadas por " - " ou " – "
+        partes = re.split(r"\s*[-–]\s*", text)
+        partes = [p.strip() for p in partes if p.strip()]
+        if len(partes) >= 2:
+            # Heurística: parte com "Av", "R.", "Rua", "Avenida", número → endereço
+            for i, p in enumerate(partes):
+                if re.search(r"\b(av|rua|r\.|avenida|estrada|rod|rodovia|travessa|alameda|pca|praça)\b", p, re.IGNORECASE) \
+                   or re.search(r"\d+", p):
+                    endereco = p
+                    restantes = [x for j, x in enumerate(partes) if j != i]
+                    bairro = restantes[0] if restantes else ""
+                    break
+            if not endereco:
+                bairro = partes[-1]
+        elif partes:
+            bairro = partes[0]
 
         return tipo, endereco, bairro, cidade
+
+    def _extrair_endereco_html(self, html: str) -> str:
+        """Extrai rua/endereço do HTML quando og:title não trouxe."""
+        for pat in [
+            r'"streetAddress"\s*:\s*"([^"]{5,80})"',
+            r'"address"\s*:\s*"([^"]{5,80})"',
+            r'logradouro["\s:=]+([^"<\n]{5,60})',
+            r'(?:Rua|Av\.|Avenida|Estrada|Rod\.)\s+[^<\n,]{5,60}',
+        ]:
+            m = re.search(pat, html, re.IGNORECASE)
+            if m:
+                val = m.group(1) if m.lastindex else m.group(0)
+                val = val.strip().strip('"')
+                if len(val) >= 5:
+                    return val
+        return ""
 
     def _nome_empreendimento(self, html: str) -> str:
         m = re.search(r"<title>[^|<]+\|\s*([^<]+)</title>", html, re.IGNORECASE)
@@ -855,11 +882,26 @@ class OruloScraper:
         return "", ""
 
     def _extrair_cep(self, html: str) -> str:
-        m = re.search(r"\b\d{5}[-\s]?\d{3}\b", html or "")
-        if not m:
-            return ""
-        digits = re.sub(r"\D", "", m.group(0))
-        return f"{digits[:5]}-{digits[5:]}"
+        texto = html or ""
+        # 1ª prioridade: CEP em contexto de endereço (JSON-LD, schema, campos de cep)
+        for pat in [
+            r'"postalCode"\s*:\s*"(\d{5}-?\d{3})"',
+            r'"cep"\s*:\s*"(\d{5}-?\d{3})"',
+            r'postal[-_]?code["\s:=]+(\d{5}-?\d{3})',
+            r'\bCEP\s*:?\s*(\d{5}[-\s]?\d{3})\b',
+        ]:
+            m = re.search(pat, texto, re.IGNORECASE)
+            if m:
+                digits = re.sub(r"\D", "", m.group(1))
+                if len(digits) == 8:
+                    return f"{digits[:5]}-{digits[5:]}"
+        # Fallback: primeiro CEP no texto (menos confiável)
+        m = re.search(r"\b(\d{5}[-\s]?\d{3})\b", texto)
+        if m:
+            digits = re.sub(r"\D", "", m.group(1))
+            if len(digits) == 8:
+                return f"{digits[:5]}-{digits[5:]}"
+        return ""
 
     def _resumo_tipologias(self, tipologias: list, html: str) -> str:
         if tipologias:

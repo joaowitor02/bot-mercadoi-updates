@@ -72,7 +72,12 @@ def _uf(dados: dict) -> str:
 def _logradouro(endereco: str) -> str:
     texto = str(endereco or "").strip()
     texto = re.sub(r"\bCEP\s*:?\s*\d{5}[-\s]?\d{3}\b", "", texto, flags=re.IGNORECASE)
-    texto = re.split(r"\s*[,;-]\s*\d+\b|\s+\d+\b", texto, maxsplit=1)[0]
+    # Remove número do imóvel (após vírgula/ponto/espaço seguido de dígitos isolados)
+    # Usa lookbehind para não cortar "500m" ou "2º" dentro de nome de rua
+    texto = re.split(r",\s*\d+\b|\s+-\s*\d+\b", texto, maxsplit=1)[0]
+    # Remove bairro/cidade que venham após a rua (separados por vírgula)
+    partes = texto.split(",")
+    texto = partes[0]
     texto = re.sub(r"\s+", " ", texto).strip(" ,.-")
     return texto
 

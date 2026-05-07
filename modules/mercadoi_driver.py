@@ -1356,6 +1356,7 @@ class MercadoiDriver:
             cep_buscado = await buscar_cep(dados)
             if cep_buscado:
                 cep = cep_buscado
+                dados["cep"] = cep  # propaga para XML-RPC posterior
         except Exception as e:
             logger.debug(f"Busca CEP falhou: {e}")
         try:
@@ -1431,6 +1432,8 @@ class MercadoiDriver:
             marcados = [k for k, ok in (resultado or {}).items() if ok]
             if marcados:
                 logger.info(f"Endereco/mapa preenchido: {', '.join(marcados)}")
+                # Aguarda handlers JS do formulário (autocomplete, geocoder) processarem
+                await page.wait_for_timeout(800)
             else:
                 logger.info("Campos de endereco/mapa nao encontrados no formulario")
         except Exception as e:
@@ -2401,6 +2404,9 @@ class MercadoiDriver:
                 "fave_perto-do-mar":              dv.get("Perto do mar?", ""),
                 "fave_condomc3adnio-iptu-taxas":  iv.get("Condomínio - IPTU - Taxas", ""),
                 "fave_property_year":             iv.get("Ano de construção", ""),
+                # Endereço e CEP via XML-RPC como garantia extra
+                "fave_property_address":          str(dados.get("endereco") or dados.get("rua") or "").strip(),
+                "fave_property_zip":              str(dados.get("cep") or "").strip(),
             }
 
             # Para posts Orulo, garante o corretor via meta também
