@@ -73,25 +73,37 @@ _TIPOS = [
 ]
 
 _AMENIDADES = [
-    ("Academia", ["academia", "fitness"]),
-    ("Piscina", ["piscina"]),
-    ("Salao de festas", ["salao de festas", "salão de festas"]),
-    ("Espaco gourmet", ["espaco gourmet", "espaço gourmet", "gourmet"]),
-    ("Churrasqueira", ["churrasqueira"]),
-    ("Playground", ["playground"]),
-    ("Brinquedoteca", ["brinquedoteca"]),
-    ("Coworking", ["coworking"]),
-    ("Pet place", ["pet place", "pet care"]),
-    ("Lavanderia", ["lavanderia"]),
-    ("Bicicletario", ["bicicletario", "bicicletário"]),
-    ("Portaria", ["portaria"]),
-    ("Elevador", ["elevador"]),
-    ("Quadra", ["quadra"]),
-    ("Rooftop", ["rooftop"]),
-    ("Sauna", ["sauna"]),
-    ("Solarium", ["solarium"]),
-    ("Deck", ["deck"]),
+    # A ordem importa: termos mais específicos primeiro para evitar matches duplos
+    ("Piscina infantil",  ["piscina infantil", "piscina kids"]),
+    ("Piscina adulto",    ["piscina"]),          # pega qualquer "piscina" restante
+    ("Academia",          ["academia", "fitness"]),
+    ("Salao de festas",   ["salao de festas", "salão de festas"]),
+    ("Espaco gourmet",    ["espaco gourmet", "espaço gourmet", "gourmet"]),
+    ("Churrasqueira",     ["churrasqueira"]),
+    ("Playground",        ["playground"]),
+    ("Brinquedoteca",     ["brinquedoteca"]),
+    ("Coworking",         ["coworking"]),
+    ("Pet place",         ["pet place", "pet care"]),
+    ("Lavanderia",        ["lavanderia"]),
+    ("Bicicletario",      ["bicicletario", "bicicletário"]),
+    ("Portaria 24h",      ["portaria 24h", "portaria 24 horas", "portaria 24"]),
+    ("Portaria",          ["portaria"]),
+    ("Elevador",          ["elevador"]),
+    ("Quadra",            ["quadra"]),
+    ("Rooftop",           ["rooftop"]),
+    ("Sauna",             ["sauna"]),
+    ("Solarium",          ["solarium", "solário"]),
+    ("Deck",              ["deck"]),
+    ("Salao de jogos",    ["salao de jogos", "salão de jogos"]),
+    ("Cinema",            ["cinema"]),
+    ("Espaco zen",        ["espaco zen", "espaço zen", "jardim zen"]),
 ]
+
+# Termos que devem ser IGNORADOS nas características (nunca aparecem)
+_AMENIDADES_EXCLUIR = {
+    "spa", "seguranca 24h", "seguranca 24 horas", "seguranca eletronica",
+    "segurança 24h", "segurança eletrônica",
+}
 
 _TERMOS_PLANTA = [
     "planta", "plantas", "floorplan", "floor plan", "floor_plan",
@@ -527,11 +539,8 @@ class OruloScraper:
         tipo_imovel = tipos_imovel_lista[0] if tipos_imovel_lista else "Apartamento"
 
         nome_emp = self._nome_empreendimento(html)
-        if nome_emp:
-            partes = [p for p in [tipo_imovel, bairro, cidade] if p]
-            titulo = nome_emp + (" - " + ", ".join(partes) if partes else "")
-        else:
-            titulo = og_title or self._titulo_texto(html)
+        # Título é o nome do empreendimento (primeira linha do projeto/condomínio)
+        titulo = nome_emp or og_title or self._titulo_texto(html)
 
         tipologias = self._extrair_tipologias(html, tipo_imovel)
         tipologia_base = tipologias[0] if tipologias else {}
@@ -555,6 +564,7 @@ class OruloScraper:
         ano_construcao = self._extrair_ano_construcao(html)
         condominio = self._extrair_condominio(html)
         perto_do_mar = self._extrair_perto_do_mar(bairro, cidade, html)
+        info_adicional = self._extrair_info_adicional(html)
 
         dados = {
             "titulo": titulo,
@@ -587,6 +597,7 @@ class OruloScraper:
             "caracteristicas": caracteristicas,
             "_tipologias_resumo": resumo,
             "_empreendimento_resumo": resumo_empreendimento,
+            "_info_adicional": info_adicional,
         }
         if tipologias:
             dados["_dados_variacoes"] = [
@@ -756,6 +767,47 @@ class OruloScraper:
                     pass
         return ""
 
+    def _extrair_info_adicional(self, html: str) -> dict:
+        """Extrai informações estruturais do empreendimento: estoque, lançamento, entrega, andares, unidades."""
+        texto = self._texto_visivel(html)
+        info = {}
+
+        def _buscar(padroes):
+            for pat in padroes:
+                m = re.search(pat, texto, re.IGNORECASE)
+                if m:
+                    return m.group(1).strip()
+            return ""
+
+        info["estoque"] = _buscar([
+            r"estoque\s*(?:disponivel|disponível)?\s*:?\s*(\d+)",
+            r"(\d+)\s+unidades?\s+disponiv",
+        ])
+        info["lancamento"] = _buscar([
+            r"lan[cç]amento\s*:?\s*([\d/\-\.]{5,10})",
+            r"data\s+de\s+lan[cç]amento\s*:?\s*([\d/\-\.]{5,10})",
+        ])
+        info["entrega"] = _buscar([
+            r"entrega\s*:?\s*([\d/\-\.]{5,10})",
+            r"previs[aã]o\s+de\s+entrega\s*:?\s*([\d/\-\.]{5,10})",
+            r"entregue?\s+em\s*:?\s*([\d/\-\.]{5,10})",
+        ])
+        info["total_unidades"] = _buscar([
+            r"total\s+de\s+unidades\s*:?\s*(\d+)",
+            r"(\d+)\s+unidades?\s+(?:no\s+total|totais)",
+        ])
+        info["unidades_por_andar"] = _buscar([
+            r"unidades?\s+por\s+andar\s*:?\s*(\d+)",
+            r"(\d+)\s+unidades?\s+por\s+andar",
+        ])
+        info["andares"] = _buscar([
+            r"n[uú]mero\s+de\s+andares\s*:?\s*(\d+)",
+            r"(\d+)\s+andares?",
+            r"(\d+)\s+pavimentos?",
+        ])
+        # Remove campos vazios
+        return {k: v for k, v in info.items() if v}
+
     def _extrair_perto_do_mar(self, bairro: str, cidade: str, html: str) -> str:
         texto = (bairro + " " + cidade + " " + html[:3000]).lower()
         if any(p in texto for p in ["frente ao mar", "beira-mar", "beira mar", "frente para o mar"]):
@@ -857,8 +909,27 @@ class OruloScraper:
     def _extrair_caracteristicas(self, html: str) -> list:
         texto = self._normalizar_texto(self._texto_visivel(html))
         achadas = []
+        # Piscina infantil deve ser verificada antes de piscina adulto
+        # para não duplicar — marcamos o texto consumido via flag
+        piscina_infantil_encontrada = False
         for nome, termos in _AMENIDADES:
-            if any(self._normalizar_texto(t) in texto for t in termos):
+            if self._normalizar_texto(nome) in _AMENIDADES_EXCLUIR:
+                continue
+            if nome == "Piscina adulto":
+                # Só adiciona piscina adulto se "piscina" aparece além de "infantil"
+                tem_piscina = any(self._normalizar_texto(t) in texto for t in termos)
+                if tem_piscina and not piscina_infantil_encontrada:
+                    achadas.append(nome)
+                elif tem_piscina:
+                    # Piscina infantil já foi marcada; adiciona adulto se tiver outro contexto
+                    texto_sem_infantil = re.sub(r"piscina\s+infantil", "", texto)
+                    if "piscina" in texto_sem_infantil:
+                        achadas.append(nome)
+                continue
+            encontrou = any(self._normalizar_texto(t) in texto for t in termos)
+            if encontrou:
+                if nome == "Piscina infantil":
+                    piscina_infantil_encontrada = True
                 achadas.append(nome)
         return achadas
 
@@ -986,8 +1057,25 @@ class OruloScraper:
         if tipologia.get("preco"):
             linhas.append(f"Valor a partir de {self._fmt_moeda(tipologia['preco'])}.")
 
+        # Bloco "Outras informações" com estágio e dados estruturais
+        info_add = base.get("_info_adicional") or {}
+        campos_info = []
         if base.get("estagio_imovel"):
-            linhas.append(f"Estagio do empreendimento: {base['estagio_imovel']}.")
+            campos_info.append(f"Estagio: {base['estagio_imovel']}")
+        if info_add.get("estoque"):
+            campos_info.append(f"Estoque: {info_add['estoque']}")
+        if info_add.get("lancamento"):
+            campos_info.append(f"Lancamento: {info_add['lancamento']}")
+        if info_add.get("unidades_por_andar"):
+            campos_info.append(f"Unidades por andar: {info_add['unidades_por_andar']}")
+        if info_add.get("entrega"):
+            campos_info.append(f"Entrega: {info_add['entrega']}")
+        if info_add.get("total_unidades"):
+            campos_info.append(f"Total de unidades: {info_add['total_unidades']}")
+        if info_add.get("andares"):
+            campos_info.append(f"Numero de andares: {info_add['andares']}")
+        if campos_info:
+            linhas.append("Outras informacoes: " + " - ".join(campos_info))
 
         empreendimento = base.get("_empreendimento_resumo", "").strip()
         if empreendimento:

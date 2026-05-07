@@ -388,11 +388,11 @@ class MercadoiDriver:
             # Campos de texto livre (área, condomínio, ano, proximidades)
             await self._preencher_detalhes_adicionais(page, dados)
 
-            # Faz Parceria — sempre "A combinar", com retry por timing de select2
+            # Faz Parceria — 50/50, com retry por timing de select2
             for _tentativa in range(4):
                 try:
-                    await page.select_option('select[name*="parcer"]', label="A combinar", timeout=3000)
-                    logger.info("Selecionado 'A combinar' em faz-parceria")
+                    await page.select_option('select[name*="parcer"]', label="50/50", timeout=3000)
+                    logger.info("Selecionado '50/50' em faz-parceria")
                     break
                 except Exception:
                     if _tentativa < 3:
@@ -1289,14 +1289,22 @@ class MercadoiDriver:
             }
         """, {"nome": nome_corretor})
 
+    @staticmethod
+    def _extrair_fone_whatsapp(url: str) -> str:
+        m = re.search(r"wa\.me/(\d+)", url or "")
+        return m.group(1) if m else ""
+
     def _montar_conteudo(self, dados):
         descricao = dados.get("descricao_util", "")
         url_pub   = self._normalizar_url(dados.get("url_publicacao", ""))
         whatsapp  = self._normalizar_url(dados.get("whatsapp_url", ""))
         instagram = self._normalizar_url(dados.get("instagram_url", ""))
+        fonte     = dados.get("_fonte", "")
+        is_video  = fonte == "instagram"
 
         icones = []
-        if url_pub:
+        # Ícone de vídeo apenas para Instagram; OLX/Orulo não têm vídeo
+        if url_pub and is_video:
             icones.append(
                 f'<a href="{url_pub}" target="_blank" rel="noopener">'
                 f'<img class="" src="https://mercadoi.com.br/ver-video-mi/" width="120" height="120" '
@@ -1308,20 +1316,32 @@ class MercadoiDriver:
                 f'<img class="" src="https://mercadoi.com.br/whatsapp-mi/" width="75" height="75" '
                 f'data-src="https://mercadoi.com.br/whatsapp-mi/" /></a>'
             )
-        if instagram:
+        if instagram and not is_video:
             icones.append(
                 f'<a href="{instagram}" target="_blank" rel="noopener">'
                 f'<img class="" src="https://mercadoi.com.br/instagram-mi/" width="75" height="75" '
                 f'data-src="https://mercadoi.com.br/instagram-mi/" /></a>'
             )
 
-        if icones:
-            logger.info(f"Ícones de contato inseridos: "
-                        f"{'Ver Imóvel ' if url_pub else ''}"
-                        f"{'WhatsApp ' if whatsapp else ''}"
-                        f"{'Instagram' if instagram else ''}")
+        partes_log = (
+            (['Video' if is_video else ''] if url_pub and is_video else []) +
+            (['WhatsApp'] if whatsapp else []) +
+            (['Instagram'] if instagram else [])
+        )
+        if partes_log:
+            logger.info(f"Ícones de contato inseridos: {' '.join(filter(None, partes_log))}")
+
         bloco_html = ("\n\n<pre>" + "".join(icones) + "</pre>") if icones else ""
-        return descricao + bloco_html
+
+        # Linha de rastreamento para Excel: "URL [] Fone"
+        # Permite controlar duplicatas e contatos fora do painel
+        rastreamento = ""
+        fone = self._extrair_fone_whatsapp(whatsapp)
+        url_ref = url_pub or instagram
+        if url_ref or fone:
+            rastreamento = "\n\n" + " [] ".join(filter(None, [url_ref, fone]))
+
+        return descricao + bloco_html + rastreamento
 
     async def _preencher_endereco_mapa(self, page, dados: dict):
         endereco = str(dados.get("endereco", "") or dados.get("rua", "") or "").strip()
