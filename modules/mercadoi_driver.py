@@ -452,13 +452,36 @@ class MercadoiDriver:
 
             agent_id_post = dados.get("_mercadoi_agent_id", "") if dados.get("_fonte") == "orulo" else ""
 
+            # Campos de detalhe injetados diretamente no AJAX (bypass do selectpicker)
+            # O Houzez PHP processa estes como $_POST e serializa corretamente
+            det2 = self._detalhes_adicionais(dados)
+            dv2  = det2["selects"]
+            iv2  = det2["inputs"]
+            extra_campos = {k: v for k, v in {
+                "tem-elevador":              dv2.get("Tem elevador?", ""),
+                "mobiliado":                 dv2.get("Mobiliado?", ""),
+                "escriturado":               dv2.get("Escriturado?", ""),
+                "aceita-airbnb-temporada":   dv2.get("Aceita Airbnb/Temporada", ""),
+                "aceita-permuta":            dv2.get("Aceita Permuta?", ""),
+                "aceita-financiamento":      dv2.get("Aceita Financiamento?", ""),
+                "posic3a7c3a3o-do-imovel":  dv2.get("Posição Solar", ""),
+                "posic3a7c3a3o":             dv2.get("Posição no Prédio", ""),
+                # Campos array (selectpicker múltiplo)
+                "estagio-da-obra-imc3b3vel[]": dv2.get("Estágio do Imovel", ""),
+                "no-tc3a9rreo[]":            dv2.get("Andar", ""),
+                "perto-do-mar[]":            dv2.get("Perto do mar?", ""),
+                # Campos de texto
+                "fave_condomc3adnio-iptu-taxas": iv2.get("Condomínio - IPTU - Taxas", ""),
+                "fave_property_year":         iv2.get("Ano de construção", ""),
+            }.items() if v}
+
             if publicar_direto:
                 logger.info("Criterios atendidos — publicando diretamente")
-                salvamento = await self._publicar(page, agent_id=agent_id_post)
+                salvamento = await self._publicar(page, agent_id=agent_id_post, extra_campos=extra_campos)
                 modo = "Publicado"
                 if not salvamento.get("ok"):
                     logger.warning("Publicacao direta falhou — salvando como rascunho")
-                    salvamento = await self._salvar_rascunho(page, agent_id=agent_id_post)
+                    salvamento = await self._salvar_rascunho(page, agent_id=agent_id_post, extra_campos=extra_campos)
                     modo = "Rascunho salvo"
             else:
                 motivos = []
@@ -469,7 +492,7 @@ class MercadoiDriver:
                 if not dados.get("tipo_imovel", "").strip():
                     motivos.append("sem tipo")
                 logger.info(f"Salvando como rascunho ({', '.join(motivos)})")
-                salvamento = await self._salvar_rascunho(page, agent_id=agent_id_post)
+                salvamento = await self._salvar_rascunho(page, agent_id=agent_id_post, extra_campos=extra_campos)
                 modo = "Rascunho salvo"
 
             if not salvamento.get("ok"):
@@ -2322,15 +2345,28 @@ class MercadoiDriver:
         except Exception:
             return None
 
-    async def _salvar_rascunho(self, page, agent_id: str = ""):
+    @staticmethod
+    def _extra_campos_str(extra_campos: dict | None) -> str:
+        """Serializa campos extras para concatenar no AJAX POST."""
+        from urllib.parse import quote as _q
+        if not extra_campos:
+            return ""
+        return "".join(
+            f"&{_q(k, safe='[]')}={_q(str(v), safe='')}"
+            for k, v in extra_campos.items() if v
+        )
+
+    async def _salvar_rascunho(self, page, agent_id: str = "", extra_campos: dict | None = None):
         try:
             try:
                 await page.wait_for_selector('#save_as_draft', timeout=5000)
             except Exception:
                 logger.warning("Timeout aguardando #save_as_draft, tentando mesmo assim")
 
+            extra_str = self._extra_campos_str(extra_campos)
+
             resultado = await page.evaluate("""
-                ({agentId}) => new Promise((resolve) => {
+                ({agentId, extraCampos}) => new Promise((resolve) => {
                     const $form = jQuery('#submit_property_form');
                     if (!$form.length) { resolve({ok: false, erro: 'form nao encontrado'}); return; }
                     const ed = window.tinymce || window.tinyMCE;
@@ -2344,7 +2380,9 @@ class MercadoiDriver:
                         extraAgent = '&fave_agents=' + encodeURIComponent(agentId)
                                    + '&fave_agent_display_option=agent_info';
                     }
-                    const formData = $form.serialize() + '&action=save_as_draft&description=' + encodeURIComponent(description) + extraAgent;
+                    const formData = $form.serialize()
+                        + '&action=save_as_draft&description=' + encodeURIComponent(description)
+                        + extraAgent + extraCampos;
                     jQuery.ajax({
                         type: 'post',
                         url: ajaxUrl,
@@ -2356,7 +2394,7 @@ class MercadoiDriver:
                         }
                     });
                 })
-            """, {"agentId": agent_id})
+            """, {"agentId": agent_id, "extraCampos": extra_str})
 
             logger.info(f"Resultado AJAX save_as_draft: {resultado}")
 
@@ -2435,7 +2473,7 @@ class MercadoiDriver:
         except Exception as e:
             logger.warning(f"Falha ao atualizar meta via XML-RPC: {e}")
 
-    async def _publicar(self, page, agent_id: str = ""):
+    async def _publicar(self, page, agent_id: str = "", extra_campos: dict | None = None):
         """Publica o imovel diretamente, usando o botao do formulario como caminho principal."""
         try:
             try:
@@ -2448,8 +2486,10 @@ class MercadoiDriver:
                 return via_botao
             logger.warning("Publicacao via botao falhou, tentando AJAX submit_property")
 
+            extra_str = self._extra_campos_str(extra_campos)
+
             resultado = await page.evaluate("""
-                ({agentId}) => new Promise((resolve) => {
+                ({agentId, extraCampos}) => new Promise((resolve) => {
                     const $form = jQuery('#submit_property_form');
                     if (!$form.length) { resolve({ok: false, erro: 'form nao encontrado'}); return; }
                     const ed = window.tinymce || window.tinyMCE;
@@ -2467,14 +2507,14 @@ class MercadoiDriver:
                         type: 'post',
                         url: ajaxUrl,
                         dataType: 'json',
-                        data: $form.serialize() + '&action=submit_property&description=' + encodeURIComponent(description) + extraAgent,
+                        data: $form.serialize() + '&action=submit_property&description=' + encodeURIComponent(description) + extraAgent + extraCampos,
                         success: function(response) { resolve({ok: true, response: JSON.stringify(response)}); },
                         error: function(xhr, status, error) {
                             resolve({ok: false, erro: error, status: status, resp: xhr.responseText.substring(0, 300)});
                         }
                     });
                 })
-            """, {"agentId": agent_id})
+            """, {"agentId": agent_id, "extraCampos": extra_str})
 
             logger.info(f"Resultado AJAX submit_property: {resultado}")
 
