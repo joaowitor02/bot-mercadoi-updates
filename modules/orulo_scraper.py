@@ -706,12 +706,26 @@ class OruloScraper:
         return ""
 
     def _nome_empreendimento(self, html: str) -> str:
-        m = re.search(r"<title>[^|<]+\|\s*([^<]+)</title>", html, re.IGNORECASE)
+        # Orulo usa "<title>Nome do Empreendimento | Orulo</title>"
+        # — captura a parte ANTES do pipe
+        m = re.search(
+            r"<title>\s*([^|<]{5,120}?)\s*\|\s*(?:Orulo|Lançamentos|Imoveis)[^<]*</title>",
+            html, re.IGNORECASE,
+        )
+        if m:
+            nome = m.group(1).strip()
+            if nome and "Login" not in nome:
+                return nome
+
+        # Fallback: pipe invertido (Orulo | Nome)
+        m = re.search(r"<title>[^|<]*\|\s*([^<]{5,120})</title>", html, re.IGNORECASE)
         if m:
             nome = m.group(1).strip()
             nome = re.split(r"\s*[-–]\s*[A-ZÀ-Ú]", nome)[0].strip()
-            if nome and "Login" not in nome:
+            if nome and "Login" not in nome and "Orulo" not in nome:
                 return nome
+
+        # Fallback: variável JS
         m = re.search(r'building_name\s*=\s*["\']([^"\']+)["\']', html)
         if m:
             return m.group(1).strip()
@@ -1078,19 +1092,21 @@ class OruloScraper:
             if tipologia.get(campo) is not None:
                 dados[campo] = tipologia.get(campo, "")
 
-        dados["titulo"] = self._titulo_tipologia(base, tipologia)
+        dados["titulo"] = self._titulo_tipologia(base, tipologia, total)
         dados["descricao_util"] = self._descricao_tipologia(base, tipologia, indice, total)
         return dados
 
-    def _titulo_tipologia(self, base: dict, tipologia: dict) -> str:
+    def _titulo_tipologia(self, base: dict, tipologia: dict, total: int = 1) -> str:
+        """Título da publicação: nome do empreendimento + quartos como diferenciador
+        quando há mais de uma tipologia (ex: 'Águas do Atlântico III - 1 quarto')."""
         nome = base.get("titulo", "").strip()
-        partes = []
-        if tipologia.get("area_m2"):
-            partes.append(f"{self._fmt_area(tipologia['area_m2'])}m2")
-        if tipologia.get("quartos"):
-            partes.append(self._plural(tipologia["quartos"], "quarto", "quartos"))
-        resumo = ", ".join(partes)
-        return f"{nome} - {resumo}" if nome and resumo else nome
+        if not nome:
+            return ""
+        # Só acrescenta quartos quando há múltiplas tipologias para diferenciar
+        if total > 1 and tipologia.get("quartos"):
+            sufixo = self._plural(tipologia["quartos"], "quarto", "quartos")
+            return f"{nome} - {sufixo}"
+        return nome
 
     def _descricao_tipologia(self, base: dict, tipologia: dict, indice: int, total: int) -> str:
         tipo = tipologia.get("tipo_imovel") or base.get("tipo_imovel") or "Imovel"
