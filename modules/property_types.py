@@ -20,9 +20,11 @@ def normalizar_tipos_imovel(*partes: str) -> list[str]:
     tem_casa = bool(re.search(r"\b(casa|casas|sobrado|sobrados)\b", texto))
     tem_condominio = "condominio" in texto or "condominium" in texto
 
-    # Terreno/lote: só classifica como Terreno quando o contexto é de venda do
-    # próprio terreno, não quando "terreno" descreve apenas a área da propriedade.
-    # Contextos como "terreno total", "area de terreno", "m² de terreno" NÃO são tipo.
+    # "terreno" no título/tipo (primeiras partes) = sinal forte de que É um terreno
+    tem_terreno_principal = bool(re.search(r"\b(terreno|terrenos|lote|lotes)\b", texto_principal))
+
+    # "terreno" apenas na descrição como medida de área (ex: "Área do Terreno: 300m²")
+    # NÃO deve classificar o imóvel como Terreno — a menos que esteja no título
     tem_terreno_area = bool(re.search(
         r"\b(area|metros|m2|m²|total|fracao)\s*(de\s*)?(terreno|terrenos)\b"
         r"|\bterreno\s*(total|de|com|:)\b"
@@ -31,9 +33,9 @@ def normalizar_tipos_imovel(*partes: str) -> list[str]:
     ))
     tem_terreno = (
         bool(re.search(r"\b(terreno|terrenos|lote|lotes)\b", texto))
-        and not tem_terreno_area
+        and (tem_terreno_principal or not tem_terreno_area)  # título prevalece
         and not tem_casa
-        and not bool(re.search(r"\b(apart|apto|apartamento|cobertura|flat|studio|kitnet)\b", texto))
+        and not bool(re.search(r"\b(apart|apto|apartamento|cobertura|flat|studio|kitnet)\b", texto_principal))
     )
     if tem_terreno:
         return ["Terreno"]
