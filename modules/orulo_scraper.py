@@ -112,7 +112,7 @@ _AMENIDADES_EXCLUIR = {
     "portaria 24h", "portaria 24 horas", "portaria eletronica",
     "salao de festas", "salao de festas sum",
     "salao de jogos",
-    "solarium",
+    # "solarium" → OK marcar (confirmado nos screenshots do cliente)
     "spa",
     "terraco", "terraco rooftop", "rooftop",
     "sistema de alarme",

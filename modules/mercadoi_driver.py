@@ -39,7 +39,7 @@ _NUNCA_MARCAR: set[str] = {normalizar(x) for x in [
     "Salao de festas / SUM",
     "Salao de festas",
     "Salao de jogos",
-    "Solarium",
+    # "Solarium" → OK marcar (confirmado nos screenshots do cliente)
     "Spa",
     "Terraco",
     "Terraco Rooftop",
@@ -1714,7 +1714,7 @@ class MercadoiDriver:
                         'piscina adulto', 'piscina infantil',
                         'portaria 24h', 'portaria eletronica',
                         'salao de festas / sum', 'salao de festas', 'salao de jogos',
-                        'solarium', 'spa',
+                        'spa',
                         'terraco', 'terraco rooftop', 'rooftop',
                         'sistema de alarme', 'piscina privativa',
                     ]);
