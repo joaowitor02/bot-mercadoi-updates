@@ -1344,7 +1344,8 @@ class MercadoiDriver:
         is_video  = fonte == "instagram"
 
         icones = []
-        # Ícone de vídeo apenas para Instagram; OLX/Orulo não têm vídeo
+        # Instagram: 3 ícones (vídeo + WhatsApp + Instagram)
+        # OLX / Orulo: apenas WhatsApp
         if url_pub and is_video:
             icones.append(
                 f'<a href="{url_pub}" target="_blank" rel="noopener">'
@@ -1357,30 +1358,28 @@ class MercadoiDriver:
                 f'<img class="" src="https://mercadoi.com.br/whatsapp-mi/" width="75" height="75" '
                 f'data-src="https://mercadoi.com.br/whatsapp-mi/" /></a>'
             )
-        if instagram and not is_video:
+        if instagram and is_video:
             icones.append(
                 f'<a href="{instagram}" target="_blank" rel="noopener">'
                 f'<img class="" src="https://mercadoi.com.br/instagram-mi/" width="75" height="75" '
                 f'data-src="https://mercadoi.com.br/instagram-mi/" /></a>'
             )
 
-        partes_log = (
-            (['Video' if is_video else ''] if url_pub and is_video else []) +
+        icones_log = (
+            (['Vídeo'] if url_pub and is_video else []) +
             (['WhatsApp'] if whatsapp else []) +
-            (['Instagram'] if instagram else [])
+            (['Instagram'] if instagram and is_video else [])
         )
-        if partes_log:
-            logger.info(f"Ícones de contato inseridos: {' '.join(filter(None, partes_log))}")
+        if icones_log:
+            logger.info(f"Ícones de contato inseridos: {' '.join(icones_log)}")
 
         bloco_html = ("\n\n<pre>" + "".join(icones) + "</pre>") if icones else ""
 
-        # Linha de rastreamento para Excel: "URL [] Fone"
-        # Permite controlar duplicatas e contatos fora do painel
+        # Linha de rastreamento: apenas o fone (sem URL para não poluir a descrição)
         rastreamento = ""
         fone = self._extrair_fone_whatsapp(whatsapp)
-        url_ref = url_pub or instagram
-        if url_ref or fone:
-            rastreamento = "\n\n" + " [] ".join(filter(None, [url_ref, fone]))
+        if fone:
+            rastreamento = "\n\n" + fone
 
         return descricao + bloco_html + rastreamento
 
