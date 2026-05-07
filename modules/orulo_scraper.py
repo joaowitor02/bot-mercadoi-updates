@@ -558,7 +558,9 @@ class OruloScraper:
         resumo = self._resumo_tipologias(tipologias, html)
         caracteristicas = self._extrair_caracteristicas(html)
         resumo_empreendimento = self._resumo_empreendimento(html, caracteristicas)
-        descricao = "\n\n".join(p for p in [og_desc, resumo_empreendimento, resumo] if p).strip()
+        # Descrição: apenas áreas comuns + tipologias (sem og:description para evitar
+        # que a IA considere texto de marketing da Orulo como informação estruturada)
+        descricao = "\n\n".join(p for p in [resumo_empreendimento, resumo] if p).strip()
         latitude, longitude = self._extrair_coordenadas(html)
         cep = self._extrair_cep(html)
 

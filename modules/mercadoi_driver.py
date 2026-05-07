@@ -388,17 +388,28 @@ class MercadoiDriver:
             # Campos de texto livre (área, condomínio, ano, proximidades)
             await self._preencher_detalhes_adicionais(page, dados)
 
-            # Faz Parceria — 50/50, com retry por timing de select2
-            for _tentativa in range(4):
+            # Faz Parceria — tenta 50/50 com variações de label
+            _parceria_ok = False
+            for _label in ("50/50", "50% / 50%", "50% /50%", "50%/50%"):
                 try:
-                    await page.select_option('select[name*="parcer"]', label="50/50", timeout=3000)
-                    logger.info("Selecionado '50/50' em faz-parceria")
+                    await page.select_option('select[name*="parcer"]', label=_label, timeout=2000)
+                    logger.info(f"Selecionado '{_label}' em faz-parceria")
+                    _parceria_ok = True
                     break
                 except Exception:
-                    if _tentativa < 3:
-                        await page.wait_for_timeout(200)
-                    else:
-                        logger.info("Faz-parceria nao selecionado apos 4 tentativas")
+                    pass
+            if not _parceria_ok:
+                # Log opções disponíveis para diagnóstico
+                try:
+                    opcoes = await page.evaluate("""
+                        () => {
+                            const sel = document.querySelector('select[name*="parcer"]');
+                            return sel ? Array.from(sel.options).map(o => o.text.trim()) : [];
+                        }
+                    """)
+                    logger.info(f"Faz-parceria: opcoes disponiveis = {opcoes}")
+                except Exception:
+                    logger.info("Faz-parceria: nao foi possivel selecionar 50/50")
 
             # CIDADE
             cidade = dados.get("cidade_extraida", "").strip()
