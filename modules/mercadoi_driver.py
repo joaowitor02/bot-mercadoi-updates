@@ -491,6 +491,8 @@ class MercadoiDriver:
                 "fave_property_year":         iv2.get("Ano de construção", ""),
             }.items() if v}
 
+            logger.info(f"extra_campos para AJAX: { {k: v for k, v in extra_campos.items()} }")
+
             if publicar_direto:
                 logger.info("Criterios atendidos — publicando diretamente")
                 salvamento = await self._publicar(page, agent_id=agent_id_post, extra_campos=extra_campos)
@@ -2469,9 +2471,10 @@ class MercadoiDriver:
                 "fave_aceita-financiamento":      dv.get("Aceita Financiamento?", ""),
                 "fave_posic3a7c3a3o-do-imovel":  dv.get("Posição Solar", ""),
                 "fave_posic3a7c3a3o":             dv.get("Posição no Prédio", ""),
-                "fave_estagio-da-obra-imc3b3vel": dv.get("Estágio do Imovel", ""),
-                "fave_no-tc3a9rreo":              dv.get("Andar", ""),
-                "fave_perto-do-mar":              dv.get("Perto do mar?", ""),
+                # NOTA: estagio, andar e perto-do-mar são campos array ([]).
+                # O AJAX (extra_campos) já os salva como PHP array serializado.
+                # Escrever via XML-RPC substituiria o array por string simples — Houzez
+                # não leria corretamente, deixando o campo em branco no form.
                 "fave_condomc3adnio-iptu-taxas":  iv.get("Condomínio - IPTU - Taxas", ""),
                 "fave_property_year":             iv.get("Ano de construção", ""),
                 # Endereço e CEP via XML-RPC como garantia extra
