@@ -69,6 +69,42 @@ def _cep_explicito(dados: dict) -> str:
     return ""
 
 
+# Prefixos de CEP válidos por UF (primeiros 2 dígitos)
+_UF_CEP_PREFIXOS: dict[str, tuple] = {
+    "PB": ("58",),
+    "PE": ("50", "51", "52", "53", "54", "55", "56"),
+    "RN": ("59",),
+    "CE": ("60", "61", "62", "63"),
+    "AL": ("57",),
+    "SE": ("49",),
+    "BA": ("40", "41", "42", "43", "44", "45", "46", "47", "48"),
+    "MA": ("65",),
+    "PI": ("64",),
+    "PA": ("66", "67", "68"),
+    "SP": ("01", "02", "03", "04", "05", "06", "07", "08", "09",
+           "10", "11", "12", "13", "14", "15", "16", "17", "18", "19"),
+    "RJ": ("20", "21", "22", "23", "24", "25", "26", "27", "28"),
+    "MG": ("30", "31", "32", "33", "34", "35", "36", "37", "38", "39"),
+    "ES": ("29",),
+    "PR": ("80", "81", "82", "83", "84", "85", "86", "87"),
+    "SC": ("88", "89"),
+    "RS": ("90", "91", "92", "93", "94", "95", "96", "97", "98", "99"),
+    "DF": ("70", "71", "72", "73"),
+    "GO": ("72", "73", "74", "75", "76"),
+}
+
+
+def _cep_valido_para_uf(cep: str, uf: str) -> bool:
+    """Verifica se os primeiros dígitos do CEP são compatíveis com a UF."""
+    digits = re.sub(r"\D", "", cep)
+    if len(digits) != 8:
+        return False
+    prefixos = _UF_CEP_PREFIXOS.get(uf.upper())
+    if not prefixos:
+        return True  # UF sem mapeamento → aceita
+    return any(digits.startswith(p) for p in prefixos)
+
+
 def _uf(dados: dict) -> str:
     """Extrai a UF (sigla do estado) dos dados do imóvel."""
     # 1. Campo explícito de UF/estado
@@ -95,15 +131,35 @@ def _cidade_limpa(dados: dict) -> str:
 
 
 def _logradouro(endereco: str) -> str:
-    """Extrai só o nome da rua, removendo número, bairro e cidade."""
+    """Extrai só o nome da rua, removendo número e bairro."""
     texto = str(endereco or "").strip()
     # Remove CEP inline
     texto = re.sub(r"\bCEP\s*:?\s*\d{5}[-\s]?\d{3}\b", "", texto, flags=re.IGNORECASE)
-    # Corta no número do imóvel (ex: ", 800" ou " - 800") mas não em "500m²" ou "2º andar"
+    # Corta no número do imóvel seguido de ponto/vírgula/bairro
+    # Ex: "Rua X 1240. Jardim Y" → "Rua X 1240"
+    texto = re.split(r"\.\s+[A-ZÀ-Ú]", texto, maxsplit=1)[0]
+    # Corta no número seguido de vírgula/traço
     texto = re.split(r",\s*\d+\b|\s+-\s*\d+\b", texto, maxsplit=1)[0]
-    # Corta no bairro (após vírgula)
+    # Corta no bairro após vírgula
     texto = texto.split(",")[0]
+    # Remove número do imóvel isolado no final (ex: "Rua X 1240")
+    texto = re.sub(r"\s+\d+\s*$", "", texto)
     return re.sub(r"\s+", " ", texto).strip(" ,.-")
+
+
+def _extrair_bairro_do_endereco(endereco: str) -> str:
+    """Extrai o bairro quando está embutido no endereço após ponto/vírgula."""
+    texto = str(endereco or "").strip()
+    # Formato: "Rua X, 100, Bairro Y" ou "Rua X 100. Bairro Y"
+    # Funciona com ou sem maiúsculas iniciais
+    m = re.search(r"[,.]\s+([A-ZÀ-Úa-zA-ZÀ-ú][a-zA-ZÀ-ú\s]{3,50})$", texto, re.IGNORECASE)
+    if m:
+        candidato = m.group(1).strip()
+        # Descarta se parece cidade ("João Pessoa") ou tem só 1 palavra curta
+        if (len(candidato) >= 4
+                and not re.search(r"\b(joao pessoa|recife|fortaleza|salvador|sao paulo)\b", candidato, re.IGNORECASE)):
+            return candidato
+    return ""
 
 
 def _score(item: dict, dados: dict, logradouro: str) -> int:
@@ -148,14 +204,19 @@ async def _consultar_viacep(uf: str, cidade: str, logradouro: str, dados: dict) 
 
 async def buscar_cep(dados: dict) -> str:
     """Busca o CEP correto para o imóvel. Funciona com OLX, Instagram e Orulo."""
-    # Usa o CEP que já veio nos dados (se válido)
+    uf = _uf(dados)
+
+    # CEP explícito nos dados — valida se é compatível com a UF conhecida
     cep = _cep_explicito(dados)
     if cep:
-        return cep
+        if uf and not _cep_valido_para_uf(cep, uf):
+            logger.info(f"CEP {cep} invalido para UF={uf} — descartado, buscando via ViaCEP")
+            cep = ""
+        else:
+            return cep
 
     endereco = str(dados.get("endereco") or dados.get("rua") or "").strip()
     cidade = _cidade_limpa(dados)
-    uf = _uf(dados)
     logradouro = _logradouro(endereco)
 
     if not (uf and cidade):

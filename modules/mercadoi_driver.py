@@ -1386,7 +1386,21 @@ class MercadoiDriver:
         cidade = str(dados.get("cidade_extraida", "") or "").strip()
         if not endereco and not cep and not latitude and not longitude and not bairro:
             return
-        # Busca o CEP correto via ViaCEP quando há rua + cidade disponíveis
+
+        # Se bairro está vazio mas o endereço tem bairro embutido (ex: "Rua X 100. Jardim Y"),
+        # extrai e propaga para que _selecionar_bairro possa usar
+        if not bairro and endereco:
+            try:
+                from modules.cep_lookup import _extrair_bairro_do_endereco
+                bairro_end = _extrair_bairro_do_endereco(endereco)
+                if bairro_end:
+                    bairro = bairro_end
+                    dados["bairro_extraido"] = bairro_end
+                    logger.info(f"Bairro extraido do endereco: {bairro_end}")
+            except Exception:
+                pass
+
+        # Busca o CEP correto via ViaCEP (descarta CEPs de outro estado)
         try:
             from modules.cep_lookup import buscar_cep
             cep_buscado = await buscar_cep(dados)
