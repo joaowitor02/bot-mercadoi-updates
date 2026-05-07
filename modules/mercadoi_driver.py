@@ -1348,7 +1348,9 @@ class MercadoiDriver:
         cep = str(dados.get("cep", "") or dados.get("codigo_postal", "") or "").strip()
         latitude = str(dados.get("latitude", "") or dados.get("lat", "") or "").strip()
         longitude = str(dados.get("longitude", "") or dados.get("lng", "") or dados.get("lon", "") or "").strip()
-        if not endereco and not cep and not latitude and not longitude:
+        bairro = str(dados.get("bairro_extraido", "") or "").strip()
+        cidade = str(dados.get("cidade_extraida", "") or "").strip()
+        if not endereco and not cep and not latitude and not longitude and not bairro:
             return
         # Busca o CEP correto via ViaCEP quando há rua + cidade disponíveis
         try:

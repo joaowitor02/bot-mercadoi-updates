@@ -423,13 +423,33 @@ def _extrair_endereco_olx(data: dict, html: str = "") -> str:
 
 
 def _extrair_cep_olx(data: dict, html: str = "") -> str:
-    for valor in [
-        _valor_recursivo(data, ("postalCode", "postal_code", "zipcode", "zipCode", "cep")),
-        html,
-    ]:
-        m = re.search(r"\b\d{5}[-\s]?\d{3}\b", str(valor or ""))
+    # 1ª prioridade: campos estruturados JSON (mais confiáveis)
+    val_json = _valor_recursivo(data, ("postalCode", "postal_code", "zipcode", "zipCode", "cep"))
+    if val_json:
+        m = re.search(r"\b(\d{5}[-\s]?\d{3})\b", str(val_json))
         if m:
-            digits = re.sub(r"\D", "", m.group(0))
+            digits = re.sub(r"\D", "", m.group(1))
+            if len(digits) == 8:
+                return f"{digits[:5]}-{digits[5:]}"
+
+    # 2ª prioridade: CEP em contexto explícito no HTML
+    texto = str(html or "")
+    for pat in [
+        r'"postalCode"\s*:\s*"(\d{5}-?\d{3})"',
+        r'"cep"\s*:\s*"(\d{5}-?\d{3})"',
+        r'\bCEP\s*:?\s*(\d{5}[-\s]?\d{3})\b',
+    ]:
+        m = re.search(pat, texto, re.IGNORECASE)
+        if m:
+            digits = re.sub(r"\D", "", m.group(1))
+            if len(digits) == 8:
+                return f"{digits[:5]}-{digits[5:]}"
+
+    # 3ª prioridade: qualquer padrão CEP no HTML (menos confiável)
+    m = re.search(r"\b(\d{5}[-\s]?\d{3})\b", texto)
+    if m:
+        digits = re.sub(r"\D", "", m.group(1))
+        if len(digits) == 8:
             return f"{digits[:5]}-{digits[5:]}"
     return ""
 
