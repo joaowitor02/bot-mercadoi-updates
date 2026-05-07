@@ -812,7 +812,13 @@ class OruloScraper:
         return ""
 
     def _extrair_info_adicional(self, html: str) -> dict:
-        """Extrai informações estruturais do empreendimento: estoque, lançamento, entrega, andares, unidades."""
+        """Extrai campos VERDES da seção 'Outras informações' do Orulo.
+
+        Incluídos: Estágio, Estoque, Lançamento, Entrega, Unidades por andar,
+                   Total de unidades, Número de andares.
+        Excluídos (nunca extrair): Área da Laje, Área do Terreno, Condomínio,
+                   Atualizado em, IRI, PTU.
+        """
         texto = self._texto_visivel(html)
         info = {}
 
@@ -844,10 +850,10 @@ class OruloScraper:
             r"unidades?\s+por\s+andar\s*:?\s*(\d+)",
             r"(\d+)\s+unidades?\s+por\s+andar",
         ])
+        # Padrão específico para evitar falso positivo com "total de unidades" etc.
         info["andares"] = _buscar([
             r"n[uú]mero\s+de\s+andares\s*:?\s*(\d+)",
-            r"(\d+)\s+andares?",
-            r"(\d+)\s+pavimentos?",
+            r"(\d+)\s+pavimentos?\b",
         ])
         # Remove campos vazios
         return {k: v for k, v in info.items() if v}
@@ -1106,6 +1112,8 @@ class OruloScraper:
             detalhes.append(f"{self._fmt_area(tipologia['area_m2'])} m2")
         if tipologia.get("quartos"):
             detalhes.append(self._plural(tipologia["quartos"], "quarto", "quartos"))
+        if tipologia.get("suites"):
+            detalhes.append(self._plural(tipologia["suites"], "suíte", "suítes"))
         if tipologia.get("banheiros"):
             detalhes.append(self._plural(tipologia["banheiros"], "banheiro", "banheiros"))
         if tipologia.get("vagas"):
