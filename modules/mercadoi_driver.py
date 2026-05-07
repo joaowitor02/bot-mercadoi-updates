@@ -384,11 +384,13 @@ class MercadoiDriver:
             await self._selecionar_por_texto(page, '#prop_status', operacao)
 
             # Preenche todos os campos numéricos em uma única chamada JS
+            # Mercadoi usa #prop_baths para SUÍTES (ícone exibido no card)
+            # e #prop_rooms para banheiros (campo adicional, não exibido no card)
             await self._preencher_campos_batch(page, {
                 '#prop_price':  dados.get("preco",    "").strip(),
                 '#prop_beds':   dados.get("quartos",  "").strip(),
-                '#prop_rooms':  dados.get("suites",   "").strip(),
-                '#prop_baths':  dados.get("banheiros","").strip(),
+                '#prop_baths':  dados.get("suites",   "").strip(),
+                '#prop_rooms':  dados.get("banheiros","").strip(),
                 '#prop_garage': dados.get("vagas",    "").strip(),
                 '#prop_size':   dados.get("area_m2",  "").strip(),
             })
