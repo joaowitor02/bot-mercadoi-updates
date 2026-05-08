@@ -213,8 +213,15 @@ class OruloScraper:
             dados = self._extrair_dados(html, url)
             imagens_urls = self._extrair_imagens(html)
 
-        if not dados.get("titulo") and self.email and self.senha:
-            logger.info("Orulo: tentando leitura autenticada")
+        # Aciona Playwright autenticado se: sem título OU título é tipo genérico
+        # ("Apartamento", "Casa"…) que indica que o JS não foi renderizado
+        _TITULO_GENERICO = {"apartamento", "casa", "terreno", "sala", "sala comercial",
+                            "flat", "studio", "kitnet", "imovel", "imóvel", "cobertura"}
+        _titulo_atual = (dados.get("titulo") or "").strip().lower()
+        _precisa_auth = (not _titulo_atual) or (_titulo_atual in _TITULO_GENERICO)
+
+        if _precisa_auth and self.email and self.senha:
+            logger.info(f"Orulo: titulo genérico/ausente ('{_titulo_atual}') — tentando leitura autenticada")
             auth = await self._fetch_autenticado(url)
             if not auth.get("ok"):
                 return auth
