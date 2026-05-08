@@ -1374,13 +1374,46 @@ class MercadoiDriver:
         m = re.search(r"wa\.me/(\d+)", url or "")
         return m.group(1) if m else ""
 
+    @staticmethod
+    def _normalizar_whatsapp_link(v: str) -> str:
+        v = str(v or "").strip()
+        if not v:
+            return ""
+        normalizada = MercadoiDriver._normalizar_url(v)
+        if normalizada:
+            return normalizada
+        digits = re.sub(r"\D", "", v)
+        if len(digits) in (10, 11):
+            digits = "55" + digits
+        if 12 <= len(digits) <= 13:
+            return f"https://wa.me/{digits}"
+        return ""
+
+    @staticmethod
+    def _normalizar_instagram_link(v: str) -> str:
+        v = str(v or "").strip()
+        if not v:
+            return ""
+        normalizada = MercadoiDriver._normalizar_url(v)
+        if normalizada:
+            return normalizada
+        usuario = v.lstrip("@").strip().strip("/")
+        if re.fullmatch(r"[A-Za-z0-9._]{2,60}", usuario):
+            return f"https://instagram.com/{usuario}"
+        return ""
+
     def _montar_conteudo(self, dados):
         descricao = dados.get("descricao_util", "")
         url_pub   = self._normalizar_url(dados.get("url_publicacao", ""))
+        fonte     = str(dados.get("_fonte", "") or "").strip().lower()
         whatsapp  = self._normalizar_url(dados.get("whatsapp_url", ""))
         instagram = self._normalizar_url(dados.get("instagram_url", ""))
-        fonte     = dados.get("_fonte", "")
-        is_video  = fonte == "instagram"
+        is_video  = fonte == "instagram" or "instagram.com" in url_pub
+        if is_video:
+            whatsapp = self._normalizar_whatsapp_link(dados.get("whatsapp_url", ""))
+            instagram = self._normalizar_instagram_link(dados.get("instagram_url", ""))
+            if not instagram and "instagram.com" in url_pub:
+                instagram = url_pub
 
         icones = []
         # Instagram: 3 ícones (vídeo + WhatsApp + Instagram)
@@ -1455,6 +1488,14 @@ class MercadoiDriver:
                 dados["cep"] = cep  # propaga para XML-RPC posterior
         except Exception as e:
             logger.debug(f"Busca CEP falhou: {e}")
+
+        endereco_exato = self._endereco_exato_para_mapa(endereco)
+        endereco_mapa = endereco if endereco_exato else ""
+        if not endereco_exato:
+            latitude = ""
+            longitude = ""
+            if endereco:
+                logger.info("Mapa nao preenchido: endereco sem logradouro e numero confirmados")
         try:
             resultado = await page.evaluate("""
                 ({endereco, cep, latitude, longitude}) => {
@@ -1524,7 +1565,7 @@ class MercadoiDriver:
                     ], longitude);
                     return ok;
                 }
-            """, {"endereco": endereco, "cep": cep, "latitude": latitude, "longitude": longitude})
+            """, {"endereco": endereco_mapa, "cep": cep, "latitude": latitude, "longitude": longitude})
             marcados = [k for k, ok in (resultado or {}).items() if ok]
             if marcados:
                 logger.info(f"Endereco/mapa preenchido: {', '.join(marcados)}")
@@ -1534,6 +1575,19 @@ class MercadoiDriver:
                 logger.info("Campos de endereco/mapa nao encontrados no formulario")
         except Exception as e:
             logger.warning(f"Erro ao preencher endereco/mapa: {e}")
+
+    @staticmethod
+    def _endereco_exato_para_mapa(endereco: str) -> bool:
+        endereco = str(endereco or "").strip()
+        if not endereco:
+            return False
+        tem_logradouro = re.search(
+            r"\b(rua|avenida|av|travessa|alameda|rodovia|estrada|ladeira|praça|praca)\b|\b(r|av|tv)\.",
+            endereco,
+            re.IGNORECASE,
+        )
+        tem_numero = re.search(r"\b\d{1,6}[A-Za-zºª\-\/]*\b", endereco)
+        return bool(tem_logradouro and tem_numero)
 
     @staticmethod
     def _normalizar_url(v: str) -> str:
@@ -2572,6 +2626,8 @@ class MercadoiDriver:
                     estagio_meta = self._detalhes_adicionais({
                         "estagio_imovel": m_estagio.group(1).strip()
                     })["selects"].get("Estágio do Imovel", "")
+            endereco_meta = str(dados.get("endereco") or dados.get("rua") or "").strip()
+            endereco_mapa_meta = endereco_meta if self._endereco_exato_para_mapa(endereco_meta) else ""
 
             mapeamento = {
                 "fave_tem-elevador":              dv.get("Tem elevador?", ""),
@@ -2593,8 +2649,8 @@ class MercadoiDriver:
                 "fave_property_year":             iv.get("Ano de construção", ""),
                 "fave_vizinhanc3a7a":             iv.get("Proximidades", ""),
                 # Endereço e CEP via XML-RPC como garantia extra
-                "fave_property_address":          str(dados.get("endereco") or dados.get("rua") or "").strip(),
-                "fave_property_map_address":      str(dados.get("endereco") or dados.get("rua") or "").strip(),
+                "fave_property_address":          endereco_meta,
+                "fave_property_map_address":      endereco_mapa_meta,
                 "fave_property_zip":              str(dados.get("cep") or "").strip(),
             }
 
