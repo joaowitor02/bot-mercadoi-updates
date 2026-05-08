@@ -575,12 +575,17 @@ class OruloScraper:
         tipologias = self._extrair_tipologias(html, tipo_imovel)
         tipologia_base = tipologias[0] if tipologias else {}
 
-        preco = tipologia_base.get("preco") or self._extrair_preco(html)
-        area = tipologia_base.get("area_m2") or self._extrair_num_range(html, r"m[²2]")
-        quartos = tipologia_base.get("quartos") or self._extrair_num_range(html, r"quarto")
-        suites = tipologia_base.get("suites") or self._extrair_num_range(html, r"su[ií]te")
-        banheiros = tipologia_base.get("banheiros") or self._extrair_num_range(html, r"banheiro")
-        vagas = tipologia_base.get("vagas") or self._extrair_num_range(html, r"vaga")
+        def _tipologia_ou_fallback(campo: str, fallback: str) -> str:
+            if campo in tipologia_base and tipologia_base.get(campo) is not None:
+                return tipologia_base.get(campo) or ""
+            return fallback
+
+        preco = _tipologia_ou_fallback("preco", self._extrair_preco(html))
+        area = _tipologia_ou_fallback("area_m2", self._extrair_num_range(html, r"m[²2]"))
+        quartos = _tipologia_ou_fallback("quartos", self._extrair_num_range(html, r"quarto"))
+        suites = _tipologia_ou_fallback("suites", self._extrair_num_range(html, r"su[ií]te"))
+        banheiros = _tipologia_ou_fallback("banheiros", self._extrair_num_range(html, r"banheiro"))
+        vagas = _tipologia_ou_fallback("vagas", self._extrair_num_range(html, r"vaga"))
 
         resumo = self._resumo_tipologias(tipologias, html)
         caracteristicas = self._extrair_caracteristicas(html)
@@ -989,6 +994,8 @@ class OruloScraper:
                     partes.append(f"{self._fmt_area(t['area_m2'])} m2")
                 if t.get("quartos"):
                     partes.append(self._plural(t["quartos"], "quarto", "quartos"))
+                if t.get("suites"):
+                    partes.append(self._plural(t["suites"], "suite", "suites"))
                 if t.get("banheiros"):
                     partes.append(self._plural(t["banheiros"], "banheiro", "banheiros"))
                 if t.get("vagas"):
@@ -1109,13 +1116,15 @@ class OruloScraper:
                 "preco": self._somente_digitos(m.group(1)),
                 "area_m2": self._normalizar_area(m.group(2)),
                 "quartos": self._normalizar_inteiro(m.group(3)),
-                "suites": "",
-                "banheiros": self._normalizar_inteiro(m.group(4)),
+                "suites": self._normalizar_inteiro(m.group(4)),
+                # A tabela de tipologias da Órulo usa o ícone de banheira para suites.
+                # Banheiros vêm do resumo superior do empreendimento.
+                "banheiros": None,
                 "vagas": self._normalizar_inteiro(m.group(5)),
             }
             chave = (
                 item["tipo_imovel"], item["preco"], item["area_m2"],
-                item["quartos"], item["banheiros"], item["vagas"],
+                item["quartos"], item["suites"], item["vagas"],
             )
             if item["preco"] and chave not in vistos:
                 vistos.add(chave)

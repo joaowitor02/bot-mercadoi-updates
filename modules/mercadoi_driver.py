@@ -383,14 +383,13 @@ class MercadoiDriver:
             operacao = dados.get("operacao", "").strip() or "A Venda"
             await self._selecionar_por_texto(page, '#prop_status', operacao)
 
-            # Preenche todos os campos numéricos em uma única chamada JS
-            # Mercadoi usa #prop_baths para SUÍTES (ícone exibido no card)
-            # e #prop_rooms para banheiros (campo adicional, não exibido no card)
+            # Preenche todos os campos numéricos em uma única chamada JS.
+            # Mercadoi/Houzez usa #prop_baths para banheiros e #prop_rooms para suites.
             await self._preencher_campos_batch(page, {
                 '#prop_price':  dados.get("preco",    "").strip(),
                 '#prop_beds':   dados.get("quartos",  "").strip(),
-                '#prop_baths':  dados.get("suites",   "").strip(),
-                '#prop_rooms':  dados.get("banheiros","").strip(),
+                '#prop_baths':  dados.get("banheiros","").strip(),
+                '#prop_rooms':  dados.get("suites",   "").strip(),
                 '#prop_garage': dados.get("vagas",    "").strip(),
                 '#prop_size':   dados.get("area_m2",  "").strip(),
             })
@@ -519,8 +518,10 @@ class MercadoiDriver:
                 "no-tc3a9rreo[]":            dv2.get("Andar", ""),
                 "perto-do-mar[]":            dv2.get("Perto do mar?", ""),
                 # Campos de texto
-                "fave_condomc3adnio-iptu-taxas": iv2.get("Condomínio - IPTU - Taxas", ""),
-                "fave_property_year":         iv2.get("Ano de construção", ""),
+                "prop_land_area":             iv2.get("Área total m²", ""),
+                "condomc3adnio-iptu-taxas":   iv2.get("Condomínio - IPTU - Taxas", ""),
+                "prop_year_built":            iv2.get("Ano de construção", ""),
+                "vizinhanc3a7a":              iv2.get("Proximidades", ""),
             }.items() if v}
 
             logger.info(f"extra_campos para AJAX: { {k: v for k, v in extra_campos.items()} }")
@@ -1407,10 +1408,11 @@ class MercadoiDriver:
 
         bloco_html = ("\n\n<pre>" + "".join(icones) + "</pre>") if icones else ""
 
-        # Linha de rastreamento: apenas o fone (sem URL para não poluir a descrição)
+        # Linha de rastreamento: apenas o fone (sem URL para não poluir a descrição).
+        # Em anúncios OLX o contato já fica anexado ao ícone do WhatsApp.
         rastreamento = ""
         fone = self._extrair_fone_whatsapp(whatsapp)
-        if fone:
+        if fone and fonte != "olx":
             rastreamento = "\n\n" + fone
 
         return descricao + bloco_html + rastreamento
@@ -2559,12 +2561,16 @@ class MercadoiDriver:
                 "fave_aceita-financiamento":      dv.get("Aceita Financiamento?", ""),
                 "fave_posic3a7c3a3o-do-imovel":  dv.get("Posição Solar", ""),
                 "fave_posic3a7c3a3o":             dv.get("Posição no Prédio", ""),
-                # NOTA: estagio, andar e perto-do-mar são campos array ([]).
-                # O AJAX (extra_campos) já os salva como PHP array serializado.
-                # Escrever via XML-RPC substituiria o array por string simples — Houzez
-                # não leria corretamente, deixando o campo em branco no form.
+                "fave_property_bedrooms":          str(dados.get("quartos") or "").strip(),
+                "fave_property_bathrooms":         str(dados.get("banheiros") or "").strip(),
+                "fave_property_rooms":             str(dados.get("suites") or "").strip(),
+                "fave_estagio-da-obra-imc3b3vel": dv.get("Estágio do Imovel", ""),
+                "fave_no-tc3a9rreo":              dv.get("Andar", ""),
+                "fave_perto-do-mar":              dv.get("Perto do mar?", ""),
+                "fave_property_land":             iv.get("Área total m²", ""),
                 "fave_condomc3adnio-iptu-taxas":  iv.get("Condomínio - IPTU - Taxas", ""),
                 "fave_property_year":             iv.get("Ano de construção", ""),
+                "fave_vizinhanc3a7a":             iv.get("Proximidades", ""),
                 # Endereço e CEP via XML-RPC como garantia extra
                 "fave_property_address":          str(dados.get("endereco") or dados.get("rua") or "").strip(),
                 "fave_property_zip":              str(dados.get("cep") or "").strip(),
@@ -2576,16 +2582,30 @@ class MercadoiDriver:
                 mapeamento["fave_agents"] = agent_id
                 mapeamento["fave_agent_display_option"] = "agent_info"
 
-            custom_fields = [
-                {"key": k, "value": v}
-                for k, v in mapeamento.items()
-                if v
-            ]
+            xmlrpc_url = self.base_url.rstrip("/") + "/xmlrpc.php"
+            proxy = xmlrpc.client.ServerProxy(xmlrpc_url)
+
+            existentes = {}
+            try:
+                post = proxy.wp.getPost("1", self._wp_user, self._wp_pass, int(post_id))
+                for f in post.get("custom_fields") or []:
+                    key = f.get("key")
+                    if key and key not in existentes:
+                        existentes[key] = f.get("id")
+            except Exception as e:
+                logger.warning(f"Falha ao ler metas existentes via XML-RPC: {e}")
+
+            custom_fields = []
+            for k, v in mapeamento.items():
+                if not v:
+                    continue
+                field = {"key": k, "value": v}
+                if existentes.get(k):
+                    field["id"] = existentes[k]
+                custom_fields.append(field)
             if not custom_fields:
                 return
 
-            xmlrpc_url = self.base_url.rstrip("/") + "/xmlrpc.php"
-            proxy = xmlrpc.client.ServerProxy(xmlrpc_url)
             proxy.wp.editPost("1", self._wp_user, self._wp_pass, int(post_id), {
                 "custom_fields": custom_fields
             })
