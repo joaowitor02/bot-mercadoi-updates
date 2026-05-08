@@ -88,7 +88,7 @@ _AMENIDADES = [
     ("Coworking",         ["coworking"]),
     ("Pet place",         ["pet place", "pet care"]),
     ("Lavanderia",        ["lavanderia"]),
-    ("Mini mercado",      ["mini mercado", "minimercado", "mini market", "market"]),
+    ("Mini mercado",      ["mini mercado", "minimercado", "mini market"]),
     ("Hidromassagem",     ["hidromassagem"]),
     ("Segurança",         ["seguranca", "segurança"]),
     ("Bicicletario",      ["bicicletario", "bicicletário"]),

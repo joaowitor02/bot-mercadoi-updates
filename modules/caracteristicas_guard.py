@@ -56,6 +56,7 @@ CARACTERISTICAS_TEXTO = [
     ("mini mercado", "Mini mercado"),
     ("minimercado", "Mini mercado"),
     ("mini market", "Mini mercado"),
+    # "market" foi removido — corresponde a "supermarket", "marketing", etc. (falso positivo)
     ("lavanderia", "Lavanderia"),
     ("coworking", "Coworking"),
     ("brinquedoteca", "Brinquedoteca"),
