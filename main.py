@@ -183,14 +183,70 @@ def _validar_dados(dados: dict) -> dict:
         logger.warning(f"Área suspeita ({area}m²) — limpando campo")
         dados["area_m2"] = ""
 
-    estagio_raw = str(dados.get("estagio_imovel") or "").strip()
-    estagio_norm = norm_txt(estagio_raw)
     texto_contexto = norm_txt(
         "\n".join([
             str(dados.get("titulo") or ""),
             str(dados.get("descricao_util") or ""),
         ])
     )
+
+    if not str(dados.get("mobiliado") or "").strip():
+        if any(p in texto_contexto for p in (
+            "sem mobilia", "sem moveis", "nao mobiliado", "nao possui mobilia",
+        )):
+            dados["mobiliado"] = "sem mobilia"
+        elif any(p in texto_contexto for p in ("semi mobiliado", "semi-mobiliado")):
+            dados["mobiliado"] = "semi mobiliado"
+        elif any(p in texto_contexto for p in (
+            "mobiliado e decorado", "decorado",
+        )):
+            dados["mobiliado"] = "Mobiliado e Decorado"
+        elif any(p in texto_contexto for p in (
+            "mobiliado", "porteira fechada", "moveis planejados",
+            "moveis sob medida", "projetados inclusos", "projetados incluso",
+            "projetados", "armarios planejados", "armarios projetados",
+        )):
+            dados["mobiliado"] = "Mobiliado"
+
+    if not str(dados.get("perto_do_mar") or "").strip():
+        if any(p in texto_contexto for p in (
+            "vista para o mar", "vista mar", "vista ao mar",
+        )):
+            dados["perto_do_mar"] = "Vista para o mar"
+        elif any(p in texto_contexto for p in (
+            "frente mar", "frente ao mar", "frente para o mar",
+            "beira mar", "pe na areia",
+        )):
+            dados["perto_do_mar"] = "Frente para o mar"
+        elif any(p in texto_contexto for p in (
+            "quadra do mar", "a quadra do mar", "quadra da praia",
+        )):
+            dados["perto_do_mar"] = "Quadra do mar"
+        elif (
+            "perto da praia" in texto_contexto
+            or "proximo a praia" in texto_contexto
+            or "proximo da praia" in texto_contexto
+            or "proximo ao mar" in texto_contexto
+            or _re.search(r"\b\d+\s*(?:m|metros)\s+d[ao]\s+(?:mar|praia)\b", texto_contexto)
+            or _re.search(r"\b\d+\s*minutos?\s+d[ao]\s+(?:mar|praia)\b", texto_contexto)
+        ):
+            dados["perto_do_mar"] = "Próximo ao mar"
+
+    if not str(dados.get("posicao_predio") or "").strip():
+        if _re.search(r"\bfrente\b", texto_contexto) and not _re.search(
+            r"\bfrente\s+(?:ao\s+mar|para\s+o\s+mar|a\s+praia|da\s+praia)\b",
+            texto_contexto,
+        ):
+            dados["posicao_predio"] = "Frente"
+        elif "fundos" in texto_contexto or _re.search(r"\bfundo\b", texto_contexto):
+            dados["posicao_predio"] = "Fundo"
+        elif "lateral" in texto_contexto:
+            dados["posicao_predio"] = "Lateral"
+        elif _re.search(r"\bmeio\b", texto_contexto):
+            dados["posicao_predio"] = "Meio"
+
+    estagio_raw = str(dados.get("estagio_imovel") or "").strip()
+    estagio_norm = norm_txt(estagio_raw)
     if any(p in estagio_norm for p in ("construcao", "obra", "lancamento")):
         sinais_pronto = (
             "pronto para morar", "pronto pra morar", "imovel pronto",
