@@ -105,14 +105,19 @@ _AMENIDADES = [
     ("Espaco zen",        ["espaco zen", "espaço zen", "jardim zen"]),
 ]
 
-# Amenidades que nunca devem aparecer nas características (política do cliente)
+# Amenidades que nunca devem aparecer nas características (política do cliente).
+# Deve ser espelho de mercadoi_driver._NUNCA_MARCAR para bloquear na origem.
 _AMENIDADES_EXCLUIR = {
+    "academia", "fitness",
     "banheiro social",
     "biblioteca",
     "circuito de seguranca", "camera de seguranca",
-    "piscina infantil", "piscina kids",
+    "espaco gourmet",
+    "lounge",
+    "piscina adulto", "piscina infantil", "piscina kids",
     "piscina privativa",
     "portaria 24h", "portaria 24 horas", "portaria eletronica",
+    "salao de festas", "salao de festas sum", "salao de jogos",
     # "solarium" → OK marcar (confirmado nos screenshots do cliente)
     "spa",
     "terraco", "terraco rooftop", "rooftop",

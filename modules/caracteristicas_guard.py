@@ -39,10 +39,10 @@ CARACTERISTICAS_TEXTO = [
     ("area de servico", "Área de serviço"),
     ("cozinha americana", "Cozinha americana"),
     ("cozinha gourmet", "Cozinha Gourmet"),
-    ("espaco gourmet", "Espaço gourmet"),
+    # Espaço gourmet, Piscina adulto, Academia, Lounge, Salão de festas e Rooftop
+    # são bloqueados pelo mercadoi_driver._NUNCA_MARCAR — não faz sentido adicioná-los aqui.
     ("moveis planejados", "Projetados"),
     ("projetados", "Projetados"),
-    ("piscina", "Piscina adulto"),
     ("hidromassagem", "Hidromassagem"),
     ("churrasqueira", "Churrasqueira"),
     ("espaco grill", "Churrasqueira"),
@@ -51,24 +51,17 @@ CARACTERISTICAS_TEXTO = [
     ("vaga de garagem coberta", "Vaga coberta"),
     ("vagas de garagem cobertas", "Vaga coberta"),
     ("garagem coberta", "Vaga coberta"),
-    ("academia", "Academia"),
     ("playground", "Playground"),
     ("portaria", "Portaria"),
     ("mini mercado", "Mini mercado"),
     ("minimercado", "Mini mercado"),
     ("mini market", "Mini mercado"),
-    ("market", "Mini mercado"),
     ("lavanderia", "Lavanderia"),
     ("coworking", "Coworking"),
     ("brinquedoteca", "Brinquedoteca"),
     ("seguranca", "Segurança"),
-    ("salao de festas", "Salão de festas"),
-    ("sala de festas", "Salão de festas"),
     ("sala de jogos", "Sala de jogos"),
     ("salao de jogos", "Sala de jogos"),
-    ("lounge", "Lounge"),
-    ("louge", "Lounge"),
-    ("rooftop", "Rooftop"),
 ]
 
 
