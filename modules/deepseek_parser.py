@@ -185,6 +185,8 @@ class DeepSeekParser:
             dados["area_m2"] = self._extrair_area_descricao(descricao_bruta)
         titulo = dados.get("titulo", "")
         texto_completo = titulo + "\n" + descricao_bruta
+        if not dados.get("andar"):
+            dados["andar"] = self._extrair_andar_descricao(texto_completo)
         if not dados.get("bairro_extraido"):
             dados["bairro_extraido"] = self._extrair_bairro_descricao(texto_completo)
         if not dados.get("cidade_extraida"):
@@ -351,6 +353,32 @@ class DeepSeekParser:
         match = re.search(r'(\d+(?:[.,]\d+)?)\s*m[²2]', texto, re.IGNORECASE)
         if match:
             return match.group(1)
+        return ""
+
+    def _extrair_andar_descricao(self, texto):
+        if not texto:
+            return ""
+        normalizado = unicodedata.normalize("NFKD", str(texto))
+        normalizado = "".join(c for c in normalizado if not unicodedata.combining(c))
+        normalizado = re.sub(r"\s+", " ", normalizado.lower()).strip()
+
+        if re.search(r"\b(?:unidade|apto|apartamento|casa)?\s*terre[ao]\b", normalizado):
+            return "Terreo"
+
+        match = re.search(
+            r"\b(\d{1,3})(?:\s*[º°oªa])?\s*(?:andar|pavimento)\b",
+            normalizado,
+        )
+        if match:
+            return match.group(1)
+
+        match = re.search(
+            r"\b(?:andar|pavimento)\s*(?:n[º°o.]?\s*)?(\d{1,3})\b",
+            normalizado,
+        )
+        if match:
+            return match.group(1)
+
         return ""
 
     def _extrair_bairro_descricao(self, texto):
