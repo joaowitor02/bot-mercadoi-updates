@@ -25,7 +25,6 @@ def normalizar(texto):
 # (independente da seção — comum ou privativa)
 _NUNCA_MARCAR: set[str] = {normalizar(x) for x in [
     # Áreas Comuns — amenidades de uso coletivo do prédio
-    "Academia",
     "Banheiro social",
     "Biblioteca",
     "Circuito de seguranca",
@@ -1772,7 +1771,7 @@ class MercadoiDriver:
 
                     // Labels que nunca devem ser marcados no formulário (segurança extra)
                     const BLOQUEADOS = new Set([
-                        'academia', 'banheiro social', 'biblioteca',
+                        'banheiro social', 'biblioteca',
                         'circuito de seguranca', 'camera de seguranca',
                         'espaco gourmet', 'lounge',
                         'portaria 24h', 'portaria eletronica',

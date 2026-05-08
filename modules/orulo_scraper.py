@@ -101,7 +101,6 @@ _AMENIDADES = [
 
 # Amenidades que nunca devem aparecer nas características (política do cliente)
 _AMENIDADES_EXCLUIR = {
-    "academia", "fitness",
     "banheiro social",
     "biblioteca",
     "circuito de seguranca", "camera de seguranca",
