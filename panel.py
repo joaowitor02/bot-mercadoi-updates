@@ -690,20 +690,41 @@ def _tail_text_lines(path: Path, limit: int, max_bytes: int = 256 * 1024) -> lis
 
 
 def _filtrar_logs_execucao(linhas: list[str], limit: int) -> list[str]:
+    # Sem filtro por timestamp: comparação entre VPS-UTC e logs em Brasília (UTC-3)
+    # causava que todas as linhas falhassem e o log parecia travado.
+    # O _mesclar_logs_recentes já cuida de duplicatas com _ultimo_log (stdout).
     if not _ultimo_inicio_bot or not _bot_em_execucao():
         return linhas[-limit:]
-    corte = datetime.fromtimestamp(max(0, _ultimo_inicio_bot - 3))
+    # Filtra apenas usando timezone de Brasília para comparação correta
+    from datetime import timezone, timedelta
+    tz_br = timezone(timedelta(hours=-3))
+    corte = datetime.fromtimestamp(max(0, _ultimo_inicio_bot - 3), tz=tz_br)
     filtradas: list[str] = []
     for linha in linhas:
         m = re.match(r"^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})", linha)
         if not m:
+            filtradas.append(linha)  # linha sem timestamp: inclui
             continue
         try:
-            if datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S") >= corte:
+            ts = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S").replace(tzinfo=tz_br)
+            if ts >= corte:
                 filtradas.append(linha)
         except ValueError:
-            continue
+            filtradas.append(linha)
     return (filtradas or linhas)[-limit:]
+
+
+def _mesclar_logs_recentes(linhas_arquivo: list[str], limit: int) -> list[str]:
+    """Mescla arquivo + stdout do processo sem repetir linhas iguais em sequencia."""
+    combinadas = linhas_arquivo + _ultimo_log
+    if not combinadas:
+        return []
+    resultado: list[str] = []
+    for linha in combinadas:
+        if not linha or (resultado and resultado[-1] == linha):
+            continue
+        resultado.append(linha)
+    return resultado[-limit:]
 
 
 async def _rodar_bot(watch: bool = False, intervalo: int = 5):
@@ -1151,20 +1172,24 @@ async def logs_live(ultimas: int = 80):
         LOGS_DIR / f"{hoje}.log", BASE_DIR / "logs" / f"{hoje}.log",
         LOGS_DIR / f"{ontem}.log", BASE_DIR / "logs" / f"{ontem}.log",
     ]
+    limit = max(1, min(ultimas, 300))
+    linhas_arquivo: list[str] = []
+    caminhos_lidos: set[Path] = set()
     for log_file in candidatos:
-        if not log_file.exists():
-            continue
         try:
-            limit = max(1, min(ultimas, 300))
+            log_path = log_file.resolve()
+        except Exception:
+            log_path = log_file
+        if log_path in caminhos_lidos or not log_file.exists():
+            continue
+        caminhos_lidos.add(log_path)
+        try:
             linhas = _tail_text_lines(log_file, limit, max_bytes=512 * 1024)
-            linhas = _filtrar_logs_execucao(linhas, limit)
-            if _ultimo_log and _bot_em_execucao():
-                linhas = (linhas + _ultimo_log)[-limit:]
-            return JSONResponse(linhas, headers={"Cache-Control": "no-store"})
+            linhas_arquivo.extend(_filtrar_logs_execucao(linhas, limit))
         except Exception:
             pass
-    # Fallback: buffer de stdout (caso o arquivo ainda não exista)
-    return JSONResponse(_ultimo_log[-ultimas:], headers={"Cache-Control": "no-store"})
+    linhas = _mesclar_logs_recentes(linhas_arquivo, limit)
+    return JSONResponse(linhas, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/screenshots/{filename}")

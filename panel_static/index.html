@@ -1046,7 +1046,8 @@ let _isAdmin = false;
 let _toastTimer = null;
 let _mainTab = 'dashboard';
 let _lastLogLine = '';           // última linha do log para detectar progressão
-let _lastFinalizados = -1;       // total de finalizados (sucesso+falha) para detectar novo cadastro
+let _lastLogSignature = '';      // conjunto visível do log para não perder linhas intermediárias
+let _lastExecSignature = '';     // assinatura das execuções para atualizar números em cada etapa
 
 // ---------------------------------------------------------------------------
 // Navegação principal
@@ -1348,10 +1349,18 @@ async function carregarExecucoes(forcar = false) {
   try {
     const r = await fetch(`/api/execucoes?dias=${_filtroDias}&_=${Date.now()}`, { cache: 'no-store' });
     const novas = await r.json();
-    const finalizados = novas.filter(e => e.status === 'sucesso' || e.status === 'falha').length;
-    // Só re-renderiza quando um novo cadastro for finalizado (ou chamada forçada)
-    if (forcar || finalizados !== _lastFinalizados) {
-      _lastFinalizados = finalizados;
+    const assinatura = novas.map(e => [
+      e.row_id || e.execution_id || '',
+      e.status || '',
+      e.status_raw || '',
+      e.atualizado_em || '',
+      e.fim || '',
+      e.mercadoi_url || '',
+      e.url_publica || '',
+    ].join('~')).join('|');
+    // Re-renderiza quando qualquer item muda de etapa, finaliza ou entra/sai da fila.
+    if (forcar || assinatura !== _lastExecSignature) {
+      _lastExecSignature = assinatura;
       _execucoes = novas;
       renderStats(_execucoes);
       renderResumoDiario(_execucoes);
@@ -1582,21 +1591,32 @@ async function pausarBot() {
   }
 }
 
+let _lastLogChangeAt = 0; // timestamp da última linha nova
+
 async function atualizarLogs() {
   try {
     const r = await fetch(`/api/logs/live?ultimas=80&_=${Date.now()}`, { cache: 'no-store' });
     const linhas = await r.json();
     const ultimaLinha = linhas.length ? linhas[linhas.length - 1] : '';
-    // Só atualiza DOM quando houver uma linha nova (progressão de etapa)
-    if (ultimaLinha && ultimaLinha !== _lastLogLine) {
+    const assinatura = linhas.join('\n');
+    const ts = document.getElementById('log-last-update');
+
+    if (assinatura && assinatura !== _lastLogSignature) {
+      _lastLogSignature = assinatura;
       _lastLogLine = ultimaLinha;
+      _lastLogChangeAt = Date.now();
       const container = document.getElementById('log-content');
       container.innerHTML = linhas.map(l =>
         `<p class="log-line ${logColor(l)}">${esc(l)}</p>`
       ).join('');
       container.scrollTop = container.scrollHeight;
-      const ts = document.getElementById('log-last-update');
       if (ts) ts.textContent = new Date().toLocaleTimeString('pt-BR');
+    } else if (_botRodando && _lastLogChangeAt) {
+      // Sem novas linhas mas bot rodando: mostra tempo sem atualização
+      const segs = Math.round((Date.now() - _lastLogChangeAt) / 1000);
+      if (segs >= 10 && ts) {
+        ts.textContent = `aguardando... (${segs}s sem novas linhas)`;
+      }
     }
   } catch {
     const ts = document.getElementById('log-last-update');
@@ -1616,6 +1636,8 @@ async function processarAgora() {
     if (btnTxt) btnTxt.textContent = 'Iniciando...';
     if (logCard) logCard.classList.remove('hidden');
     if (logContent) logContent.innerHTML = '<p class="log-line text-slate-400">Iniciando bot...</p>';
+    _lastLogLine = '';
+    _lastLogSignature = '';
     const r = await fetch('/api/processar', { method: 'POST' });
     const d = await r.json();
     if (d.ok) {
@@ -2906,14 +2928,23 @@ async function init() {
     await atualizarChromeStatus();
   }, 8000);
 
-  // Execuções, stats e fila: a cada 5s para acompanhar progressão em tempo real
+  // Execuções, stats e fila: acompanha mais de perto quando o bot está rodando.
   setInterval(async () => {
-    await carregarExecucoes();
+    await carregarExecucoes(_botRodando);
     if (_mainTab === 'fila') await carregarFila();
   }, 5000);
 
-  // Log ao vivo: a cada 2s sempre (card permanente)
-  setInterval(atualizarLogs, 2000);
+  // Log ao vivo + números do painel durante a automação.
+  setInterval(async () => {
+    await atualizarLogs();
+    if (_botRodando) {
+      await Promise.allSettled([
+        carregarExecucoes(),
+        carregarPendentes(),
+        _mainTab === 'fila' ? carregarFila() : Promise.resolve(),
+      ]);
+    }
+  }, 2000);
 
   setInterval(carregarPendentes, 15000);
   setInterval(atualizarLimite, 15000);
