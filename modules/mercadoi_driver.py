@@ -1686,9 +1686,11 @@ class MercadoiDriver:
         alvos_raw = list(dict.fromkeys([str(c).strip() for c in (caracteristicas or []) if str(c).strip()]))
 
         # Filtra itens da blocklist antes de enviar ao JS
+        # IMPORTANTE: usa apenas 'b in cn' (termo bloqueado dentro do nome da característica)
+        # NÃO usa 'cn in b' — isso bloquearia 'Portaria' por ser substring de 'Portaria 24h'
         def _bloqueado(c: str) -> bool:
             cn = normalizar(c)
-            return any(b == cn or b in cn or cn in b for b in _NUNCA_MARCAR)
+            return any(b in cn for b in _NUNCA_MARCAR)
 
         alvos = [c for c in alvos_raw if not _bloqueado(c)]
         if alvos_raw != alvos:
