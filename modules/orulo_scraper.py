@@ -571,6 +571,11 @@ class OruloScraper:
                             "cobertura", "flat", "studio", "kitnet", "imovel", "imóvel"}
         og_titulo_util = og_title if og_title and og_title.strip().lower() not in _TIPOS_GENERICOS else ""
         titulo = nome_emp or self._titulo_texto(html) or og_titulo_util
+        if self._mesmo_texto(bairro, nome_emp or titulo):
+            bairro = ""
+        endereco, bairro_extraido = self._separar_endereco_bairro(endereco, bairro)
+        if bairro_extraido:
+            bairro = bairro_extraido
 
         tipologias = self._extrair_tipologias(html, tipo_imovel)
         tipologia_base = tipologias[0] if tipologias else {}
@@ -721,6 +726,40 @@ class OruloScraper:
                 if len(val) >= 5:
                     return val
         return ""
+
+    def _separar_endereco_bairro(self, endereco: str, bairro: str = "") -> tuple[str, str]:
+        endereco = (endereco or "").strip()
+        bairro = (bairro or "").strip().strip(" ,.-")
+        if not endereco:
+            return "", bairro
+
+        # Ex.: "Rua Cordélia Velloso Frade 1240. Jardim Cidade Universitária".
+        m = re.match(r"^(.+?\b\d+[A-Za-zºª\-\/]*)[.,;]\s+(.{3,60})$", endereco)
+        if m:
+            endereco = m.group(1).strip()
+            bairro_do_endereco = m.group(2).strip().strip(" ,.-")
+            if not bairro:
+                bairro = bairro_do_endereco
+
+        if self._bairro_parece_endereco(bairro):
+            bairro = ""
+        return endereco, bairro
+
+    def _bairro_parece_endereco(self, valor: str) -> bool:
+        valor = (valor or "").strip()
+        if not valor:
+            return False
+        return bool(
+            re.search(r"\b(rua|av\.?|avenida|estrada|rodovia|travessa|alameda)\b", valor, re.IGNORECASE)
+            or re.search(r"\d{2,}", valor)
+        )
+
+    def _mesmo_texto(self, a: str, b: str) -> bool:
+        if not a or not b:
+            return False
+        na = self._normalizar_texto(a)
+        nb = self._normalizar_texto(b)
+        return na == nb or na in nb or nb in na
 
     def _nome_empreendimento(self, html: str) -> str:
         def _valido(n: str) -> bool:
@@ -995,7 +1034,7 @@ class OruloScraper:
                 if t.get("quartos"):
                     partes.append(self._plural(t["quartos"], "quarto", "quartos"))
                 if t.get("suites"):
-                    partes.append(self._plural(t["suites"], "suite", "suites"))
+                    partes.append(self._plural(t["suites"], "suíte", "suítes"))
                 if t.get("banheiros"):
                     partes.append(self._plural(t["banheiros"], "banheiro", "banheiros"))
                 if t.get("vagas"):

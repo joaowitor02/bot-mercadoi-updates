@@ -2573,6 +2573,7 @@ class MercadoiDriver:
                 "fave_vizinhanc3a7a":             iv.get("Proximidades", ""),
                 # Endereço e CEP via XML-RPC como garantia extra
                 "fave_property_address":          str(dados.get("endereco") or dados.get("rua") or "").strip(),
+                "fave_property_map_address":      str(dados.get("endereco") or dados.get("rua") or "").strip(),
                 "fave_property_zip":              str(dados.get("cep") or "").strip(),
             }
 
