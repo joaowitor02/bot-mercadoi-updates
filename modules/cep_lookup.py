@@ -202,6 +202,29 @@ async def _consultar_viacep(uf: str, cidade: str, logradouro: str, dados: dict) 
         return ""
 
 
+async def buscar_logradouro_por_cep(cep: str) -> str:
+    """Consulta o ViaCEP com o CEP e retorna o nome da rua (logradouro)."""
+    digits = re.sub(r"\D", "", str(cep or ""))
+    if len(digits) != 8:
+        return ""
+    url = f"https://viacep.com.br/ws/{digits}/json/"
+    try:
+        async with httpx.AsyncClient(timeout=5, follow_redirects=True) as client:
+            resp = await client.get(url)
+        if resp.status_code != 200:
+            return ""
+        data = resp.json()
+        if not isinstance(data, dict) or data.get("erro"):
+            return ""
+        logradouro = data.get("logradouro", "").strip()
+        if logradouro:
+            logger.info(f"Logradouro via CEP {cep}: {logradouro}")
+        return logradouro
+    except Exception as e:
+        logger.debug(f"Busca logradouro por CEP falhou ({cep}): {e}")
+        return ""
+
+
 async def buscar_cep(dados: dict) -> str:
     """Busca o CEP correto para o imóvel. Funciona com OLX, Instagram e Orulo."""
     uf = _uf(dados)

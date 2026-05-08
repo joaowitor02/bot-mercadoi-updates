@@ -59,6 +59,10 @@ _BAIRRO_CIDADE_PB: dict[str, str] = {
     "poco": "Cabedelo", "poca": "Cabedelo", "bairro do poco": "Cabedelo",
     "ponta de mato": "Cabedelo", "renascer": "Cabedelo",
     "ponta de cabedelo": "Cabedelo", "intermares": "Cabedelo",
+    "camboinha": "Cabedelo", "praia de camboinha": "Cabedelo",
+    "ponta de campina": "Cabedelo", "ponta campina": "Cabedelo",
+    "naica": "Cabedelo", "formosa": "Cabedelo",
+    "pocinhos cabedelo": "Cabedelo", "nova cabedelo": "Cabedelo",
     "jardins cabedelo": "Cabedelo", "camalau": "Cabedelo",
     "centro cabedelo": "Cabedelo",
     # Campina Grande
@@ -360,14 +364,21 @@ class MercadoiDriver:
             await self._selecionar_por_texto(page, '#prop_status', operacao)
 
             # Preenche todos os campos numéricos em uma única chamada JS.
-            # Mercadoi/Houzez usa #prop_baths para banheiros e #prop_rooms para suites.
+            # Mercadoi/Houzez usa #prop_baths para suítes e #prop_rooms para banheiros.
+            # _so_inteiro: remove decimais e separadores — nunca preencher com número quebrado.
+            def _so_inteiro(v: str) -> str:
+                v = re.sub(r"[Rr]\$\s*", "", str(v or "")).strip()
+                v = re.sub(r"\.(?=\d{3})", "", v)   # remove milhar (1.200 → 1200)
+                v = re.sub(r"[,\.]\d+$", "", v)      # remove decimal (78,5 → 78)
+                return re.sub(r"[^\d]", "", v)        # só dígitos
+
             await self._preencher_campos_batch(page, {
-                '#prop_price':  dados.get("preco",    "").strip(),
-                '#prop_beds':   dados.get("quartos",  "").strip(),
-                '#prop_baths':  dados.get("banheiros","").strip(),
-                '#prop_rooms':  dados.get("suites",   "").strip(),
-                '#prop_garage': dados.get("vagas",    "").strip(),
-                '#prop_size':   dados.get("area_m2",  "").strip(),
+                '#prop_price':  _so_inteiro(dados.get("preco",    "")),
+                '#prop_beds':   _so_inteiro(dados.get("quartos",  "")),
+                '#prop_baths':  _so_inteiro(dados.get("banheiros","")),
+                '#prop_rooms':  _so_inteiro(dados.get("suites",   "")),
+                '#prop_garage': _so_inteiro(dados.get("vagas",    "")),
+                '#prop_size':   _so_inteiro(dados.get("area_m2",  "")),
             })
 
             # CARACTERISTICAS
@@ -1459,13 +1470,23 @@ class MercadoiDriver:
 
         # Busca o CEP correto via ViaCEP (descarta CEPs de outro estado)
         try:
-            from modules.cep_lookup import buscar_cep
+            from modules.cep_lookup import buscar_cep, buscar_logradouro_por_cep
             cep_buscado = await buscar_cep(dados)
             if cep_buscado:
                 cep = cep_buscado
                 dados["cep"] = cep  # propaga para XML-RPC posterior
         except Exception as e:
             logger.debug(f"Busca CEP falhou: {e}")
+
+        # Se não há rua mas há CEP, tenta obter o logradouro via ViaCEP
+        if not endereco and cep:
+            try:
+                rua = await buscar_logradouro_por_cep(cep)
+                if rua:
+                    endereco = rua
+                    dados["endereco"] = rua
+            except Exception as e:
+                logger.debug(f"Busca logradouro por CEP falhou: {e}")
 
         endereco_exato = self._endereco_exato_para_mapa(endereco)
         endereco_mapa = endereco if endereco_exato else ""
@@ -1982,10 +2003,12 @@ class MercadoiDriver:
             return ""
 
         def _limpar_valor(v: str) -> str:
-            # remove "R$", "r$", "R$ ", pontos de milhar; mantém vírgula decimal
+            # remove R$, espaços
             v = re.sub(r"[Rr]\$\s*", "", v).strip()
-            # remove pontos de milhar (ex: 1.200 → 1200) mas mantém decimal com vírgula
+            # remove pontos de milhar (1.200 → 1200)
             v = re.sub(r"\.(?=\d{3})", "", v)
+            # remove casas decimais — nunca inserir número quebrado (78,5 → 78; 1500.5 → 1500)
+            v = re.sub(r"[,\.]\d+$", "", v.strip())
             return v.strip()
 
         cond = _limpar_valor(_s("condominio"))
