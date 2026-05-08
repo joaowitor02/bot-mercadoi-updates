@@ -114,7 +114,8 @@ _AMENIDADES_EXCLUIR = {
     "circuito de seguranca", "camera de seguranca",
     "espaco gourmet",
     "lounge",
-    "piscina adulto", "piscina infantil", "piscina kids",
+    # "piscina adulto" → OK marcar no Orulo: "piscina" sem qualificador = adulto
+    "piscina infantil", "piscina kids",
     "piscina privativa",
     "portaria 24h", "portaria 24 horas", "portaria eletronica",
     "salao de festas", "salao de festas sum", "salao de jogos",
