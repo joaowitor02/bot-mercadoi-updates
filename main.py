@@ -9,6 +9,7 @@ import sys
 import json
 import os
 import re
+import unicodedata
 import uuid
 import time
 import httpx
@@ -122,6 +123,11 @@ def _validar_dados(dados: dict) -> dict:
     """
     import re as _re
 
+    def norm_txt(v):
+        nfkd = unicodedata.normalize("NFKD", str(v or ""))
+        sem_acento = "".join(c for c in nfkd if not unicodedata.combining(c))
+        return _re.sub(r"\s+", " ", sem_acento.lower()).strip()
+
     def to_int(v):
         try:
             return int(str(v).strip())
@@ -176,6 +182,34 @@ def _validar_dados(dados: dict) -> dict:
     if area is not None and area > 100000:
         logger.warning(f"Área suspeita ({area}m²) — limpando campo")
         dados["area_m2"] = ""
+
+    estagio_raw = str(dados.get("estagio_imovel") or "").strip()
+    estagio_norm = norm_txt(estagio_raw)
+    texto_contexto = norm_txt(
+        "\n".join([
+            str(dados.get("titulo") or ""),
+            str(dados.get("descricao_util") or ""),
+        ])
+    )
+    if any(p in estagio_norm for p in ("construcao", "obra", "lancamento")):
+        sinais_pronto = (
+            "pronto para morar", "pronto pra morar", "imovel pronto",
+            "apartamento pronto", "unidade pronta", "entregue",
+        )
+        sinais_construcao = (
+            "em construcao", "em obra", "em obras", "obra em andamento",
+            "previsao de entrega", "entrega prevista", "entrega em",
+            "na planta", "lancamento", "pre lancamento",
+        )
+        if any(s in texto_contexto for s in sinais_pronto):
+            logger.warning("Estágio corrigido para Novo: texto indica imóvel pronto")
+            dados["estagio_imovel"] = "Novo"
+        elif not any(s in texto_contexto for s in sinais_construcao):
+            logger.warning(
+                f"Estágio '{estagio_raw}' descartado: sem evidência explícita de obra; "
+                "termos como repasse/saldo na construtora não bastam"
+            )
+            dados["estagio_imovel"] = ""
 
     return dados
 
