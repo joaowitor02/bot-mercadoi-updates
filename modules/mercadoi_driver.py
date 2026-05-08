@@ -2610,9 +2610,10 @@ class MercadoiDriver:
             proxy = xmlrpc.client.ServerProxy(xmlrpc_url)
 
             existentes = {}
+            post_atual = {}
             try:
-                post = proxy.wp.getPost("1", self._wp_user, self._wp_pass, int(post_id))
-                for f in post.get("custom_fields") or []:
+                post_atual = proxy.wp.getPost("1", self._wp_user, self._wp_pass, int(post_id))
+                for f in post_atual.get("custom_fields") or []:
                     key = f.get("key")
                     if key and key not in existentes:
                         existentes[key] = f.get("id")
@@ -2627,14 +2628,44 @@ class MercadoiDriver:
                 if existentes.get(k):
                     field["id"] = existentes[k]
                 custom_fields.append(field)
-            if not custom_fields:
+            termos_nomes = {}
+            bairro = str(dados.get("bairro_extraido") or "").strip()
+            cidade = str(dados.get("cidade_extraida") or "").strip()
+            cidade = re.sub(r"\s*/\s*[A-Z]{2}$", "", cidade).strip()
+            if bairro or cidade:
+                for termo in post_atual.get("terms") or []:
+                    tax = termo.get("taxonomy")
+                    nome = termo.get("name")
+                    if tax in {"property_area", "property_city"} and nome:
+                        termos_nomes.setdefault(tax, [])
+                        if nome not in termos_nomes[tax]:
+                            termos_nomes[tax].append(nome)
+                if bairro:
+                    termos_nomes.setdefault("property_area", [])
+                    if bairro not in termos_nomes["property_area"]:
+                        termos_nomes["property_area"].append(bairro)
+                if cidade:
+                    termos_nomes.setdefault("property_city", [])
+                    if cidade not in termos_nomes["property_city"]:
+                        termos_nomes["property_city"].append(cidade)
+
+            if not custom_fields and not termos_nomes:
                 return
 
-            proxy.wp.editPost("1", self._wp_user, self._wp_pass, int(post_id), {
-                "custom_fields": custom_fields
-            })
+            post_data = {}
+            if custom_fields:
+                post_data["custom_fields"] = custom_fields
+            if termos_nomes:
+                post_data["terms_names"] = termos_nomes
+
+            proxy.wp.editPost("1", self._wp_user, self._wp_pass, int(post_id), post_data)
             nomes = [f"{f['key'].replace('fave_','')}={f['value']}" for f in custom_fields]
-            logger.info(f"Meta atualizada via XML-RPC (post {post_id}): {', '.join(nomes)}")
+            extras = []
+            if nomes:
+                extras.append(", ".join(nomes))
+            if termos_nomes:
+                extras.append(f"termos={termos_nomes}")
+            logger.info(f"Meta atualizada via XML-RPC (post {post_id}): {'; '.join(extras)}")
         except Exception as e:
             logger.warning(f"Falha ao atualizar meta via XML-RPC: {e}")
 
