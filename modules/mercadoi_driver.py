@@ -1758,8 +1758,13 @@ class MercadoiDriver:
                         'sistema de alarme', 'piscina infantil', 'piscina privativa',
                     ]);
 
-                    // Pré-computa limites de seção uma única vez (headings no DOM).
-                    // Evita percorrer o DOM para cada checkbox (O(checkboxes × DOM) → O(sections)).
+                    // Pré-computa limites de seção via offsetTop (funciona em headless mesmo
+                    // com elementos fora do viewport ou em accordions fechados).
+                    function _offsetTop(el) {
+                        let y = 0;
+                        while (el) { y += el.offsetTop || 0; el = el.offsetParent; }
+                        return y;
+                    }
                     const _secBounds = [];
                     document.querySelectorAll('h1,h2,h3,h4,h5,h6,legend,p,span,div').forEach(el => {
                         const txt = el.childNodes.length <= 3
@@ -1769,7 +1774,7 @@ class MercadoiDriver:
                         if (txt.includes('privat') || txt.includes('comum')) {
                             _secBounds.push({
                                 tipo: txt.includes('privat') ? 'privativa' : 'comum',
-                                top: el.getBoundingClientRect().top,
+                                top: _offsetTop(el),
                             });
                         }
                     });
@@ -1777,7 +1782,7 @@ class MercadoiDriver:
 
                     function secao(el) {
                         if (!_secBounds.length) return '';
-                        const top = el.getBoundingClientRect().top;
+                        const top = _offsetTop(el);
                         let resultado = '';
                         for (const b of _secBounds) {
                             if (b.top <= top + 5) resultado = b.tipo;
