@@ -557,8 +557,13 @@ class OruloScraper:
         tipo_imovel = tipos_imovel_lista[0] if tipos_imovel_lista else "Apartamento"
 
         nome_emp = self._nome_empreendimento(html)
-        # Título é o nome do empreendimento (primeira linha do projeto/condomínio)
-        titulo = nome_emp or og_title or self._titulo_texto(html)
+        # Título: nome do empreendimento. Se _nome_empreendimento falhou, tenta
+        # _titulo_texto (h1, JSON-LD) antes de cair no og_title genérico.
+        # og_title sozinho ("Apartamento") não é útil como título de empreendimento.
+        _TIPOS_GENERICOS = {"apartamento", "casa", "terreno", "sala", "sala comercial",
+                            "cobertura", "flat", "studio", "kitnet", "imovel", "imóvel"}
+        og_titulo_util = og_title if og_title and og_title.strip().lower() not in _TIPOS_GENERICOS else ""
+        titulo = nome_emp or self._titulo_texto(html) or og_titulo_util
 
         tipologias = self._extrair_tipologias(html, tipo_imovel)
         tipologia_base = tipologias[0] if tipologias else {}
@@ -706,39 +711,67 @@ class OruloScraper:
         return ""
 
     def _nome_empreendimento(self, html: str) -> str:
-        # Orulo usa "<title>Nome do Empreendimento | Orulo</title>"
-        # — captura a parte ANTES do pipe
+        def _valido(n: str) -> bool:
+            return bool(n) and len(n) >= 5 and "Login" not in n and "Orulo" not in n
+
+        # 1. <title>Nome | Orulo</title>  (formato mais comum do Orulo)
         m = re.search(
             r"<title>\s*([^|<]{5,120}?)\s*\|\s*(?:Orulo|Lançamentos|Imoveis)[^<]*</title>",
             html, re.IGNORECASE,
         )
-        if m:
+        if m and _valido(m.group(1).strip()):
+            return m.group(1).strip()
+
+        # 2. og:title com pipe: "Nome | Orulo"
+        og = self._meta(html, "og:title") or ""
+        if "|" in og:
+            partes = [p.strip() for p in og.split("|")]
+            for parte in partes:
+                if _valido(parte) and parte.lower() not in {"orulo", "apartamento", "casa"}:
+                    return parte
+
+        # 3. JSON-LD: "name": "..."
+        for m in re.finditer(r'"name"\s*:\s*"([^"]{5,120})"', html):
             nome = m.group(1).strip()
-            if nome and "Login" not in nome:
+            if _valido(nome) and nome[0].isupper():
                 return nome
 
-        # Fallback: pipe invertido (Orulo | Nome)
+        # 4. Atributo data-name ou similar com nome do prédio
+        m = re.search(r'data-(?:building-name|name|title)=["\']([^"\']{5,120})["\']', html, re.IGNORECASE)
+        if m and _valido(m.group(1).strip()):
+            return m.group(1).strip()
+
+        # 5. Fallback: variável JS
+        m = re.search(r'building_name\s*=\s*["\']([^"\']+)["\']', html)
+        if m and _valido(m.group(1).strip()):
+            return m.group(1).strip()
+
+        # 6. <title> invertido (Orulo | Nome)
         m = re.search(r"<title>[^|<]*\|\s*([^<]{5,120})</title>", html, re.IGNORECASE)
         if m:
-            nome = m.group(1).strip()
-            nome = re.split(r"\s*[-–]\s*[A-ZÀ-Ú]", nome)[0].strip()
-            if nome and "Login" not in nome and "Orulo" not in nome:
+            nome = re.split(r"\s*[-–]\s*[A-ZÀ-Ú]", m.group(1).strip())[0].strip()
+            if _valido(nome):
                 return nome
 
-        # Fallback: variável JS
-        m = re.search(r'building_name\s*=\s*["\']([^"\']+)["\']', html)
-        if m:
-            return m.group(1).strip()
         return ""
 
     def _titulo_texto(self, html: str) -> str:
-        for pat in [
-            r"(?:Empreendimento|Condominio|Condomínio)\s+([A-Z][^\n\r]{5,90})",
+        padroes = [
+            # <h1> com classe relacionada a nome do empreendimento
+            r'<h1[^>]*class="[^"]*(?:building|name|title|heading|empreend)[^"]*"[^>]*>\s*([^<]{5,120})\s*</h1>',
+            # <h1> genérico
             r"<h1[^>]*>\s*([^<]{5,120})\s*</h1>",
-        ]:
+            # Padrão "Empreendimento NomePredio" no texto visível
+            r"(?:Empreendimento|Condominio|Condomínio)\s+([A-Z][^\n\r]{5,90})",
+            # Classe específica Orulo para nome do empreendimento
+            r'class="[^"]*(?:building|empreend)[^"]*-name[^"]*"[^>]*>\s*([^<]{5,120})\s*<',
+        ]
+        for pat in padroes:
             m = re.search(pat, html, re.IGNORECASE)
             if m:
-                return re.sub(r"\s+", " ", m.group(1)).strip()
+                nome = re.sub(r"\s+", " ", m.group(1)).strip()
+                if len(nome) >= 5 and "Login" not in nome:
+                    return nome
         return ""
 
     def _extrair_preco(self, html: str) -> str:
