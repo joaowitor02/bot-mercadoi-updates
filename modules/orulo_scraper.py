@@ -607,6 +607,8 @@ class OruloScraper:
         condominio = self._extrair_condominio(html)
         perto_do_mar = self._extrair_perto_do_mar(bairro, cidade, html)
         info_adicional = self._extrair_info_adicional(html)
+        if not estagio:
+            estagio = self._inferir_estagio_por_info(info_adicional)
 
         dados = {
             "titulo": titulo,
@@ -647,6 +649,19 @@ class OruloScraper:
                 for i, t in enumerate(tipologias)
             ]
         return dados
+
+    def _inferir_estagio_por_info(self, info: dict) -> str:
+        bruto = str((info or {}).get("estagio") or "").strip()
+        n = self._normalizar_texto(bruto)
+        if any(p in n for p in ["construcao", "obra", "obras"]):
+            return "Em Construção"
+        if any(p in n for p in ["pronto", "entregue"]):
+            return "Novo"
+        if any(p in n for p in ["lancamento", "breve"]):
+            return "Em Construção"
+        if (info or {}).get("entrega") or (info or {}).get("lancamento"):
+            return "Em Construção"
+        return ""
 
     # ------------------------------------------------------------------
     # Helpers de parsing
@@ -934,6 +949,11 @@ class OruloScraper:
         info["lancamento"] = _buscar([
             r"lan[cç]amento\s*:?\s*([\d/\-\.]{5,10})",
             r"data\s+de\s+lan[cç]amento\s*:?\s*([\d/\-\.]{5,10})",
+        ])
+        info["estagio"] = _buscar([
+            r"est[aá]gio\s*:?\s*([A-Za-zÀ-ú ]{3,40})",
+            r"status\s+da\s+obra\s*:?\s*([A-Za-zÀ-ú ]{3,40})",
+            r"est[aá]gio\s+da\s+obra\s*:?\s*([A-Za-zÀ-ú ]{3,40})",
         ])
         info["entrega"] = _buscar([
             r"entrega\s*:?\s*([\d/\-\.]{5,10})",

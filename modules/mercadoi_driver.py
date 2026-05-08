@@ -523,6 +523,13 @@ class MercadoiDriver:
                 "prop_year_built":            iv2.get("Ano de construção", ""),
                 "vizinhanc3a7a":              iv2.get("Proximidades", ""),
             }.items() if v}
+            estagio_extra = dv2.get("Estágio do Imovel", "")
+            if estagio_extra:
+                extra_campos.update({
+                    "estagio-da-obra-imc3b3vel": estagio_extra,
+                    "fave_estagio-da-obra-imc3b3vel": estagio_extra,
+                    "fave_estagio-da-obra-imc3b3vel[]": estagio_extra,
+                })
 
             logger.info(f"extra_campos para AJAX: { {k: v for k, v in extra_campos.items()} }")
 
@@ -1767,42 +1774,50 @@ class MercadoiDriver:
                             .sort((a, b) => a.length - b.length)[0] || '';
                     };
 
-                    const alvosNorm = alvos.map(a => ({original: a, norm: norm(a)})).filter(a => a.norm);
+                    const alvosNorm = alvos.map(a => {
+                        const original = String(a || '');
+                        let n = norm(original);
+                        const privativa = n.startsWith('area privativa ') || n.startsWith('privativa ');
+                        n = n
+                            .replace(/^area privativa /, '')
+                            .replace(/^privativa /, '')
+                            .replace(/^area comum /, '')
+                            .replace(/^comum /, '')
+                            .trim();
+                        return {original, norm: n, privativa};
+                    }).filter(a => a.norm);
                     const marcadas = [];
                     const faltantes = new Map(alvosNorm.map(a => [a.norm, a.original]));
-                    const boxes = Array.from(document.querySelectorAll('input[type="checkbox"]'));
+                    const boxes = Array.from(document.querySelectorAll('input[type="checkbox"]'))
+                        .map(box => {
+                            const texto = textoCheckbox(box);
+                            return {box, texto, textoNorm: norm(texto), sec: secao(box)};
+                        })
+                        .filter(c => c.textoNorm && !BLOQUEADOS.has(c.textoNorm));
 
-                    for (const box of boxes) {
-                        const texto = textoCheckbox(box);
-                        const textoNorm = norm(texto);
-                        if (!textoNorm) continue;
-
-                        // Nunca marcar itens da blocklist (independente da seção)
-                        if (BLOQUEADOS.has(textoNorm)) continue;
-
-                        const sec = secao(box);
-
-                        let alvo;
-                        if (sec === 'privativa') {
-                            // Áreas Privativas: apenas match exato — não aceita substring
-                            // para evitar marcar itens coletivos do prédio na área privativa
-                            alvo = alvosNorm.find(a => textoNorm === a.norm);
-                        } else {
-                            // Áreas Comuns / seção desconhecida: match normal (inclui substring)
-                            alvo = alvosNorm.find(a =>
-                                textoNorm === a.norm ||
-                                textoNorm.includes(a.norm) ||
-                                a.norm.includes(textoNorm)
-                            );
+                    const match = (c, alvo) => {
+                        if (alvo.privativa) {
+                            return c.sec === 'privativa' && c.textoNorm === alvo.norm;
                         }
+                        if (c.sec === 'privativa') return false;
+                        return c.textoNorm === alvo.norm ||
+                               c.textoNorm.includes(alvo.norm) ||
+                               alvo.norm.includes(c.textoNorm);
+                    };
+                    const score = (c) => c.sec === 'comum' ? 0 : 1;
 
-                        if (!alvo) continue;
-                        if (!box.checked) {
-                            box.click();
-                        }
+                    for (const alvo of alvosNorm) {
+                        const candidatos = boxes
+                            .filter(c => match(c, alvo))
+                            .sort((a, b) => score(a) - score(b) || a.texto.length - b.texto.length);
+                        const escolhido = candidatos[0];
+                        if (!escolhido) continue;
+
+                        const box = escolhido.box;
+                        if (!box.checked) box.click();
                         box.dispatchEvent(new Event('input', {bubbles: true}));
                         box.dispatchEvent(new Event('change', {bubbles: true}));
-                        marcadas.push(`${texto}${sec === 'privativa' ? ' [priv]' : ''}`);
+                        marcadas.push(`${escolhido.texto}${escolhido.sec === 'privativa' ? ' [priv]' : ''}`);
                         faltantes.delete(alvo.norm);
                     }
 
@@ -2551,6 +2566,14 @@ class MercadoiDriver:
             det = self._detalhes_adicionais(dados)
             dv = det["selects"]
             iv = det["inputs"]
+            estagio_meta = dv.get("Estágio do Imovel", "")
+            if not estagio_meta:
+                desc = str(dados.get("descricao_util") or "")
+                m_estagio = re.search(r"Est[aá]gio\s*:\s*([^<\n\r-]+)", desc, re.IGNORECASE)
+                if m_estagio:
+                    estagio_meta = self._detalhes_adicionais({
+                        "estagio_imovel": m_estagio.group(1).strip()
+                    })["selects"].get("Estágio do Imovel", "")
 
             mapeamento = {
                 "fave_tem-elevador":              dv.get("Tem elevador?", ""),
@@ -2564,7 +2587,7 @@ class MercadoiDriver:
                 "fave_property_bedrooms":          str(dados.get("quartos") or "").strip(),
                 "fave_property_bathrooms":         str(dados.get("banheiros") or "").strip(),
                 "fave_property_rooms":             str(dados.get("suites") or "").strip(),
-                "fave_estagio-da-obra-imc3b3vel": dv.get("Estágio do Imovel", ""),
+                "fave_estagio-da-obra-imc3b3vel": estagio_meta,
                 "fave_no-tc3a9rreo":              dv.get("Andar", ""),
                 "fave_perto-do-mar":              dv.get("Perto do mar?", ""),
                 "fave_property_land":             iv.get("Área total m²", ""),
