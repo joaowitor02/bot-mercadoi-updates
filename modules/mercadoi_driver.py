@@ -32,8 +32,6 @@ _NUNCA_MARCAR: set[str] = {normalizar(x) for x in [
     "Camera de seguranca",
     "Espaco gourmet",
     "Lounge",
-    "Piscina adulto",
-    "Piscina infantil",
     "Portaria 24h",
     "Portaria eletronica",
     "Salao de festas / SUM",
@@ -46,6 +44,7 @@ _NUNCA_MARCAR: set[str] = {normalizar(x) for x in [
     "Rooftop",
     "Sistema de alarme",
     # Áreas Privativas — nunca marcar automaticamente
+    "Piscina infantil",
     "Piscina Privativa",
     "Espaco Gourmet",           # versão privativa igual à comum — ambas bloqueadas
 ]}
@@ -1722,12 +1721,11 @@ class MercadoiDriver:
                         'academia', 'banheiro social', 'biblioteca',
                         'circuito de seguranca', 'camera de seguranca',
                         'espaco gourmet', 'lounge',
-                        'piscina adulto', 'piscina infantil',
                         'portaria 24h', 'portaria eletronica',
                         'salao de festas / sum', 'salao de festas', 'salao de jogos',
                         'spa',
                         'terraco', 'terraco rooftop', 'rooftop',
-                        'sistema de alarme', 'piscina privativa',
+                        'sistema de alarme', 'piscina infantil', 'piscina privativa',
                     ]);
 
                     // Detecta se o checkbox está na seção "Áreas Privativas"
