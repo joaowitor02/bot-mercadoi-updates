@@ -23,6 +23,7 @@ from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 import httpx
 from modules.logger import Logger
 from modules.property_types import normalizar_tipos_imovel
+from modules.caracteristicas_guard import enriquecer_caracteristicas_por_texto, filtrar_caracteristicas
 
 try:
     from PIL import Image
@@ -66,9 +67,10 @@ _TIPOS = [
     "Casa em Condominio", "Casa de Condominio", "Casa Condomínio",
     "Casa Duplex", "Casa Sobrado", "Casa", "Sobrado",
     "Terrenos", "Terreno", "Lotes", "Lote",
-    "Apartamento Cobertura", "Apartamento Duplex", "Apto. Cobertura", "Apto. Duplex",
+    "Apartamento Cobertura", "Apartamento Duplex", "Apartamento Garden",
+    "Apartamento Studio", "Apto. Cobertura", "Apto. Duplex", "Apto. Garden", "Apto. Studio",
     "Cobertura Duplex", "Duplex Cobertura", "Cobertura", "Duplex",
-    "Apartamento", "Studio", "Flat",
+    "Apartamento", "Garden", "Studio", "Flat",
     "Sala Comercial", "Loja", "Galpao",
 ]
 
@@ -77,14 +79,18 @@ _AMENIDADES = [
     ("Piscina infantil",  ["piscina infantil", "piscina kids"]),
     ("Piscina adulto",    ["piscina"]),          # pega qualquer "piscina" restante
     ("Academia",          ["academia", "fitness"]),
-    ("Salao de festas",   ["salao de festas", "salão de festas"]),
-    ("Espaco gourmet",    ["espaco gourmet", "espaço gourmet", "gourmet"]),
+    ("Salão de festas",   ["salao de festas", "salão de festas"]),
+    ("Espaço gourmet",    ["espaco gourmet", "espaço gourmet", "gourmet"]),
     ("Churrasqueira",     ["churrasqueira"]),
     ("Playground",        ["playground"]),
     ("Brinquedoteca",     ["brinquedoteca"]),
+    ("Lounge",            ["lounge", "louge"]),
     ("Coworking",         ["coworking"]),
     ("Pet place",         ["pet place", "pet care"]),
     ("Lavanderia",        ["lavanderia"]),
+    ("Mini mercado",      ["mini mercado", "minimercado", "mini market", "market"]),
+    ("Hidromassagem",     ["hidromassagem"]),
+    ("Segurança",         ["seguranca", "segurança"]),
     ("Bicicletario",      ["bicicletario", "bicicletário"]),
     ("Portaria 24h",      ["portaria 24h", "portaria 24 horas", "portaria 24"]),
     ("Portaria",          ["portaria"]),
@@ -94,7 +100,7 @@ _AMENIDADES = [
     ("Sauna",             ["sauna"]),
     ("Solarium",          ["solarium", "solário"]),
     ("Deck",              ["deck"]),
-    ("Salao de jogos",    ["salao de jogos", "salão de jogos"]),
+    ("Sala de jogos",     ["sala de jogos", "salao de jogos", "salão de jogos"]),
     ("Cinema",            ["cinema"]),
     ("Espaco zen",        ["espaco zen", "espaço zen", "jardim zen"]),
 ]
@@ -104,13 +110,9 @@ _AMENIDADES_EXCLUIR = {
     "banheiro social",
     "biblioteca",
     "circuito de seguranca", "camera de seguranca",
-    "espaco gourmet", "espaco gourmet privativo",
-    "lounge",
     "piscina infantil", "piscina kids",
     "piscina privativa",
     "portaria 24h", "portaria 24 horas", "portaria eletronica",
-    "salao de festas", "salao de festas sum",
-    "salao de jogos",
     # "solarium" → OK marcar (confirmado nos screenshots do cliente)
     "spa",
     "terraco", "terraco rooftop", "rooftop",
@@ -213,11 +215,19 @@ class OruloScraper:
             imagens_urls = self._extrair_imagens(html)
 
         # Aciona Playwright autenticado se: sem título OU título é tipo genérico
-        # ("Apartamento", "Casa"…) que indica que o JS não foi renderizado
+        # ("Apartamento", "Casa"…) que indica que o JS não foi renderizado.
+        # O título extraído é cacheado para evitar Playwright a cada reprocessamento.
         _TITULO_GENERICO = {"apartamento", "casa", "terreno", "sala", "sala comercial",
                             "flat", "studio", "kitnet", "imovel", "imóvel", "cobertura"}
         _titulo_atual = (dados.get("titulo") or "").strip().lower()
         _precisa_auth = (not _titulo_atual) or (_titulo_atual in _TITULO_GENERICO)
+
+        if _precisa_auth:
+            titulo_cache = self._get_titulo_cache(url)
+            if titulo_cache:
+                logger.info(f"Orulo: título do cache → '{titulo_cache}'")
+                dados["titulo"] = titulo_cache
+                _precisa_auth = False
 
         if _precisa_auth and self.email and self.senha:
             logger.info(f"Orulo: titulo genérico/ausente ('{_titulo_atual}') — tentando leitura autenticada")
@@ -227,6 +237,9 @@ class OruloScraper:
             html = auth["html"]
             dados = self._extrair_dados(html, url)
             imagens_urls = self._extrair_imagens(html)
+            # Cacheia título para evitar Playwright no próximo processamento
+            if dados.get("titulo") and dados["titulo"].lower() not in _TITULO_GENERICO:
+                self._set_titulo_cache(url, dados["titulo"])
 
         if dados.get("titulo") and len(imagens_urls) < _MAX_IMAGENS:
             galeria_urls = self._obter_cache_galeria(url)
@@ -337,6 +350,44 @@ class OruloScraper:
             return {"ok": False, "motivo": "acesso_restrito"}
         return {"ok": True, "html": html}
 
+    # ------------------------------------------------------------------
+    # Cache de título (evita Playwright a cada reprocessamento)
+    # ------------------------------------------------------------------
+    _TITULO_CACHE_TTL = 7 * 24 * 3600  # 7 dias
+
+    def _titulo_cache_path(self) -> str:
+        return os.path.join(self.profile_path, "orulo_titulo_cache.json")
+
+    def _get_titulo_cache(self, url: str) -> str:
+        try:
+            path = self._titulo_cache_path()
+            if not os.path.exists(path):
+                return ""
+            with open(path, "r", encoding="utf-8") as f:
+                cache = json.load(f)
+            key = hashlib.sha1(normalizar_url(url).encode("utf-8", errors="ignore")).hexdigest()
+            item = cache.get(key) or {}
+            if not item or time.time() - float(item.get("ts", 0)) > self._TITULO_CACHE_TTL:
+                return ""
+            return item.get("titulo", "")
+        except Exception:
+            return ""
+
+    def _set_titulo_cache(self, url: str, titulo: str) -> None:
+        try:
+            path = self._titulo_cache_path()
+            cache = {}
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    cache = json.load(f)
+            key = hashlib.sha1(normalizar_url(url).encode("utf-8", errors="ignore")).hexdigest()
+            cache[key] = {"titulo": titulo, "ts": time.time()}
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(cache, f, ensure_ascii=False)
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
     def _gallery_cache_path(self) -> str:
         return os.path.join(self.profile_path, "orulo_gallery_cache.json")
 
@@ -642,6 +693,7 @@ class OruloScraper:
             "_empreendimento_resumo": resumo_empreendimento,
             "_info_adicional": info_adicional,
         }
+        dados = enriquecer_caracteristicas_por_texto(dados)
         if tipologias:
             dados["_dados_variacoes"] = [
                 self._montar_dados_tipologia(dados, t, i + 1, len(tipologias))
@@ -1093,6 +1145,13 @@ class OruloScraper:
     def _extrair_caracteristicas(self, html: str) -> list:
         texto = self._normalizar_texto(self._texto_visivel(html))
         achadas = []
+
+        def _tem_generico(termo: str, bloqueados: tuple[str, ...]) -> bool:
+            limpo = texto
+            for bloqueado in bloqueados:
+                limpo = limpo.replace(bloqueado, " ")
+            return bool(re.search(rf"(^| ){re.escape(termo)}($| )", limpo))
+
         # Piscina infantil deve ser verificada antes de piscina adulto
         # para não duplicar — marcamos o texto consumido via flag
         piscina_infantil_encontrada = False
@@ -1112,10 +1171,29 @@ class OruloScraper:
                 continue
             encontrou = any(self._normalizar_texto(t) in texto for t in termos)
             if encontrou:
+                if nome == "Portaria" and not _tem_generico(
+                    "portaria",
+                    ("portaria 24 horas", "portaria 24h", "portaria 24", "portaria eletronica"),
+                ):
+                    continue
+                if nome == "Segurança" and not _tem_generico(
+                    "seguranca",
+                    (
+                        "circuito de seguranca",
+                        "camera de seguranca",
+                        "cameras de seguranca",
+                        "seguranca 24 horas",
+                        "seguranca 24h",
+                        "seguranca 24",
+                        "seguranca eletronica",
+                        "sistema de alarme",
+                    ),
+                ):
+                    continue
                 if nome == "Piscina infantil":
                     piscina_infantil_encontrada = True
                 achadas.append(nome)
-        return achadas
+        return filtrar_caracteristicas(achadas)
 
     def _normalizar_tipo_orulo(self, tipo: str, contexto: str = "") -> str:
         tipos = self._tipos_orulo(tipo, contexto)
@@ -1201,7 +1279,7 @@ class OruloScraper:
 
         dados["titulo"] = self._titulo_tipologia(base, tipologia, total)
         dados["descricao_util"] = self._descricao_tipologia(base, tipologia, indice, total)
-        return dados
+        return enriquecer_caracteristicas_por_texto(dados)
 
     def _titulo_tipologia(self, base: dict, tipologia: dict, total: int = 1) -> str:
         """Título da publicação: nome do empreendimento + quartos como diferenciador

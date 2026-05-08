@@ -11,6 +11,8 @@ from urllib.parse import urljoin
 from playwright.async_api import async_playwright
 from modules.logger import Logger
 from modules.property_types import aplicar_tipos_imovel, normalizar_tipo_imovel
+from modules.caracteristicas_guard import caracteristica_bloqueada
+from modules.detalhes_adicionais import detalhes_para_meta, detalhes_para_post_fields
 
 logger = Logger("mercadoi_driver")
 
@@ -21,37 +23,8 @@ def normalizar(texto):
     return re.sub(r"\s+", " ", sem_acento.lower().strip())
 
 
-# Características que NUNCA devem ser marcadas no formulário Mercadoi
-# (independente da seção — comum ou privativa)
-_NUNCA_MARCAR: set[str] = {normalizar(x) for x in [
-    # Áreas Comuns — amenidades de uso coletivo do prédio
-    "Banheiro social",
-    "Biblioteca",
-    "Circuito de seguranca",
-    "Camera de seguranca",
-    "Espaco gourmet",
-    "Lounge",
-    "Portaria 24h",
-    "Portaria eletronica",
-    "Salao de festas / SUM",
-    "Salao de festas",
-    "Salao de jogos",
-    # "Solarium" → OK marcar (confirmado nos screenshots do cliente)
-    "Spa",
-    "Terraco",
-    "Terraco Rooftop",
-    "Rooftop",
-    "Sistema de alarme",
-    # Áreas Privativas — nunca marcar automaticamente
-    "Piscina infantil",
-    "Piscina Privativa",
-    "Espaco Gourmet",           # versão privativa igual à comum — ambas bloqueadas
-]}
-
-
 def _caracteristica_bloqueada(caracteristica: str) -> bool:
-    cn = normalizar(caracteristica)
-    return any(b in cn for b in _NUNCA_MARCAR)
+    return caracteristica_bloqueada(caracteristica)
 
 
 # Mapeamento bairro → cidade para municípios da Paraíba
@@ -526,6 +499,7 @@ class MercadoiDriver:
                 "prop_year_built":            iv2.get("Ano de construção", ""),
                 "vizinhanc3a7a":              iv2.get("Proximidades", ""),
             }.items() if v}
+            extra_campos.update(detalhes_para_post_fields(dados.get("detalhes_adicionais") or []))
             estagio_extra = dv2.get("Estágio do Imovel", "")
             if estagio_extra:
                 extra_campos.update({
@@ -686,8 +660,8 @@ class MercadoiDriver:
             # Subtipos — sem ID fixo, usa matching por texto via _selecionar_subtipo_imovel
         }
         _subtipos_texto = {
-            "Apto. Flat", "Apto. Duplex", "Apto. Cobertura", "Apto. Garden",
-            "Chácara", "Fazenda", "Sítio",
+            "Apto. Flat", "Apto. Duplex", "Apto. Cobertura", "Apto. Garden", "Apto. Studio",
+            "Chácaras", "Chácara", "Fazenda", "Sítio",
         }
         if tipo_imovel == "Casa de Condomínio":
             if await self._selecionar_subtipo_imovel(page, tipo_imovel):
@@ -1777,29 +1751,39 @@ class MercadoiDriver:
                     const BLOQUEADOS = new Set([
                         'banheiro social', 'biblioteca',
                         'circuito de seguranca', 'camera de seguranca',
-                        'espaco gourmet', 'lounge',
+                        'bar',
                         'portaria 24h', 'portaria eletronica',
-                        'salao de festas / sum', 'salao de festas', 'salao de jogos',
                         'spa',
                         'terraco', 'terraco rooftop', 'rooftop',
                         'sistema de alarme', 'piscina infantil', 'piscina privativa',
                     ]);
 
-                    // Detecta se o checkbox está na seção "Áreas Privativas"
-                    function secao(el) {
-                        let cur = el;
-                        for (let i = 0; i < 12 && cur && cur !== document.body; i++) {
-                            // Verifica irmão anterior (heading de seção)
-                            let prev = cur.previousElementSibling;
-                            while (prev) {
-                                const t = norm(prev.textContent || '');
-                                if (t.includes('privat')) return 'privativa';
-                                if (t.includes('comum')) return 'comum';
-                                prev = prev.previousElementSibling;
-                            }
-                            cur = cur.parentElement;
+                    // Pré-computa limites de seção uma única vez (headings no DOM).
+                    // Evita percorrer o DOM para cada checkbox (O(checkboxes × DOM) → O(sections)).
+                    const _secBounds = [];
+                    document.querySelectorAll('h1,h2,h3,h4,h5,h6,legend,p,span,div').forEach(el => {
+                        const txt = el.childNodes.length <= 3
+                            ? norm(el.textContent || '')
+                            : '';
+                        if (!txt || txt.length > 40) return;
+                        if (txt.includes('privat') || txt.includes('comum')) {
+                            _secBounds.push({
+                                tipo: txt.includes('privat') ? 'privativa' : 'comum',
+                                top: el.getBoundingClientRect().top,
+                            });
                         }
-                        return '';
+                    });
+                    _secBounds.sort((a, b) => a.top - b.top);
+
+                    function secao(el) {
+                        if (!_secBounds.length) return '';
+                        const top = el.getBoundingClientRect().top;
+                        let resultado = '';
+                        for (const b of _secBounds) {
+                            if (b.top <= top + 5) resultado = b.tipo;
+                            else break;
+                        }
+                        return resultado;
                     }
 
                     const textoCheckbox = (input) => {
@@ -2036,11 +2020,12 @@ class MercadoiDriver:
         detalhes = self._detalhes_adicionais(dados)
         selects = {}  # não preenche selects aqui
         inputs  = {k: v for k, v in detalhes["inputs"].items()  if v}
-        if not inputs:
+        detalhes_livres = detalhes_para_post_fields(dados.get("detalhes_adicionais") or [])
+        if not inputs and not detalhes_livres:
             return
         try:
             resultado = await page.evaluate("""
-                ({selects, inputs}) => {
+                ({selects, inputs, detalhesLivres}) => {
                     const norm = (t) => String(t || '')
                         .toLowerCase()
                         .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
@@ -2162,9 +2147,24 @@ class MercadoiDriver:
                         preenchidos.push(rotulo + '=' + (escolhido || 'OPCAO_NAO_ENCONTRADA(' + valor + ')'));
                     }
 
+                    const form = document.querySelector('#submit_property_form') || document.querySelector('form');
+                    if (form && detalhesLivres && Object.keys(detalhesLivres).length) {
+                        form.querySelectorAll('input.bot-detalhe-adicional').forEach(el => el.remove());
+                        for (const [nome, valor] of Object.entries(detalhesLivres)) {
+                            if (!valor) continue;
+                            const input = document.createElement('input');
+                            input.type = 'hidden';
+                            input.className = 'bot-detalhe-adicional';
+                            input.name = nome;
+                            input.value = valor;
+                            form.appendChild(input);
+                        }
+                        preenchidos.push('Detalhes adicionais livres=' + String(Object.keys(detalhesLivres).length / 2));
+                    }
+
                     return preenchidos;
                 }
-            """, {"selects": selects, "inputs": inputs})
+            """, {"selects": selects, "inputs": inputs, "detalhesLivres": detalhes_livres})
             if resultado:
                 encontrados = [r for r in resultado if 'NAO_ENCONTRADO' not in r and 'OPCAO_NAO_ENCONTRADA' not in r]
                 falhas = [r for r in resultado if 'NAO_ENCONTRADO' in r or 'OPCAO_NAO_ENCONTRADA' in r]
@@ -2684,6 +2684,12 @@ class MercadoiDriver:
                 field = {"key": k, "value": v}
                 if existentes.get(k):
                     field["id"] = existentes[k]
+                custom_fields.append(field)
+            adicionais_meta = detalhes_para_meta(dados.get("detalhes_adicionais") or [])
+            if adicionais_meta:
+                field = {"key": "fave_additional_features", "value": adicionais_meta}
+                if existentes.get("fave_additional_features"):
+                    field["id"] = existentes["fave_additional_features"]
                 custom_fields.append(field)
             termos_nomes = {}
             bairro = str(dados.get("bairro_extraido") or "").strip()
