@@ -49,6 +49,11 @@ _NUNCA_MARCAR: set[str] = {normalizar(x) for x in [
 ]}
 
 
+def _caracteristica_bloqueada(caracteristica: str) -> bool:
+    cn = normalizar(caracteristica)
+    return any(b in cn for b in _NUNCA_MARCAR)
+
+
 # Mapeamento bairro → cidade para municípios da Paraíba
 _BAIRRO_CIDADE_PB: dict[str, str] = {
     # João Pessoa
@@ -1750,8 +1755,7 @@ class MercadoiDriver:
         # IMPORTANTE: usa apenas 'b in cn' (termo bloqueado dentro do nome da característica)
         # NÃO usa 'cn in b' — isso bloquearia 'Portaria' por ser substring de 'Portaria 24h'
         def _bloqueado(c: str) -> bool:
-            cn = normalizar(c)
-            return any(b in cn for b in _NUNCA_MARCAR)
+            return _caracteristica_bloqueada(c)
 
         alvos = [c for c in alvos_raw if not _bloqueado(c)]
         if alvos_raw != alvos:
@@ -2702,7 +2706,26 @@ class MercadoiDriver:
                     if cidade not in termos_nomes["property_city"]:
                         termos_nomes["property_city"].append(cidade)
 
-            if not custom_fields and not termos_nomes:
+            termos_caracteristicas = []
+            caracteristicas = dados.get("caracteristicas") or []
+            if isinstance(caracteristicas, str):
+                caracteristicas = [p.strip() for p in re.split(r"[,;\n]+", caracteristicas) if p.strip()]
+            caracteristicas = [
+                str(c).strip()
+                for c in caracteristicas
+                if str(c).strip() and not _caracteristica_bloqueada(str(c))
+            ]
+            if caracteristicas:
+                for termo in post_atual.get("terms") or []:
+                    if termo.get("taxonomy") == "property-feature" and termo.get("name"):
+                        nome = termo.get("name")
+                        if nome not in termos_caracteristicas:
+                            termos_caracteristicas.append(nome)
+                for nome in caracteristicas:
+                    if nome not in termos_caracteristicas:
+                        termos_caracteristicas.append(nome)
+
+            if not custom_fields and not termos_nomes and not termos_caracteristicas:
                 return
 
             post_data = {}
@@ -2711,13 +2734,27 @@ class MercadoiDriver:
             if termos_nomes:
                 post_data["terms_names"] = termos_nomes
 
-            proxy.wp.editPost("1", self._wp_user, self._wp_pass, int(post_id), post_data)
+            if post_data:
+                proxy.wp.editPost("1", self._wp_user, self._wp_pass, int(post_id), post_data)
+            if termos_caracteristicas:
+                try:
+                    proxy.wp.editPost(
+                        "1",
+                        self._wp_user,
+                        self._wp_pass,
+                        int(post_id),
+                        {"terms_names": {"property-feature": termos_caracteristicas}},
+                    )
+                except Exception as e:
+                    logger.warning(f"Falha ao garantir caracteristicas via XML-RPC: {e}")
             nomes = [f"{f['key'].replace('fave_','')}={f['value']}" for f in custom_fields]
             extras = []
             if nomes:
                 extras.append(", ".join(nomes))
             if termos_nomes:
                 extras.append(f"termos={termos_nomes}")
+            if termos_caracteristicas:
+                extras.append(f"caracteristicas={termos_caracteristicas}")
             logger.info(f"Meta atualizada via XML-RPC (post {post_id}): {'; '.join(extras)}")
         except Exception as e:
             logger.warning(f"Falha ao atualizar meta via XML-RPC: {e}")

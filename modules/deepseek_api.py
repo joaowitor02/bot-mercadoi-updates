@@ -170,6 +170,17 @@ class DeepSeekAPIClient:
                 dados["descricao_util"] = _limpar_descricao(dados["descricao_util"])
             if isinstance(dados.get("caracteristicas"), list):
                 dados["caracteristicas"] = _normalizar_caracteristicas(dados["caracteristicas"])
+            else:
+                dados["caracteristicas"] = []
+            if _texto_tem_academia("\n".join([
+                str(dados.get("titulo") or ""),
+                str(dados.get("descricao_util") or ""),
+                str(caption or ""),
+            ])):
+                dados["caracteristicas"] = _mesclar_caracteristicas(
+                    dados.get("caracteristicas") or [],
+                    ["Academia"],
+                )
 
             logger.info(f"Titulo: {dados.get('titulo', '')[:80]}")
             return dados
@@ -233,3 +244,25 @@ def _normalizar_caracteristicas(valores: list) -> list[str]:
         if oficial:
             saida.append(oficial)
     return sorted(dict.fromkeys(saida), key=lambda s: _norm_texto(s))
+
+
+def _mesclar_caracteristicas(*listas: list) -> list[str]:
+    saida = []
+    for lista in listas:
+        for valor in lista or []:
+            if valor:
+                saida.append(str(valor).strip())
+    return sorted(dict.fromkeys(saida), key=lambda s: _norm_texto(s))
+
+
+def _texto_tem_academia(texto: str) -> bool:
+    alvo = _norm_texto(texto)
+    termos = (
+        "academia",
+        "fitness",
+        "espaco fitness",
+        "sala de ginastica",
+        "musculacao",
+        "gym",
+    )
+    return any(t in alvo for t in termos)

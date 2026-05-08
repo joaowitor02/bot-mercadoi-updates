@@ -218,6 +218,11 @@ class DeepSeekParser:
             dados["caracteristicas"] = self._detectar_caracteristicas(
                 titulo + "\n" + descricao_bruta
             )
+        elif self._texto_tem_academia(titulo + "\n" + descricao_bruta):
+            dados["caracteristicas"] = sorted(
+                dict.fromkeys([*(dados.get("caracteristicas") or []), "Academia"]),
+                key=lambda s: self._norm_texto(s),
+            )
 
         # Limpar valores inutils
         for k, v in dados.items():
@@ -514,6 +519,18 @@ class DeepSeekParser:
                     encontradas.append(oficial)
                     break
         return sorted(dict.fromkeys(encontradas), key=lambda s: s.lower())
+
+    def _texto_tem_academia(self, texto: str) -> bool:
+        alvo = self._norm_texto(texto)
+        termos = (
+            "academia",
+            "fitness",
+            "espaco fitness",
+            "sala de ginastica",
+            "musculacao",
+            "gym",
+        )
+        return any(t in alvo for t in termos)
 
     @staticmethod
     def _norm_texto(texto: str) -> str:
