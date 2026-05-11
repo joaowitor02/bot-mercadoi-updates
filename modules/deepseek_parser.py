@@ -388,19 +388,107 @@ class DeepSeekParser:
 
         return ""
 
+    # Bairros conhecidos da Paraíba e arredores (normalizados).
+    # Usados como varredura final quando os padrões textuais não capturam o bairro.
+    _BAIRROS_PB = {
+        # João Pessoa
+        "manaira", "tambau", "cabo branco", "miramar", "bessa", "torre",
+        "bancarios", "mangabeira", "valentina", "brisamar", "jardim oceania",
+        "oceania", "estados", "bairro dos estados", "epitacio pessoa",
+        "altiplano", "aeroclube", "jaguaribe", "geisel", "cristo redentor",
+        "castelo branco", "agua fria", "cruz das armas", "funcionarios",
+        "expedicionarios", "tambia", "varadouro", "trincheiras", "pedro gondim",
+        "grotao", "cidade universitaria", "anatolia", "jose americo", "planalto",
+        "cuia", "paratibe", "gramame", "mussumagro", "portal do sol",
+        "costa e silva", "jose bezerra", "mandacaru", "san martin",
+        "jardim luna", "alto do ceu", "penha", "ilha do bispo", "rangel",
+        "jardim sao paulo", "padre ze", "conjunto ceara", "paulo vi",
+        "novo horizonte", "altiplano cabo branco",
+        # Cabedelo
+        "poco", "poca", "bairro do poco", "ponta de mato", "renascer",
+        "ponta de cabedelo", "intermares", "camboinha", "ponta de campina",
+        "ponta campina", "naica", "formosa", "pocinhos", "nova cabedelo",
+        "jardins cabedelo", "camalau", "centro cabedelo",
+        # Campina Grande
+        "bodocongo", "jose pinheiro", "dinamarca", "liberdade",
+        "sandra cavalcante", "malvinas", "catole", "prata",
+        "bela vista", "universitario", "miriam coelho", "serrotao",
+        "monte castelo", "centenario", "itarare",
+        # Conde / Litoral Sul PB
+        "jacuma", "tabatinga", "coqueirinho", "barra de camaratuba",
+        # Bayeux
+        "bayeux",
+        # Santa Rita
+        "santa rita", "varzea nova",
+        # Recife
+        "boa viagem", "pina", "piedade", "espinheiro", "aflitos", "gracas",
+        "boa vista", "capibaribe", "ilha do leite", "torre recife",
+        "setubal", "imbiribeira", "ibura", "parnamirim",
+    }
+
     def _extrair_bairro_descricao(self, texto):
-        # Buscar padroes como "em Mangabeira" ou "no Bairro X"
-        match = re.search(r'(?:em|no bairro|bairro)\s+([A-ZÀ-Ú][a-zA-ZÀ-ú\s]+?)(?:\s*[–\-,]|\s*\n|$)', texto)
-        if match:
-            bairro = match.group(1).strip()
-            if len(bairro) > 3 and len(bairro) < 40:
-                return bairro
+        if not texto:
+            return ""
+        texto_norm = unicodedata.normalize("NFKD", texto)
+        texto_norm = "".join(c for c in texto_norm if not unicodedata.combining(c))
+
+        # 1. Padrões com preposição: "em Manaíra", "no Tambaú", "no Bairro Bessa", "localizado em X"
+        m = re.search(
+            r'\b(?:em|no|na|no\s+bairro|bairro|localizado\s+em|situado\s+em|fica\s+em|apartamento\s+em|imovel\s+em|casa\s+em|apto\s+em)\s+'
+            r'([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s]{2,35}?)'
+            r'(?=\s*[-–,!/?\n]|$)',
+            texto_norm, re.IGNORECASE,
+        )
+        if m:
+            candidato = m.group(1).strip().rstrip('-– ')
+            if 3 < len(candidato) < 40:
+                return candidato
+
+        # 2. "BAIRRO –" ou "Bairro -" no início de linha ou segmento (ex: "MANAÍRA - Apto 3/4")
+        m = re.search(
+            r'(?:^|\n)([A-ZÀ-Ú][A-ZÀ-Úa-zà-ÿ\s]{2,30}?)\s*[-–]',
+            texto_norm, re.MULTILINE,
+        )
+        if m:
+            candidato = m.group(1).strip()
+            if 3 < len(candidato) < 40 and not re.search(
+                r'\b(?:venda|aluguel|oportunidade|novo|excelente|lindo|lindo|incrivel|confira|apartamento|casa|imovel|terreno)\b',
+                candidato, re.IGNORECASE,
+            ):
+                return candidato
+
+        # 3. "Bairro, Cidade" — ex: "Mangabeira, João Pessoa" ou "Cabo Branco, JP"
+        m = re.search(
+            r'([A-ZÀ-Ú][A-Za-zÀ-ÿ\s]{2,30}?),\s*(?:Joao Pessoa|Campina Grande|Cabedelo|Bayeux|Recife|Natal|Fortaleza|Salvador)',
+            texto_norm, re.IGNORECASE,
+        )
+        if m:
+            candidato = m.group(1).strip()
+            if 3 < len(candidato) < 40:
+                return candidato
+
+        # 4. Varredura por bairros conhecidos no texto normalizado
+        texto_lower = texto_norm.lower()
+        for bairro in sorted(self._BAIRROS_PB, key=len, reverse=True):
+            if re.search(r'\b' + re.escape(bairro) + r'\b', texto_lower):
+                # Recupera grafia original do texto
+                m2 = re.search(re.escape(bairro), texto_lower)
+                if m2:
+                    return texto_norm[m2.start():m2.end()].strip()
         return ""
 
     def _extrair_cidade_descricao(self, texto):
-        match = re.search(r'([A-ZÀ-Ú][a-zA-ZÀ-ú\s]+?)\s*/\s*[A-Z]{2}', texto)
-        if match:
-            return match.group(1).strip()
+        # "João Pessoa/PB" — retorna só o nome da cidade (sem /UF; cep_lookup resolve a UF por lookup)
+        m = re.search(r'([A-ZÀ-Ú][a-zA-ZÀ-ú\s]{2,30}?)\s*/\s*[A-Z]{2}\b', texto)
+        if m:
+            return m.group(1).strip()
+        # Cidades mencionadas explicitamente
+        m = re.search(
+            r'\b(João Pessoa|Joao Pessoa|Campina Grande|Cabedelo|Bayeux|Santa Rita|Recife|Natal|Fortaleza|Salvador)\b',
+            texto, re.IGNORECASE,
+        )
+        if m:
+            return m.group(1).strip()
         return ""
 
     def _normalizar_localidade(self, valor):

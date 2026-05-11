@@ -60,6 +60,8 @@ REGRAS GERAIS:
 - posicao_predio: use "Frente", "Fundo", "Lateral", "Meio" ou "".
 - condominio, iptu e taxas: valores em reais, apenas digitos.
 - area_m2 e area_terreno: area em m2, apenas digitos. Para apartamentos, area_terreno geralmente fica "".
+- bairro_extraido: nome do bairro onde o imovel esta localizado. Extraia sempre que o bairro aparecer — mesmo que indiretamente, como "em Manaira", "no Tambau", "CABO BRANCO -", "Bessa, Joao Pessoa". Use apenas o nome do bairro, sem cidade ou estado.
+- cidade_extraida: cidade do imovel no formato "Cidade/UF" (ex: "Joao Pessoa/PB"). Se nao houver UF, use apenas o nome da cidade.
 - endereco: rua e numero se mencionados.
 - cep: CEP se mencionado explicitamente, no formato 00000-000 ou apenas 8 digitos.
 - latitude e longitude: coordenadas somente se estiverem explicitamente presentes.
