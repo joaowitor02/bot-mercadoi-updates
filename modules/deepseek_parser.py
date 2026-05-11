@@ -210,6 +210,13 @@ class DeepSeekParser:
         dados["bairro_extraido"] = self._normalizar_localidade(dados.get("bairro_extraido", ""))
         dados["cidade_extraida"] = self._normalizar_localidade(dados.get("cidade_extraida", ""))
 
+        # Reescreve título se for frase de marketing (acontece APÓS normalizar bairro/quartos)
+        if self._titulo_e_marketing(dados.get("titulo", "")):
+            titulo_novo = self._gerar_titulo(descricao_bruta, dados)
+            if titulo_novo:
+                logger.info(f"Título de marketing substituído: '{dados.get('titulo', '')}' → '{titulo_novo}'")
+                dados["titulo"] = titulo_novo
+
         # Características — normaliza lista textual e aplica fallback no modo browser.
         if isinstance(dados.get("caracteristicas"), str):
             dados["caracteristicas"] = self._normalizar_caracteristicas_texto(
@@ -266,47 +273,93 @@ class DeepSeekParser:
                     break
         return ""
 
+    # Padrões que indicam título de marketing (não descritivo)
+    _RE_MARKETING = re.compile(
+        r'\b(chegou|oportunidade|nao perca|nao perde|aproveite|venha|confira|conquiste'
+        r'|sua chance|seu sonho|seu lar|sair do aluguel|realizando sonhos|novo lar'
+        r'|casa propria|imperdivel|perfeito para|garanta|descubra|conheca|sonho de'
+        r'|nao fique|quer sair|voce pode|sua familia|mude de vida|vida nova'
+        r'|realize seu|construindo sonhos|transforme|exclusivo para|grande lancamento'
+        r'|lancamento imperdivel|esperava para|sempre sonharam|sempre sonhou)\b',
+        re.IGNORECASE,
+    )
+
+    def _titulo_e_marketing(self, titulo: str) -> bool:
+        """Retorna True se o título parece ser uma frase de marketing sem valor descritivo."""
+        if not titulo:
+            return True
+        t = self._norm_texto(titulo)
+        if self._RE_MARKETING.search(t):
+            return True
+        # Título genérico curto sem nenhuma informação imobiliária
+        tem_info = bool(re.search(
+            r'\b(apto|apartamento|casa|cobertura|terreno|studio|kitnet|flat|duplex|garden'
+            r'|quarto|suite|m2|m²|bairro|jardim|praia|rua|avenida)\b', t
+        ))
+        return not tem_info and len(titulo.split()) <= 5
+
     def _gerar_titulo(self, descricao, dados: dict | None = None):
-        """Gera título a partir dos dados estruturados ou da primeira linha da descrição."""
-        # Título estruturado: monta com tipo + quartos + bairro/cidade
+        """Gera título descritivo no estilo imobiliário a partir dos dados extraídos."""
         if dados:
             tipo = str(dados.get("tipo_imovel") or "").strip()
             quartos = str(dados.get("quartos") or "").strip()
             bairro = str(dados.get("bairro_extraido") or "").strip()
             cidade = str(dados.get("cidade_extraida") or "").strip()
+            cidade = cidade.split("/")[0].strip()  # remove /UF
             area = str(dados.get("area_m2") or "").strip()
-            partes = []
-            if tipo:
-                partes.append(tipo)
-            if quartos and quartos not in ("0", ""):
-                partes.append(f"{quartos} quarto{'s' if quartos != '1' else ''}")
-            if area and area not in ("0", ""):
-                partes.append(f"{area}m²")
-            if bairro:
-                partes.append(bairro)
-            if cidade and cidade.lower() not in (bairro or "").lower():
-                partes.append(cidade)
-            if len(partes) >= 2:
-                return " - ".join(partes)
+            operacao = str(dados.get("operacao") or "").strip()
+            mobiliado = str(dados.get("mobiliado") or "").strip().lower()
 
-        # Fallback: extrai da primeira linha da descrição
+            partes_tipo = []
+            if tipo:
+                partes_tipo.append(tipo)
+            if quartos and quartos not in ("0", ""):
+                partes_tipo.append(f"{quartos} quarto{'s' if quartos != '1' else ''}")
+            elif area and area not in ("0", ""):
+                partes_tipo.append(f"{area}m²")
+
+            local = bairro or cidade
+            if local:
+                prefixo = "no" if re.match(r'^[AEIOUÁÉÍÓÚÂÊÔÃÕ]', local, re.IGNORECASE) else "no"
+                # femininos comuns
+                if re.match(r'.*(beira|praia|ilha|avenida|área|rua|mangabeira|valentina|torre|penha)$', local, re.IGNORECASE):
+                    prefixo = "na"
+                partes_tipo.append(f"{prefixo} {local}")
+
+            if cidade and cidade.lower() not in (bairro or cidade).lower() and bairro:
+                partes_tipo.append(cidade)
+
+            if mobiliado in ("mobiliado", "mobiliado e decorado"):
+                partes_tipo.append("Mobiliado")
+
+            if operacao.lower() == "em aluguel":
+                partes_tipo.append("– Aluguel")
+
+            if len(partes_tipo) >= 2:
+                return " ".join(partes_tipo)
+
+        # Fallback: primeira linha descritiva da descrição
         if not descricao:
             return ""
         linhas = [l.strip() for l in descricao.split("\n") if l.strip()]
-        if not linhas:
-            return ""
-        primeira_linha = linhas[0].strip('"\'')
-        # Descarta linhas que parecem frases de call-to-action ou links
-        import re as _re
-        if _re.search(r'(entre em contato|chame|clique|acesse|link|http|@)', primeira_linha, _re.IGNORECASE):
-            for linha in linhas[1:5]:
-                linha = linha.strip('"\'')
-                if len(linha) > 15 and not _re.search(r'(entre em contato|chame|clique|acesse|link|http|@)', linha, _re.IGNORECASE):
-                    primeira_linha = linha
-                    break
-        if "." in primeira_linha:
-            return primeira_linha.split(".")[0].strip() + "."
-        return primeira_linha
+        _ruim = re.compile(
+            r'(entre em contato|chame|clique|acesse|link|http|@'
+            r'|chegou|oportunidade|nao perca|sua chance|sair do aluguel'
+            r'|sempre sonharam|lancamento imperdivel|grande lancamento)',
+            re.IGNORECASE,
+        )
+        for linha in linhas[:6]:
+            linha = linha.strip('"\'✨🏠🔑📍🏡💎')
+            if len(linha) > 10 and not _ruim.search(linha):
+                return linha.split(".")[0].strip() if "." in linha else linha
+        # Se todas as linhas são marketing, monta título mínimo
+        if dados:
+            tipo = str(dados.get("tipo_imovel") or "Imóvel").strip()
+            bairro = str(dados.get("bairro_extraido") or "").strip()
+            cidade = str(dados.get("cidade_extraida") or "").strip().split("/")[0]
+            local = bairro or cidade
+            return f"{tipo} em {local}" if local else tipo
+        return linhas[0] if linhas else ""
 
     def _limpar_texto_estranho(self, texto):
         # Remover caracteres CJK (chines, japones, coreano)

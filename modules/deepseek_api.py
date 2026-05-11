@@ -43,7 +43,7 @@ REGRAS GERAIS:
 - Responda APENAS com JSON valido, sem texto adicional, sem markdown e sem explicacoes.
 - Nunca invente dados ausentes. Use "" para campos nao informados.
 - Tudo que nao estiver especificado na legenda deve ficar vazio ou fora da lista.
-- titulo: use a primeira linha/frase da publicacao que resume o principal do imovel.
+- titulo: gere um titulo descritivo no estilo imobiliario, como nos exemplos: "Apartamento 2 quartos no Tambau", "Casa 4 quartos em Manaira - Joao Pessoa", "Cobertura 120m² em Cabo Branco", "Apartamento Studio no Bessa". Use: tipo de imovel + quartos ou area + bairro ou cidade. Se faltar dados, use nome do empreendimento ou caracteristica principal (ex: "Pé na Areia - Jardim Oceania"). NUNCA use frases de marketing, chamadas de acao ou exclamacoes como titulo (ex: NAO use "Chegou sua chance!", "Oportunidade imperdivel", "Sair do aluguel", "Grande lancamento").
 - descricao_util: mantenha a descricao da publicacao o mais fiel possivel, preservando quebras de linha, mas remova nome de pessoa, Instagram, telefone/celular, WhatsApp, CRECI isolado e chamadas de contato.
 - Campos numericos devem ter apenas digitos ou "". Nunca use "0" para desconhecido.
 - preco: apenas digitos, sem R$, pontos ou virgulas. NUNCA use telefone, CRM, CRECI, codigo de anuncio ou numero de contato como preco.
@@ -196,12 +196,94 @@ class DeepSeekAPIClient:
                     ["Academia"],
                 )
 
+            # Reescreve título de marketing pela versão descritiva
+            titulo_atual = dados.get("titulo", "")
+            if _titulo_e_marketing(titulo_atual):
+                titulo_novo = _gerar_titulo_descritivo(dados, str(caption or ""))
+                if titulo_novo:
+                    logger.info(f"Título de marketing substituído: '{titulo_atual[:60]}' → '{titulo_novo}'")
+                    dados["titulo"] = titulo_novo
+
             logger.info(f"Titulo: {dados.get('titulo', '')[:80]}")
             return dados
 
         except Exception as e:
             logger.error(f"Erro na API DeepSeek: {e}")
             return None
+
+
+_RE_MARKETING = re.compile(
+    r'\b(chegou|oportunidade|nao perca|nao perde|aproveite|venha|confira|conquiste'
+    r'|sua chance|seu sonho|seu lar|sair do aluguel|realizando sonhos|novo lar'
+    r'|casa propria|imperdivel|perfeito para|garanta|descubra|conheca|sonho de'
+    r'|nao fique|quer sair|voce pode|sua familia|mude de vida|vida nova'
+    r'|realize seu|construindo sonhos|transforme|exclusivo para|grande lancamento'
+    r'|lancamento imperdivel|esperava para|sempre sonharam|sempre sonhou)\b',
+    re.IGNORECASE,
+)
+
+
+def _norm_simples(t: str) -> str:
+    t = unicodedata.normalize("NFKD", str(t or ""))
+    t = "".join(c for c in t if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", t.lower()).strip()
+
+
+def _titulo_e_marketing(titulo: str) -> bool:
+    if not titulo:
+        return True
+    t = _norm_simples(titulo)
+    if _RE_MARKETING.search(t):
+        return True
+    tem_info = bool(re.search(
+        r'\b(apto|apartamento|casa|cobertura|terreno|studio|kitnet|flat|duplex|garden'
+        r'|quarto|suite|m2|bairro|jardim|praia|rua|avenida)\b', t
+    ))
+    return not tem_info and len(titulo.split()) <= 5
+
+
+def _gerar_titulo_descritivo(dados: dict, caption: str = "") -> str:
+    tipo = str(dados.get("tipo_imovel") or "").strip()
+    quartos = str(dados.get("quartos") or "").strip()
+    bairro = str(dados.get("bairro_extraido") or "").strip()
+    cidade = str((dados.get("cidade_extraida") or "").split("/")[0]).strip()
+    area = str(dados.get("area_m2") or "").strip()
+    operacao = str(dados.get("operacao") or "").strip()
+    mobiliado = str(dados.get("mobiliado") or "").strip().lower()
+
+    partes = []
+    if tipo:
+        partes.append(tipo)
+    if quartos and quartos not in ("0", ""):
+        partes.append(f"{quartos} quarto{'s' if quartos != '1' else ''}")
+    elif area and area not in ("0", ""):
+        partes.append(f"{area}m²")
+
+    local = bairro or cidade
+    if local:
+        fem = bool(re.search(
+            r'(beira|praia|ilha|avenida|area|rua|mangabeira|valentina|torre|penha)$',
+            local, re.IGNORECASE,
+        ))
+        partes.append(("na" if fem else "no") + " " + local)
+        if cidade and bairro and cidade.lower() not in bairro.lower():
+            partes.append(cidade)
+
+    if mobiliado in ("mobiliado", "mobiliado e decorado"):
+        partes.append("Mobiliado")
+    if operacao.lower() == "em aluguel":
+        partes.append("– Aluguel")
+
+    if len(partes) >= 2:
+        return " ".join(partes)
+
+    # Última tentativa: primeira linha descritiva da legenda
+    for linha in (caption or "").split("\n"):
+        linha = re.sub(r'[\U00010000-\U0010ffff]', '', linha).strip(' "\'')
+        if len(linha) > 10 and not _RE_MARKETING.search(linha):
+            return linha.split(".")[0].strip()
+
+    return " ".join(partes) if partes else ""
 
 
 def _parse_json(content: str) -> dict | None:
