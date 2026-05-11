@@ -21,21 +21,29 @@ def normalizar_tipos_imovel(*partes: str) -> list[str]:
     texto_sem_casa_rural = re.sub(r"\bcasa\s+(sede|de\s+apoio)\b", " ", texto)
     tem_casa = bool(re.search(r"\b(casa|casas|sobrado|sobrados)\b", texto_sem_casa_rural))
     tem_condominio = "condominio" in texto or "condominium" in texto
-    if "chacara" in texto:
-        return ["Chácaras"]
-    if "sitio" in texto:
-        return ["Sítio"]
-    # "casa estilo fazenda" → Casa; fazenda real não tem "casa" no texto
-    if "fazenda" in texto and not tem_casa:
-        return ["Fazenda"]
     sinais_rurais = (
         "curral", "currais", "cocheira", "cocheiras", "hectare", "hectares",
         "pecuaria", "agricultura", "gado", "pasto", "pastagem", "baia", "baias",
         "propriedade toda cercada", "toda cercada", "todo cercado",
         "divisorias internas", "casa sede", "casa de apoio",
         "zona rural", "area rural", "imovel rural",
+        "pomar", "horta", "nascente", "lagoa", "represa", "mangueira", "caju",
     )
     sinais_rurais_fortes = sum(1 for termo in sinais_rurais if termo in texto)
+    _sem_sinais_urbanos = not re.search(
+        r"\b(apart|apto|apartamento|studio|kitnet|flat|cobertura|edificio|bloco|pavimento|lancamento)\b",
+        texto,
+    )
+
+    if "chacara" in texto:
+        return ["Chácaras"]
+    # Sítio só classifica se houver sinal rural real OU ausência total de contexto urbano
+    # Evita que DeepSeek retorne "Sítio" para lançamentos de apartamentos
+    if "sitio" in texto and not tem_casa and _sem_sinais_urbanos:
+        return ["Sítio"]
+    # "casa estilo fazenda" → Casa; fazenda real não tem "casa" no texto
+    if "fazenda" in texto and not tem_casa:
+        return ["Fazenda"]
     tem_contexto_rural = (
         sinais_rurais_fortes >= 2
         and not re.search(r"\b(apart|apto|apartamento|studio|kitnet|sala comercial|loja)\b", texto_principal)
