@@ -25,7 +25,8 @@ def normalizar_tipos_imovel(*partes: str) -> list[str]:
         return ["Chácaras"]
     if "sitio" in texto:
         return ["Sítio"]
-    if "fazenda" in texto:
+    # "casa estilo fazenda" → Casa; fazenda real não tem "casa" no texto
+    if "fazenda" in texto and not tem_casa:
         return ["Fazenda"]
     sinais_rurais = (
         "curral", "currais", "cocheira", "cocheiras", "hectare", "hectares",
