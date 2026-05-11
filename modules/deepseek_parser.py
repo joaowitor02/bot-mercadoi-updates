@@ -395,7 +395,7 @@ class DeepSeekParser:
         "manaira", "tambau", "cabo branco", "miramar", "bessa", "torre",
         "bancarios", "mangabeira", "valentina", "brisamar", "jardim oceania",
         "oceania", "estados", "bairro dos estados", "epitacio pessoa",
-        "altiplano", "aeroclube", "jaguaribe", "geisel", "cristo redentor",
+        "altiplano", "aeroclube", "jaguaribe", "geisel", "cristo redentor", "cristo",
         "castelo branco", "agua fria", "cruz das armas", "funcionarios",
         "expedicionarios", "tambia", "varadouro", "trincheiras", "pedro gondim",
         "grotao", "cidade universitaria", "anatolia", "jose americo", "planalto",
@@ -404,6 +404,12 @@ class DeepSeekParser:
         "jardim luna", "alto do ceu", "penha", "ilha do bispo", "rangel",
         "jardim sao paulo", "padre ze", "conjunto ceara", "paulo vi",
         "novo horizonte", "altiplano cabo branco",
+        "industrias", "bairro das industrias",
+        "oitizeiro", "ernesto geisel", "colinas do sul",
+        "bairro dos ipês", "ipes", "ipês",
+        "alto do mateus", "alto mateus",
+        "jardim cidade universitaria", "jardim 13 de maio",
+        "miramar joao pessoa", "brisamar joao pessoa",
         # Cabedelo
         "poco", "poca", "bairro do poco", "ponta de mato", "renascer",
         "ponta de cabedelo", "intermares", "camboinha", "ponta de campina",
@@ -432,11 +438,23 @@ class DeepSeekParser:
         texto_norm = unicodedata.normalize("NFKD", texto)
         texto_norm = "".join(c for c in texto_norm if not unicodedata.combining(c))
 
-        # 1. Padrões com preposição: "em Manaíra", "no Tambaú", "no Bairro Bessa", "localizado em X"
+        # 0. "Bairro X" como label de linha (ex: "🔴 Bairro das Indústrias\n")
+        #    Captura o nome completo incluindo "Bairro " quando está em linha própria
         m = re.search(
-            r'\b(?:em|no|na|no\s+bairro|bairro|localizado\s+em|situado\s+em|fica\s+em|apartamento\s+em|imovel\s+em|casa\s+em|apto\s+em)\s+'
+            r'(?:^|[\n\r])[\s\W]{0,5}[Bb]airro\s+((?:d[aoe]s?\s+)?[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s]{2,30}?)[\s]*(?:[\n\r]|$)',
+            texto_norm, re.MULTILINE,
+        )
+        if m:
+            candidato = "Bairro " + m.group(1).strip()
+            if 3 < len(candidato) < 45:
+                return candidato
+
+        # 1. Padrões com preposição: "em Manaíra", "no Tambaú", "no Bairro Bessa", "localizado em X"
+        #    Para antes de conjunções "e"/"ou", vírgulas e quebras de linha
+        m = re.search(
+            r'\b(?:em|no|na|no\s+bairro|localizado\s+em|situado\s+em|fica\s+em|apartamento\s+em|imovel\s+em|casa\s+em|apto\s+em|proximo\s+ao?|regiao\s+d[aoe]?)\s+'
             r'([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s]{2,35}?)'
-            r'(?=\s*[-–,!/?\n]|$)',
+            r'(?=\s*[-–,!/?\n]|\s+e\s+|\s+ou\s+|$)',
             texto_norm, re.IGNORECASE,
         )
         if m:
@@ -444,7 +462,7 @@ class DeepSeekParser:
             if 3 < len(candidato) < 40:
                 return candidato
 
-        # 2. "BAIRRO –" ou "Bairro -" no início de linha ou segmento (ex: "MANAÍRA - Apto 3/4")
+        # 2. "BAIRRO –" ou "Bairro -" no início de linha (ex: "MANAÍRA - Apto 3/4")
         m = re.search(
             r'(?:^|\n)([A-ZÀ-Ú][A-ZÀ-Úa-zà-ÿ\s]{2,30}?)\s*[-–]',
             texto_norm, re.MULTILINE,
@@ -452,7 +470,7 @@ class DeepSeekParser:
         if m:
             candidato = m.group(1).strip()
             if 3 < len(candidato) < 40 and not re.search(
-                r'\b(?:venda|aluguel|oportunidade|novo|excelente|lindo|lindo|incrivel|confira|apartamento|casa|imovel|terreno)\b',
+                r'\b(?:venda|aluguel|oportunidade|novo|excelente|lindo|incrivel|confira|apartamento|casa|imovel|terreno)\b',
                 candidato, re.IGNORECASE,
             ):
                 return candidato
