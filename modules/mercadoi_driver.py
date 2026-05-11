@@ -421,7 +421,6 @@ class MercadoiDriver:
             operacao = dados.get("operacao", "").strip() or "A Venda"
             await self._selecionar_por_texto(page, '#prop_status', operacao)
 
-            # Preenche todos os campos numéricos em uma única chamada JS.
             # Mercadoi/Houzez usa #prop_baths para suítes e #prop_rooms para banheiros.
             # _so_inteiro: remove decimais e separadores — nunca preencher com número quebrado.
             def _so_inteiro(v: str) -> str:
@@ -430,14 +429,19 @@ class MercadoiDriver:
                 v = re.sub(r"[,\.]\d+$", "", v)      # remove decimal (78,5 → 78)
                 return re.sub(r"[^\d]", "", v)        # só dígitos
 
-            await self._preencher_campos_batch(page, {
-                '#prop_price':  _so_inteiro(dados.get("preco",    "")),
-                '#prop_beds':   _so_inteiro(dados.get("quartos",  "")),
-                '#prop_baths':  _so_inteiro(dados.get("banheiros","")),
-                '#prop_rooms':  _so_inteiro(dados.get("suites",   "")),
-                '#prop_garage': _so_inteiro(dados.get("vagas",    "")),
-                '#prop_size':   _so_inteiro(dados.get("area_m2",  "")),
-            })
+            for seletor, valor in [
+                ('#prop_price',  _so_inteiro(dados.get("preco",    ""))),
+                ('#prop_beds',   _so_inteiro(dados.get("quartos",  ""))),
+                ('#prop_baths',  _so_inteiro(dados.get("banheiros",""))),
+                ('#prop_rooms',  _so_inteiro(dados.get("suites",   ""))),
+                ('#prop_garage', _so_inteiro(dados.get("vagas",    ""))),
+                ('#prop_size',   _so_inteiro(dados.get("area_m2",  ""))),
+            ]:
+                if valor:
+                    try:
+                        await page.fill(seletor, valor)
+                    except Exception:
+                        pass
 
             # CARACTERISTICAS
             logger.info("Marcando caracteristicas...")
@@ -448,8 +452,7 @@ class MercadoiDriver:
             _det_cache = self._detalhes_adicionais(dados)
             det = _det_cache
             dv  = det["selects"]
-            await self._selecionar_batch(page, [
-                # Campos simples (sem [])
+            for seletor, valor in [
                 ('select[name="tem-elevador"]',              dv.get("Tem elevador?", "")),
                 ('select[name="mobiliado"]',                 dv.get("Mobiliado?", "")),
                 ('select[name="escriturado"]',               dv.get("Escriturado?", "")),
@@ -458,11 +461,12 @@ class MercadoiDriver:
                 ('select[name="aceita-financiamento"]',      dv.get("Aceita Financiamento?", "")),
                 ('select[name="posic3a7c3a3o-do-imovel"]',  dv.get("Posição Solar", "")),
                 ('select[name="posic3a7c3a3o"]',             dv.get("Posição no Prédio", "")),
-                # Campos com [] (multiple-select com selectpicker)
                 ('select[name="estagio-da-obra-imc3b3vel[]"]', dv.get("Estágio do Imovel", "")),
                 ('select[name="no-tc3a9rreo[]"]',           dv.get("Andar", "")),
                 ('select[name="perto-do-mar[]"]',            dv.get("Perto do mar?", "")),
-            ])
+            ]:
+                if valor:
+                    await self._selecionar_por_texto(page, seletor, valor)
 
             # Campos de texto livre (área, condomínio, ano, proximidades)
             await self._preencher_detalhes_adicionais(page, dados, _det_cache)
