@@ -117,7 +117,9 @@ class MercadoiDriver:
         self._wp_user = wp_user
         self._wp_pass = wp_pass
         data_dir = os.environ.get("BOT_DATA_DIR") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        self._cookies_file = os.path.join(data_dir, "mercadoi_session.json")
+        # Sessão por usuário: evita que trocar o login carregue cookies do usuário anterior
+        user_slug = re.sub(r'[^a-zA-Z0-9]', '_', str(wp_user or 'default'))
+        self._cookies_file = os.path.join(data_dir, f"mercadoi_session_{user_slug}.json")
         self._playwright = None
         self._browser = None
         self._context = None
