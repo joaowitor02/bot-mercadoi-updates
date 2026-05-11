@@ -2022,7 +2022,8 @@ async function carregarFila() {
     const total = _filaItems.length;
     const pendentes = _filaItems.filter(i => i.status === 'pendente').length;
     const erros = _filaItems.filter(i => i.status.includes('erro')).length;
-    document.getElementById('fila-count').textContent = total || '0';
+    // Badge da aba mostra só pendentes (alinha com o card "NA FILA" do dashboard)
+    document.getElementById('fila-count').textContent = pendentes || (erros ? `${erros}err` : '0');
     const itemCount = document.getElementById('fila-item-count');
     if (itemCount) {
       const partes = [];
