@@ -148,6 +148,7 @@ class MercadoiDriver:
         else:
             # Linux/VPS: lança Chromium headless
             os.makedirs(self.profile_path, exist_ok=True)
+            logger.info("Iniciando browser headless Chromium (pode levar 20-30s)...")
             self._context = await self._playwright.chromium.launch_persistent_context(
                 user_data_dir=self.profile_path,
                 headless=True,
@@ -225,6 +226,7 @@ class MercadoiDriver:
         raise ultima
 
     async def _garantir_login(self, page):
+        logger.info("Verificando autenticacao no Mercadoi...")
         page = await self._goto_robusto(page, f"{self.base_url}/create-a-listing/", timeout=30000)
         await page.wait_for_load_state("domcontentloaded", timeout=15000)
         if await page.query_selector('a[href*="logout"], a[href*="dashboard"], .user-menu, #user-menu, #prop_title'):
@@ -355,6 +357,7 @@ class MercadoiDriver:
         logger.info("Login via formulario realizado com sucesso")
 
     async def preencher_e_salvar(self, dados, tipo_midia, arquivo_midia):
+        logger.info("Preenchendo formulario no Mercadoi...")
         dados = aplicar_tipos_imovel(dict(dados or {}))
         page = self._page
         page = await self._garantir_login(page)
@@ -425,9 +428,11 @@ class MercadoiDriver:
             })
 
             # CARACTERISTICAS
+            logger.info("Marcando caracteristicas...")
             await self._marcar_caracteristicas(page, dados.get("caracteristicas") or [])
 
             # Calcula _detalhes_adicionais UMA VEZ — reutilizado em det, extra_campos e XML-RPC
+            logger.info("Preenchendo campos de detalhes...")
             _det_cache = self._detalhes_adicionais(dados)
             det = _det_cache
             dv  = det["selects"]
@@ -479,6 +484,7 @@ class MercadoiDriver:
                     logger.info("Faz-parceria: nao foi possivel selecionar")
 
             # CIDADE
+            logger.info("Selecionando cidade e bairro...")
             cidade = dados.get("cidade_extraida", "").strip()
             bairro = dados.get("bairro_extraido", "").strip()
             cidade_aplicada = await self._selecionar_cidade(page, cidade, bairro)
@@ -492,6 +498,7 @@ class MercadoiDriver:
             if arquivo_midia:
                 validos = [f for f in arquivo_midia if os.path.exists(f)]
                 if validos:
+                    logger.info(f"Fazendo upload de {len(validos)} imagem(ns)...")
                     upload_ok = await self._anexar_midia(page, validos)
                     if not upload_ok:
                         resultado["status_erro"] = "erro_upload"
@@ -508,8 +515,10 @@ class MercadoiDriver:
 
             if dados.get("_fonte") in ("orulo", "olx", "instagram"):
                 # Preenche endereco/mapa quando a fonte trouxe rua ou coordenadas.
+                logger.info("Preenchendo endereco/mapa...")
                 await self._preencher_endereco_mapa(page, dados)
 
+            logger.info("Configurando contato/corretor...")
             if dados.get("_fonte") == "orulo":
                 await self._selecionar_contato_corretor(
                     page,
@@ -564,7 +573,7 @@ class MercadoiDriver:
             logger.info(f"extra_campos para AJAX: { {k: v for k, v in extra_campos.items()} }")
 
             if publicar_direto:
-                logger.info("Criterios atendidos — publicando diretamente")
+                logger.info("Publicando imovel diretamente...")
                 salvamento = await self._publicar(page, agent_id=agent_id_post, extra_campos=extra_campos)
                 modo = "Publicado"
                 if not salvamento.get("ok"):
@@ -2771,11 +2780,14 @@ class MercadoiDriver:
 
     async def _aguardar_uploads(self, page, alvo: int, esperados: int) -> int:
         confirmados = 0
+        ultimo_confirmados = -1
         limite = max(esperados * 8, 24)
         for i in range(limite):
             await page.wait_for_timeout(300 if i < 6 else 500)
             confirmados = await self._contar_midias_anexadas(page)
-            logger.info(f"Uploads concluidos: {confirmados}/{alvo}")
+            if confirmados != ultimo_confirmados:
+                logger.info(f"Uploads concluidos: {confirmados}/{alvo}")
+                ultimo_confirmados = confirmados
             if confirmados >= alvo:
                 return confirmados
         return confirmados
