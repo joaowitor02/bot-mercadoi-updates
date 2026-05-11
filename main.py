@@ -63,7 +63,15 @@ def obter_login_mercadoi(config: dict) -> dict:
         if isinstance(manual, int):
             idx = int(manual) % len(logins)
         else:
-            idx = next((i for i, l in enumerate(logins) if l.get("usuario") == manual), 0)
+            # Suporta formato "M17" (exibição 1-based no painel) → índice 16
+            m_idx = re.match(r'^[Mm](\d+)$', str(manual).strip())
+            if m_idx:
+                idx = (int(m_idx.group(1)) - 1) % len(logins)
+            else:
+                idx = next((i for i, l in enumerate(logins) if l.get("usuario") == manual), None)
+                if idx is None:
+                    logger.warning(f"Login manual '{manual}' não encontrado — usando rotação do dia")
+                    idx = _hoje_brasilia().toordinal() % len(logins)
     else:
         idx = _hoje_brasilia().toordinal() % len(logins)
     login = logins[idx]
@@ -914,14 +922,14 @@ async def processar_link(row: dict, sheet, config: dict):
             else:
                 logger.warning(f"[{execution_id}] Preço OCR descartado por validação: {preco_ocr}")
 
-    # --- OCR de localização: usa bairros/cidades escritos na arte da imagem ---
-    # É caro rodar Tesseract em frames de vídeo; só usa quando o bairro não veio no texto.
+    # --- OCR de localização: desativado por padrão (Tesseract lento em vídeos/muitas imagens)
+    # Ativado apenas se ocr_localizacao_ativo=true no config.
     bairro_atual_norm = _norm_txt_simples(dados.get("bairro_extraido", ""))
     precisa_localizacao_ocr = (
         not bairro_atual_norm
         or bairro_atual_norm in {"joao pessoa", "cabedelo", "campina grande"}
     )
-    if arquivo_midia and precisa_localizacao_ocr:
+    if arquivo_midia and precisa_localizacao_ocr and config.get("ocr_localizacao_ativo"):
         localizacao_ocr = extrair_localizacao_de_imagens(arquivo_midia)
         if _aplicar_localizacao_ocr(dados, localizacao_ocr):
             dados = _validar_dados(dados)

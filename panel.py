@@ -898,7 +898,11 @@ async def status(request: Request):
                 if isinstance(manual, int):
                     idx = int(manual) % len(logins)
                 else:
-                    idx = next((i for i, l in enumerate(logins) if l.get("usuario") == manual), 0)
+                    _m = re.match(r'^[Mm](\d+)$', str(manual).strip())
+                    if _m:
+                        idx = (int(_m.group(1)) - 1) % len(logins)
+                    else:
+                        idx = next((i for i, l in enumerate(logins) if l.get("usuario") == manual), 0)
             else:
                 idx = hoje_br.toordinal() % len(logins)
             login_ativo = logins[idx].get("usuario", "")
@@ -959,9 +963,16 @@ async def listar_logins(request: Request):
             "admin_login": True,
         })
 
+    # Resolve índice "M17" → 16
+    _manual_idx = None
+    if manual is not None:
+        _m = re.match(r'^[Mm](\d+)$', str(manual).strip())
+        if _m:
+            _manual_idx = (int(_m.group(1)) - 1) % len(logins) if logins else None
+
     for i, login in enumerate(logins):
         u = login.get("usuario", "")
-        is_manual = (manual == u or manual == i)
+        is_manual = (manual == u or manual == i or (_manual_idx is not None and i == _manual_idx))
         is_auto_hoje = (i == auto_idx and manual is None)
         resultado.append({
             "idx": i,
