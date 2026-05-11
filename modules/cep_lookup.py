@@ -5,6 +5,7 @@ Funciona para todas as fontes: OLX, Instagram (DeepSeek) e Orulo.
 
 from __future__ import annotations
 
+import asyncio
 import re
 import unicodedata
 from urllib.parse import quote
@@ -246,29 +247,33 @@ async def buscar_cep(dados: dict) -> str:
         logger.debug(f"Busca CEP ignorada: UF={uf!r}, cidade={cidade!r}")
         return ""
 
-    # 1ª tentativa: pelo logradouro (rua extraída do endereço)
-    if logradouro:
-        cep = await _consultar_viacep(uf, cidade, logradouro, dados)
-        if cep:
-            return cep
-
-    # 2ª tentativa: pelo bairro (quando não há rua mas há bairro)
+    # Tenta logradouro, bairro e empreendimento em PARALELO (asyncio.gather)
+    # Antes: sequencial com timeout 5s cada = até 15s. Agora: máx 5s total.
     bairro = str(dados.get("bairro_extraido") or "").strip()
-    if bairro and bairro != logradouro:
-        cep = await _consultar_viacep(uf, cidade, bairro, dados)
-        if cep:
-            logger.info(f"CEP via bairro: {bairro}")
-            return cep
-
-    # 3ª tentativa: nome do empreendimento/condomínio
     empreendimento = str(
         dados.get("_empreendimento_resumo") or dados.get("titulo") or ""
     ).strip()
     empreendimento = re.split(r"[,\-(]", empreendimento)[0].strip()
+
+    termos: list[tuple[str, str]] = []  # (termo, label)
+    if logradouro:
+        termos.append((logradouro, "logradouro"))
+    if bairro and bairro != logradouro:
+        termos.append((bairro, "bairro"))
     if empreendimento and empreendimento not in (logradouro, bairro) and len(empreendimento) >= 5:
-        cep = await _consultar_viacep(uf, cidade, empreendimento, dados)
-        if cep:
-            logger.info(f"CEP via empreendimento: {empreendimento}")
+        termos.append((empreendimento, "empreendimento"))
+
+    if not termos:
+        return ""
+
+    resultados = await asyncio.gather(
+        *[_consultar_viacep(uf, cidade, t, dados) for t, _ in termos],
+        return_exceptions=True,
+    )
+    for (_, label), cep in zip(termos, resultados):
+        if isinstance(cep, str) and cep:
+            if label != "logradouro":
+                logger.info(f"CEP via {label}")
             return cep
 
     return ""

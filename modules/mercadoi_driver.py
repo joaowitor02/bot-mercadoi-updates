@@ -11,8 +11,12 @@ from urllib.parse import urljoin
 from playwright.async_api import async_playwright
 from modules.logger import Logger
 from modules.property_types import aplicar_tipos_imovel, normalizar_tipo_imovel
-from modules.caracteristicas_guard import caracteristica_bloqueada
-from modules.detalhes_adicionais import detalhes_para_meta, detalhes_para_post_fields
+from modules.caracteristicas_guard import caracteristica_bloqueada, limpar_descricao_bloqueada
+from modules.detalhes_adicionais import (
+    detalhes_para_meta,
+    enriquecer_detalhes_adicionais,
+    normalizar_detalhes_adicionais,
+)
 
 logger = Logger("mercadoi_driver")
 
@@ -184,16 +188,53 @@ class MercadoiDriver:
 
     _SKIP_COOKIES = {"wordpress_test_cookie"}
 
+    async def _goto_robusto(self, page, url: str, timeout: int = 30000, tentativas: int = 3):
+        """Navega com retry para falhas transientes do Chromium/rede na VPS."""
+        ultima = None
+        for tentativa in range(1, tentativas + 1):
+            try:
+                await page.goto(url, timeout=timeout, wait_until="domcontentloaded")
+                return page
+            except Exception as e:
+                ultima = e
+                msg = str(e)
+                transiente = any(t in msg for t in (
+                    "ERR_SOCKET_NOT_CONNECTED",
+                    "ERR_CONNECTION_RESET",
+                    "ERR_CONNECTION_CLOSED",
+                    "ERR_NETWORK_CHANGED",
+                    "Target page, context or browser has been closed",
+                ))
+                if tentativa >= tentativas or not transiente:
+                    raise
+                logger.warning(
+                    f"Falha transiente ao abrir {url} "
+                    f"(tentativa {tentativa}/{tentativas}): {msg.splitlines()[0]}"
+                )
+                try:
+                    await page.wait_for_timeout(1000 * tentativa)
+                except Exception:
+                    pass
+                if sys.platform != "win32" and self._context:
+                    try:
+                        await page.close()
+                    except Exception:
+                        pass
+                    page = await self._context.new_page()
+                    self._page = page
+        raise ultima
+
     async def _garantir_login(self, page):
-        await page.goto(f"{self.base_url}/create-a-listing/", timeout=30000)
+        page = await self._goto_robusto(page, f"{self.base_url}/create-a-listing/", timeout=30000)
         await page.wait_for_load_state("domcontentloaded", timeout=15000)
         if await page.query_selector('a[href*="logout"], a[href*="dashboard"], .user-menu, #user-menu, #prop_title'):
-            return
+            return page
 
         if sys.platform != "win32":
             # Tenta cookies salvos independente de ter credenciais
             if await self._carregar_sessao(page):
-                return
+                return self._page or page
+            page = self._page or page
             # Login automático se credenciais estiverem configuradas
             if self._wp_user and self._wp_pass:
                 try:
@@ -201,7 +242,7 @@ class MercadoiDriver:
                 except Exception as e:
                     logger.warning(f"Login via httpx falhou, tentando formulario do wp-login.php: {e}")
                     await self._fazer_login_formulario(page)
-                return
+                return self._page or page
             raise Exception(
                 "Mercadoi nao autenticado no VPS. Opcoes: "
                 "(1) configure wordpress_xmlrpc_user/password para login automatico, ou "
@@ -209,12 +250,12 @@ class MercadoiDriver:
             )
 
         logger.info("Aguardando login manual ate 120s...")
-        await page.goto(f"{self.base_url}/login/", timeout=30000)
+        page = await self._goto_robusto(page, f"{self.base_url}/login/", timeout=30000)
         for _ in range(60):
             await page.wait_for_timeout(2000)
             if await page.query_selector('a[href*="logout"], a[href*="dashboard"], .user-menu, #user-menu'):
                 logger.info("Login detectado, continuando...")
-                return
+                return page
         raise Exception("Timeout aguardando login no Mercadoi")
 
     async def _carregar_sessao(self, page) -> bool:
@@ -227,7 +268,7 @@ class MercadoiDriver:
             await self._context.clear_cookies()
             if filtrados:
                 await self._context.add_cookies(filtrados)
-            await page.goto(f"{self.base_url}/create-a-listing/", timeout=30000)
+            page = await self._goto_robusto(page, f"{self.base_url}/create-a-listing/", timeout=30000)
             await page.wait_for_load_state("domcontentloaded", timeout=15000)
             if await page.query_selector('a[href*="logout"], a[href*="dashboard"], .user-menu, #user-menu, #prop_title'):
                 logger.info("Sessao restaurada do arquivo de cookies")
@@ -268,7 +309,7 @@ class MercadoiDriver:
         logger.info(f"Cookie auth obtido: {[c['name'] for c in auth]}")
         await self._context.clear_cookies()
         await self._context.add_cookies(playwright_cookies)
-        await page.goto(f"{self.base_url}/create-a-listing/", timeout=30000)
+        page = await self._goto_robusto(page, f"{self.base_url}/create-a-listing/", timeout=30000)
         await page.wait_for_load_state("domcontentloaded", timeout=15000)
         if not await page.query_selector('a[href*="logout"], a[href*="dashboard"], .user-menu, #user-menu, #prop_title'):
             raise Exception("Login httpx: sessao nao confirmada apos injecao de cookies")
@@ -284,7 +325,7 @@ class MercadoiDriver:
 
     async def _fazer_login_formulario(self, page):
         logger.info("Fazendo login pelo formulario wp-login.php...")
-        await page.goto(f"{self.base_url}/wp-login.php", timeout=30000)
+        page = await self._goto_robusto(page, f"{self.base_url}/wp-login.php", timeout=30000)
         await page.wait_for_load_state("domcontentloaded", timeout=15000)
         await page.fill("#user_login", self._wp_user)
         await page.fill("#user_pass", self._wp_pass)
@@ -298,7 +339,7 @@ class MercadoiDriver:
         except Exception:
             pass
 
-        await page.goto(f"{self.base_url}/create-a-listing/", timeout=30000)
+        page = await self._goto_robusto(page, f"{self.base_url}/create-a-listing/", timeout=30000)
         await page.wait_for_load_state("domcontentloaded", timeout=15000)
         if not await page.query_selector('a[href*="logout"], a[href*="dashboard"], .user-menu, #user-menu, #prop_title'):
             raise Exception("Login via formulario: sessao nao confirmada")
@@ -316,7 +357,8 @@ class MercadoiDriver:
     async def preencher_e_salvar(self, dados, tipo_midia, arquivo_midia):
         dados = aplicar_tipos_imovel(dict(dados or {}))
         page = self._page
-        await self._garantir_login(page)
+        page = await self._garantir_login(page)
+        self._page = page
         resultado = {
             "sucesso": False,
             "mensagem": "",
@@ -330,7 +372,8 @@ class MercadoiDriver:
             # Navega apenas se não estiver já na página de cadastro
             listing_url = f"{self.base_url}/create-a-listing/"
             if listing_url.rstrip("/") not in page.url:
-                await page.goto(listing_url, timeout=30000)
+                page = await self._goto_robusto(page, listing_url, timeout=30000)
+                self._page = page
                 await page.wait_for_load_state("domcontentloaded", timeout=20000)
             try:
                 await page.wait_for_selector('#prop_title', timeout=10000)
@@ -384,8 +427,9 @@ class MercadoiDriver:
             # CARACTERISTICAS
             await self._marcar_caracteristicas(page, dados.get("caracteristicas") or [])
 
-            # Seleciona todos os campos de detalhe com seletores CSS exatos do formulário Mercadoi
-            det = self._detalhes_adicionais(dados)
+            # Calcula _detalhes_adicionais UMA VEZ — reutilizado em det, extra_campos e XML-RPC
+            _det_cache = self._detalhes_adicionais(dados)
+            det = _det_cache
             dv  = det["selects"]
             await self._selecionar_batch(page, [
                 # Campos simples (sem [])
@@ -404,7 +448,7 @@ class MercadoiDriver:
             ])
 
             # Campos de texto livre (área, condomínio, ano, proximidades)
-            await self._preencher_detalhes_adicionais(page, dados)
+            await self._preencher_detalhes_adicionais(page, dados, _det_cache)
 
             # Faz Parceria: Orulo → 50/50 | OLX/Instagram → A combinar
             _fonte_parceria = dados.get("_fonte", "")
@@ -487,10 +531,9 @@ class MercadoiDriver:
             agent_id_post = dados.get("_mercadoi_agent_id", "") if dados.get("_fonte") == "orulo" else ""
 
             # Campos de detalhe injetados diretamente no AJAX (bypass do selectpicker)
-            # O Houzez PHP processa estes como $_POST e serializa corretamente
-            det2 = self._detalhes_adicionais(dados)
-            dv2  = det2["selects"]
-            iv2  = det2["inputs"]
+            # Reutiliza _det_cache calculado acima — não chama _detalhes_adicionais novamente
+            dv2 = _det_cache["selects"]
+            iv2 = _det_cache["inputs"]
             extra_campos = {k: v for k, v in {
                 "tem-elevador":              dv2.get("Tem elevador?", ""),
                 "mobiliado":                 dv2.get("Mobiliado?", ""),
@@ -510,7 +553,6 @@ class MercadoiDriver:
                 "prop_year_built":            iv2.get("Ano de construção", ""),
                 "vizinhanc3a7a":              iv2.get("Proximidades", ""),
             }.items() if v}
-            extra_campos.update(detalhes_para_post_fields(dados.get("detalhes_adicionais") or []))
             estagio_extra = dv2.get("Estágio do Imovel", "")
             if estagio_extra:
                 extra_campos.update({
@@ -668,11 +710,13 @@ class MercadoiDriver:
             "Casa":          "53",
             "Terreno":       "103",
             "Sala Comercial":"98",
+            "Fazenda":       "101",
+            "Sítio":         "102",
             # Subtipos — sem ID fixo, usa matching por texto via _selecionar_subtipo_imovel
         }
         _subtipos_texto = {
             "Apto. Flat", "Apto. Duplex", "Apto. Cobertura", "Apto. Garden", "Apto. Studio",
-            "Chácaras", "Chácara", "Fazenda", "Sítio",
+            "Chácaras", "Chácara",
         }
         if tipo_imovel == "Casa de Condomínio":
             if await self._selecionar_subtipo_imovel(page, tipo_imovel):
@@ -1392,7 +1436,8 @@ class MercadoiDriver:
         return ""
 
     def _montar_conteudo(self, dados):
-        descricao = dados.get("descricao_util", "")
+        descricao = limpar_descricao_bloqueada(dados.get("descricao_util", ""))
+        dados["descricao_util"] = descricao
         url_pub   = self._normalizar_url(dados.get("url_publicacao", ""))
         fonte     = str(dados.get("_fonte", "") or "").strip().lower()
         whatsapp  = self._normalizar_url(dados.get("whatsapp_url", ""))
@@ -1436,14 +1481,7 @@ class MercadoiDriver:
 
         bloco_html = ("\n\n<pre>" + "".join(icones) + "</pre>") if icones else ""
 
-        # Linha de rastreamento: apenas o fone (sem URL para não poluir a descrição).
-        # Em anúncios OLX o contato já fica anexado ao ícone do WhatsApp.
-        rastreamento = ""
-        fone = self._extrair_fone_whatsapp(whatsapp)
-        if fone and fonte != "olx":
-            rastreamento = "\n\n" + fone
-
-        return descricao + bloco_html + rastreamento
+        return descricao + bloco_html
 
     async def _preencher_endereco_mapa(self, page, dados: dict):
         endereco = str(dados.get("endereco", "") or dados.get("rua", "") or "").strip()
@@ -1766,7 +1804,8 @@ class MercadoiDriver:
                         .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
                         .replace(/[^a-z0-9]+/g, ' ')
                         .replace(/\\s+/g, ' ')
-                        .trim();
+                        .trim()
+                        .replace(/\\bsalao de jogos\\b/g, 'sala de jogos');
 
                     // Labels que nunca devem ser marcados no formulário (segurança extra)
                     const BLOQUEADOS = new Set([
@@ -1775,6 +1814,8 @@ class MercadoiDriver:
                         'bar',
                         'portaria 24h', 'portaria eletronica',
                         'spa',
+                        'deck', 'deck molhado',
+                        'elevador social',
                         'terraco', 'terraco rooftop', 'rooftop',
                         'sistema de alarme', 'piscina infantil', 'piscina privativa',
                     ]);
@@ -2043,17 +2084,26 @@ class MercadoiDriver:
             },
         }
 
-    async def _preencher_detalhes_adicionais(self, page, dados: dict):
-        # Apenas campos de texto livre — os selects são tratados por _selecionar_batch
-        detalhes = self._detalhes_adicionais(dados)
+    async def _preencher_detalhes_adicionais(self, page, dados: dict, det_cache: dict | None = None):
+        dados_enriquecidos = enriquecer_detalhes_adicionais(dados)
+        if dados_enriquecidos.get("detalhes_adicionais") and not dados.get("detalhes_adicionais"):
+            dados["detalhes_adicionais"] = dados_enriquecidos["detalhes_adicionais"]
+
+        # Reutiliza cache se disponível — evita recalcular a função pesada
+        detalhes = det_cache if det_cache is not None else self._detalhes_adicionais(dados)
         selects = {}  # não preenche selects aqui
         inputs  = {k: v for k, v in detalhes["inputs"].items()  if v}
-        detalhes_livres = detalhes_para_post_fields(dados.get("detalhes_adicionais") or [])
+        detalhes_livres = normalizar_detalhes_adicionais(dados.get("detalhes_adicionais") or [])
+        if detalhes_livres:
+            logger.info(
+                "Detalhes adicionais detectados: "
+                + ", ".join(item["titulo"] for item in detalhes_livres)
+            )
         if not inputs and not detalhes_livres:
             return
         try:
             resultado = await page.evaluate("""
-                ({selects, inputs, detalhesLivres}) => {
+                async ({selects, inputs, detalhesLivres}) => {
                     const norm = (t) => String(t || '')
                         .toLowerCase()
                         .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
@@ -2153,6 +2203,174 @@ class MercadoiDriver:
 
                     const preenchidos = [];
 
+                    const detalhesComoCampos = (detalhes, offset = 0) => {
+                        const campos = {};
+                        (Array.isArray(detalhes) ? detalhes : []).forEach((item, idx) => {
+                            const titulo = String(item && item.titulo || '').trim();
+                            const valor = String(item && item.valor || 'Sim').trim() || 'Sim';
+                            if (!titulo) return;
+                            const realIdx = idx + offset;
+                            campos[`additional_features[${realIdx}][fave_additional_feature_title]`] = titulo;
+                            campos[`additional_features[${realIdx}][fave_additional_feature_value]`] = valor;
+                        });
+                        return campos;
+                    };
+
+                    const campoTexto = (el) => el && el.matches(
+                        'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]), textarea'
+                    );
+
+                    const ehTituloDetalhe = (el) => {
+                        const nome = norm(el.getAttribute('name') || el.id || '');
+                        const ph = norm(el.getAttribute('placeholder') || '');
+                        return (nome.includes('additional') && nome.includes('title'))
+                            || ph.includes('paineis solares')
+                            || ph.includes('titulo');
+                    };
+
+                    const ehValorDetalhe = (el) => {
+                        const nome = norm(el.getAttribute('name') || el.id || '');
+                        const ph = norm(el.getAttribute('placeholder') || '');
+                        return (nome.includes('additional') && (nome.includes('value') || nome.includes('detail')))
+                            || ph.includes('30 m2')
+                            || ph.includes('30 kw')
+                            || ph.includes('valor')
+                            || ph.includes('detalhe');
+                    };
+
+                    const paresPorLinha = (raiz) => {
+                        const linhas = Array.from((raiz || document).querySelectorAll(
+                            '.row, .form-group, [class*="additional"], [class*="feature"], div'
+                        ));
+                        const pares = [];
+                        const vistos = new Set();
+                        for (const linha of linhas) {
+                            const campos = Array.from(linha.querySelectorAll('input, textarea')).filter(campoTexto);
+                            if (campos.length < 2) continue;
+                            const titulo = campos.find(ehTituloDetalhe);
+                            const valor = campos.find(el => el !== titulo && ehValorDetalhe(el));
+                            if (!titulo || !valor || vistos.has(titulo) || vistos.has(valor)) continue;
+                            pares.push({titulo, valor});
+                            vistos.add(titulo);
+                            vistos.add(valor);
+                        }
+                        return pares;
+                    };
+
+                    const buscarBlocoDetalhes = () => {
+                        const candidatos = Array.from(document.querySelectorAll(
+                            '.dashboard-content-block, .block-wrap, .property-additional-details, .additional-details-wrap, .form-group, section, fieldset, div'
+                        )).filter(el => {
+                            const texto = norm(el.innerText || el.textContent || '');
+                            if (!texto.includes('detalhes adicionais') && !texto.includes('additional')) return false;
+                            return el.querySelector('input, textarea, button, a');
+                        });
+                        candidatos.sort((a, b) => (a.innerText || '').length - (b.innerText || '').length);
+                        return candidatos[0] || null;
+                    };
+
+                    const paresDetalhes = (bloco) => {
+                        const raiz = bloco || document;
+                        const porLinha = paresPorLinha(raiz);
+                        if (porLinha.length) return porLinha;
+                        const todos = Array.from(raiz.querySelectorAll('input, textarea')).filter(campoTexto);
+                        const titulos = todos.filter(ehTituloDetalhe);
+                        const valores = todos.filter(ehValorDetalhe);
+                        if (titulos.length && valores.length) {
+                            return titulos.map((titulo, idx) => ({titulo, valor: valores[idx]})).filter(p => p.titulo && p.valor);
+                        }
+                        const adicionais = todos.filter(el => {
+                            const nome = norm(el.getAttribute('name') || el.id || '');
+                            const ph = norm(el.getAttribute('placeholder') || '');
+                            return nome.includes('additional') || ph.includes('paineis solares') || ph.includes('30 m2');
+                        });
+                        const pares = [];
+                        for (let i = 0; i + 1 < adicionais.length; i += 2) {
+                            pares.push({titulo: adicionais[i], valor: adicionais[i + 1]});
+                        }
+                        return pares;
+                    };
+
+                    const paresDetalhesPagina = () => {
+                        const porLinha = paresPorLinha(document);
+                        if (porLinha.length) return porLinha;
+                        const todos = Array.from(document.querySelectorAll('input, textarea')).filter(campoTexto);
+                        const titulos = todos.filter(ehTituloDetalhe);
+                        const valores = todos.filter(ehValorDetalhe);
+                        return titulos.map((titulo, idx) => ({titulo, valor: valores[idx]})).filter(p => p.titulo && p.valor);
+                    };
+
+                    const disparar = (el) => {
+                        const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+                        const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+                        if (setter && el) setter.call(el, el.value);
+                        el.dispatchEvent(new Event('input', {bubbles: true}));
+                        el.dispatchEvent(new Event('change', {bubbles: true}));
+                        if (window.jQuery) {
+                            try { window.jQuery(el).val(el.value).trigger('input').trigger('change'); } catch(_) {}
+                        }
+                    };
+
+                    const preencherDetalhesLivres = async (detalhes) => {
+                        const lista = (Array.isArray(detalhes) ? detalhes : []).filter(item =>
+                            String(item && item.titulo || '').trim()
+                        );
+                        if (!lista.length) return '';
+
+                        const bloco = buscarBlocoDetalhes();
+                        const form = document.querySelector('#submit_property_form') || document.querySelector('form');
+                        let pares = paresDetalhes(bloco);
+                        if (!pares.length) pares = paresDetalhesPagina();
+
+                        if (pares.length < lista.length) {
+                            const raizBotao = bloco || form || document;
+                            const botaoAdd = Array.from(raizBotao.querySelectorAll('button, a, input[type="button"]')).find(el => {
+                                const texto = norm(el.innerText || el.textContent || el.value || el.getAttribute('title') || '');
+                                return texto.includes('adicionar novo') || texto.includes('add new') || texto.includes('adicionar');
+                            });
+                            for (let tentativas = 0; botaoAdd && pares.length < lista.length && tentativas < lista.length + 2; tentativas++) {
+                                try { botaoAdd.click(); } catch(_) {}
+                                await new Promise(resolve => setTimeout(resolve, 120));
+                                pares = paresDetalhes(bloco);
+                                if (!pares.length) pares = paresDetalhesPagina();
+                            }
+                        }
+
+                        let preenchidosUi = 0;
+                        if (pares.length) {
+                            lista.slice(0, pares.length).forEach((item, idx) => {
+                                const titulo = String(item.titulo || '').trim();
+                                const valor = String(item.valor || 'Sim').trim() || 'Sim';
+                                pares[idx].titulo.value = titulo;
+                                pares[idx].valor.value = valor;
+                                disparar(pares[idx].titulo);
+                                disparar(pares[idx].valor);
+                                preenchidosUi++;
+                            });
+                            if (pares.length >= lista.length) {
+                                return 'Detalhes adicionais UI=' + String(lista.length);
+                            }
+                        }
+
+                        if (form) {
+                            form.querySelectorAll('input.bot-detalhe-adicional').forEach(el => el.remove());
+                            const restantes = lista.slice(preenchidosUi);
+                            for (const [nome, valor] of Object.entries(detalhesComoCampos(restantes, preenchidosUi))) {
+                                if (!valor) continue;
+                                const input = document.createElement('input');
+                                input.type = 'hidden';
+                                input.className = 'bot-detalhe-adicional';
+                                input.name = nome;
+                                input.value = valor;
+                                form.appendChild(input);
+                            }
+                            return preenchidosUi
+                                ? 'Detalhes adicionais UI=' + String(preenchidosUi) + ', hidden=' + String(restantes.length)
+                                : 'Detalhes adicionais hidden=' + String(lista.length);
+                        }
+                        return 'Detalhes adicionais NAO_ENCONTRADO';
+                    };
+
                     for (const [rotulo, valor] of Object.entries(inputs || {})) {
                         if (!valor) continue;
                         const campo = acharCampo(rotulo);
@@ -2175,19 +2393,9 @@ class MercadoiDriver:
                         preenchidos.push(rotulo + '=' + (escolhido || 'OPCAO_NAO_ENCONTRADA(' + valor + ')'));
                     }
 
-                    const form = document.querySelector('#submit_property_form') || document.querySelector('form');
-                    if (form && detalhesLivres && Object.keys(detalhesLivres).length) {
-                        form.querySelectorAll('input.bot-detalhe-adicional').forEach(el => el.remove());
-                        for (const [nome, valor] of Object.entries(detalhesLivres)) {
-                            if (!valor) continue;
-                            const input = document.createElement('input');
-                            input.type = 'hidden';
-                            input.className = 'bot-detalhe-adicional';
-                            input.name = nome;
-                            input.value = valor;
-                            form.appendChild(input);
-                        }
-                        preenchidos.push('Detalhes adicionais livres=' + String(Object.keys(detalhesLivres).length / 2));
+                    const livres = await preencherDetalhesLivres(detalhesLivres);
+                    if (livres) {
+                        preenchidos.push(livres);
                     }
 
                     return preenchidos;
@@ -2214,20 +2422,40 @@ class MercadoiDriver:
         return ""
 
     async def _selecionar_cidade(self, page, cidade, bairro=""):
+        cidade_por_bairro = self._cidade_por_bairro(bairro) if bairro else ""
+        if cidade_por_bairro and normalizar(cidade_por_bairro) != normalizar(cidade):
+            ok = await self._selecionar_por_texto(page, '#city', cidade_por_bairro)
+            if ok:
+                logger.info(
+                    f"Cidade corrigida pelo bairro '{bairro}': "
+                    f"{cidade or 'vazio'} -> {cidade_por_bairro}"
+                )
+                await self._aguardar_opcoes_bairro(page)
+                return cidade_por_bairro
+
         if cidade:
             ok = await self._selecionar_por_texto(page, '#city', cidade)
             if ok:
                 await self._aguardar_opcoes_bairro(page)
                 return cidade
-        # Tenta inferir cidade pelo bairro
-        if bairro:
-            cidade_inferida = self._cidade_por_bairro(bairro)
-            if cidade_inferida:
-                ok = await self._selecionar_por_texto(page, '#city', cidade_inferida)
+            cidade_norm = normalizar(cidade)
+            fallback_cidade = {
+                "puxinana": "Campina Grande",
+                "puxinanã": "Campina Grande",
+            }.get(cidade_norm, "")
+            if fallback_cidade:
+                ok = await self._selecionar_por_texto(page, '#city', fallback_cidade)
                 if ok:
-                    logger.info(f"Cidade inferida pelo bairro '{bairro}': {cidade_inferida}")
+                    logger.info(f"Cidade '{cidade}' nao existe no select; usando {fallback_cidade}")
                     await self._aguardar_opcoes_bairro(page)
-                    return cidade_inferida
+                    return fallback_cidade
+        # Tenta inferir cidade pelo bairro
+        if cidade_por_bairro:
+            ok = await self._selecionar_por_texto(page, '#city', cidade_por_bairro)
+            if ok:
+                logger.info(f"Cidade inferida pelo bairro '{bairro}': {cidade_por_bairro}")
+                await self._aguardar_opcoes_bairro(page)
+                return cidade_por_bairro
         logger.info(f"Cidade '{cidade}' nao encontrada, usando Joao Pessoa")
         await self._selecionar_por_texto(page, '#city', "João Pessoa")
         await self._aguardar_opcoes_bairro(page)
