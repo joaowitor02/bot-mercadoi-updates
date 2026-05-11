@@ -8,6 +8,7 @@ import re
 import unicodedata
 from openai import AsyncOpenAI
 from modules.logger import Logger
+from modules.caracteristicas_guard import filtrar_caracteristicas
 
 logger = Logger("deepseek_api")
 
@@ -19,7 +20,7 @@ _CARACTERISTICAS_OFICIAIS = [
     "Lavanderia", "Lounge", "Mini mercado", "Piscina adulto", "Piscina infantil",
     "Playground", "Portaria", "Portaria 24h", "Portaria eletrônica", "Quadra de areia",
     "Quadra de tênis", "Quadra poliesportiva", "Recepção", "Salão de festas / SUM",
-    "Salão de jogos", "Sauna", "Segurança 24h", "Sistema de alarme", "Solarium", "Spa",
+    "Sala de jogos", "Sauna", "Segurança 24h", "Sistema de alarme", "Solarium", "Spa",
     "Terraço/Rooftop", "Vaga coberta", "Vestiário", "Aceita animais", "Agua inclusa",
     "Aquecedor", "Aquecimento central", "Ar Condicionado", "Área de serviço",
     "Área externa privativa", "Churrasqueira propria", "Closet", "Conexão à internet",
@@ -33,7 +34,9 @@ _CARACTERISTICAS_OFICIAIS = [
     "Varanda gourmet", "Varanda Integrada", "Ventilado",
 ]
 
-_SYSTEM = """Voce e um especialista em anuncios imobiliarios brasileiros.
+_CARACTERISTICAS_PERMITIDAS = "; ".join(filtrar_caracteristicas(_CARACTERISTICAS_OFICIAIS))
+
+_SYSTEM = f"""Voce e um especialista em anuncios imobiliarios brasileiros.
 Analise a legenda de um post do Instagram e extraia apenas informacoes realmente presentes.
 
 REGRAS GERAIS:
@@ -45,7 +48,8 @@ REGRAS GERAIS:
 - Campos numericos devem ter apenas digitos ou "". Nunca use "0" para desconhecido.
 - preco: apenas digitos, sem R$, pontos ou virgulas. NUNCA use telefone, CRM, CRECI, codigo de anuncio ou numero de contato como preco.
 - operacao: use exatamente "A Venda" ou "Em Aluguel".
-- tipo_imovel: use termos compativeis com o Mercadoi: Apartamento, Casa, Casa de Condominio, Terreno, Sala Comercial, Apto. Cobertura, Apto. Duplex, Apto. Flat, Apto. Garden, Chacara, Fazenda, Sitio.
+- tipo_imovel: use termos compativeis com o Mercadoi: Apartamento, Casa, Casa de Condominio, Terreno, Sala Comercial, Apto. Cobertura, Apto. Duplex, Apto. Flat, Apto. Garden, Apto. Studio, Chacaras, Fazenda, Sitio.
+  Chacara/minichacara sempre vira Chacaras, mesmo quando a descricao mencionar casa sede.
   Casa duplex/sobrado continua sendo Casa. Casa em condominio vira Casa de Condominio. Terreno/lote vira Terreno.
   So use Apto. Cobertura quando a cobertura for o tipo da unidade; area de lazer na cobertura do predio nao muda o tipo.
 - estagio_imovel: breve lancamento, lancamento, em construcao, novo, seminovo, usado ou reformado.
@@ -61,10 +65,10 @@ REGRAS GERAIS:
 - latitude e longitude: coordenadas somente se estiverem explicitamente presentes.
 - proximidades: lugares/vizinhancas de referencia citados na publicacao.
 - caracteristicas: array JSON em ordem alfabetica, com nomes EXATAMENTE como na lista abaixo.
-  Inclua apenas itens claramente mencionados ou fortemente implicitos.
+  Inclua apenas itens claramente mencionados. Nao use itens que nao aparecam na legenda.
 
 CARACTERISTICAS PERMITIDAS:
-Academia; Acesso para cadeirantes; Area de Lazer; Area pet; Area Verde; Banheiro social; Biblioteca; Bicicletario; Campo de futebol; Campo de Golf; Churrasqueira; Circuito de seguranca; Condominio fechado; Coworking; Espaco gourmet; Espaco kids; Estacionamento para visita; Gerador Eletrico; Lavanderia; Lounge; Mini mercado; Piscina adulto; Piscina infantil; Playground; Portaria; Portaria 24h; Portaria eletronica; Quadra de areia; Quadra de tenis; Quadra poliesportiva; Recepcao; Salao de festas / SUM; Salao de jogos; Sauna; Seguranca 24h; Sistema de alarme; Solarium; Spa; Terraco/Rooftop; Vaga coberta; Vestiario; Aceita animais; Agua inclusa; Aquecedor; Aquecimento central; Ar Condicionado; Area de servico; Area externa privativa; Churrasqueira propria; Closet; Conexao a internet; Cozinha; Cozinha americana; Cozinha Gourmet; Cozinha independente; DCE - Dependencia de empregada; Deposito; Despensa; Energia solar; Entrada de servico; Escritorio; Espaco Gourmet; Freezer; Gas Central; Geladeira; Gramado / Jardim; Hidromassagem/Jacuzzi; Interfone; Jacuzzi; Lareira; Lava-louca; Lavadora de roupas; Mezanino; Microondas; Mobiliado; Piscina Privativa; Porteira Fechada; Projetados; Sala de estar; Sala em 2 ambientes; Suite; Telefone; TV; TV a cabo; Varanda; Varanda gourmet; Varanda Integrada; Ventilado.
+{_CARACTERISTICAS_PERMITIDAS}
 
 REGRAS CRITICAS:
 - quartos: apenas dormitorios/quartos. Nao incluir pavimentos, andares ou comodos.
@@ -166,6 +170,14 @@ class DeepSeekAPIClient:
                 dados["url_publicacao"] = url_publicacao
             if not dados.get("instagram_url") and perfil_instagram:
                 dados["instagram_url"] = perfil_instagram
+            whatsapp_detectado = _extrair_whatsapp_url(
+                "\n".join([
+                    str(dados.get("whatsapp_url") or ""),
+                    str(caption or ""),
+                ])
+            )
+            if whatsapp_detectado:
+                dados["whatsapp_url"] = whatsapp_detectado
             if isinstance(dados.get("descricao_util"), str):
                 dados["descricao_util"] = _limpar_descricao(dados["descricao_util"])
             if isinstance(dados.get("caracteristicas"), list):
@@ -222,6 +234,29 @@ def _limpar_descricao(texto: str) -> str:
     return "\n".join(linhas).strip()
 
 
+def _extrair_whatsapp_url(texto: str) -> str:
+    texto = str(texto or "")
+    if not texto.strip():
+        return ""
+
+    m = re.search(r"(?:https?://)?(?:wa\.me|api\.whatsapp\.com/send\?phone=)/?(\d{12,13})", texto, re.IGNORECASE)
+    if m:
+        return f"https://wa.me/{m.group(1)}"
+
+    for m in re.finditer(
+        r"(?<!\d)(?:\+?55[\s().-]*)?(?:\(?([1-9]{2})\)?[\s().-]*)?(9?[\s().-]*\d{4}[\s().-]*\d{4})(?!\d)",
+        texto,
+    ):
+        bruto = m.group(0)
+        digitos = re.sub(r"\D", "", bruto)
+        if len(digitos) in (10, 11):
+            digitos = "55" + digitos
+        if digitos.startswith("55") and len(digitos) in (12, 13):
+            return f"https://wa.me/{digitos}"
+
+    return ""
+
+
 def _norm_texto(texto: str) -> str:
     texto = unicodedata.normalize("NFKD", str(texto or ""))
     texto = "".join(c for c in texto if not unicodedata.combining(c))
@@ -229,7 +264,7 @@ def _norm_texto(texto: str) -> str:
 
 
 def _normalizar_caracteristicas(valores: list) -> list[str]:
-    mapa = {_norm_texto(v): v for v in _CARACTERISTICAS_OFICIAIS}
+    mapa = {_norm_texto(v): v for v in filtrar_caracteristicas(_CARACTERISTICAS_OFICIAIS)}
     saida = []
     for valor in valores:
         chave = _norm_texto(valor)
@@ -243,7 +278,7 @@ def _normalizar_caracteristicas(valores: list) -> list[str]:
                     break
         if oficial:
             saida.append(oficial)
-    return sorted(dict.fromkeys(saida), key=lambda s: _norm_texto(s))
+    return sorted(dict.fromkeys(filtrar_caracteristicas(saida)), key=lambda s: _norm_texto(s))
 
 
 def _mesclar_caracteristicas(*listas: list) -> list[str]:
@@ -252,7 +287,7 @@ def _mesclar_caracteristicas(*listas: list) -> list[str]:
         for valor in lista or []:
             if valor:
                 saida.append(str(valor).strip())
-    return sorted(dict.fromkeys(saida), key=lambda s: _norm_texto(s))
+    return sorted(dict.fromkeys(filtrar_caracteristicas(saida)), key=lambda s: _norm_texto(s))
 
 
 def _texto_tem_academia(texto: str) -> bool:

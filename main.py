@@ -28,10 +28,12 @@ from modules.wordpress_xmlrpc_publisher import WordPressXmlRpcPublisher
 from modules.status_writer import StatusWriter
 from modules.logger import Logger
 from modules.notificador import notificar
-from modules.ocr_preco import extrair_preco_de_imagens
+from modules.ocr_preco import extrair_localizacao_de_imagens, extrair_preco_de_imagens
 from modules.olx_scraper import OlxScraper, normalizar_url as normalizar_olx_url, url_valida as olx_url_valida
 from modules.orulo_scraper import OruloScraper, normalizar_url as normalizar_orulo_url, url_valida as orulo_url_valida
 from modules.property_types import aplicar_tipos_imovel
+from modules.caracteristicas_guard import enriquecer_caracteristicas_por_texto
+from modules.detalhes_adicionais import enriquecer_detalhes_adicionais
 
 logger = Logger("main")
 
@@ -88,6 +90,45 @@ def _normalizar_whatsapp_url(valor: str) -> str:
     return ""
 
 
+def _norm_txt_simples(valor: str) -> str:
+    nfkd = unicodedata.normalize("NFKD", str(valor or ""))
+    sem_acento = "".join(c for c in nfkd if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", sem_acento.lower()).strip()
+
+
+def _aplicar_localizacao_ocr(dados: dict, localizacao: dict) -> bool:
+    """Aplica bairro/cidade lidos da imagem quando ajudam a preencher ou corrigir defaults."""
+    if not localizacao:
+        return False
+
+    alterou = False
+    bairro_ocr = str(localizacao.get("bairro_extraido") or "").strip()
+    cidade_ocr = str(localizacao.get("cidade_extraida") or "").strip()
+
+    bairro_atual = str(dados.get("bairro_extraido") or "").strip()
+    bairro_atual_norm = _norm_txt_simples(bairro_atual)
+    bairro_ocr_norm = _norm_txt_simples(bairro_ocr)
+    if bairro_ocr and (
+        not bairro_atual_norm
+        or bairro_atual_norm in {"joao pessoa", "cabedelo", "campina grande"}
+    ):
+        dados["bairro_extraido"] = bairro_ocr
+        alterou = True
+
+    cidade_atual = str(dados.get("cidade_extraida") or "").strip()
+    cidade_atual_norm = _norm_txt_simples(cidade_atual)
+    cidade_ocr_norm = _norm_txt_simples(cidade_ocr)
+    if cidade_ocr and cidade_ocr_norm and (
+        not cidade_atual_norm
+        or cidade_atual_norm == "joao pessoa"
+        or (bairro_ocr_norm and cidade_atual_norm != cidade_ocr_norm)
+    ):
+        dados["cidade_extraida"] = cidade_ocr
+        alterou = True
+
+    return alterou
+
+
 def _usar_wordpress_api(config: dict) -> bool:
     """Retorna True quando o plugin REST API está configurado e ativado."""
     return (
@@ -133,6 +174,59 @@ def _validar_dados(dados: dict) -> dict:
             return int(str(v).strip())
         except Exception:
             return None
+
+    def cidade_suportada_por_contexto(texto_norm: str, atual: str) -> str:
+        atual_norm = norm_txt(atual)
+        cidades_suportadas = {
+            "campina grande": "Campina Grande",
+            "cabedelo": "Cabedelo",
+            "joao pessoa": "João Pessoa",
+        }
+        cidades_proximas = {
+            "puxinana": "Campina Grande",
+            "puxinanã": "Campina Grande",
+        }
+        bairros_cidade = {
+            "intermares": "Cabedelo",
+            "ponta de campina": "Cabedelo",
+            "ponta campina": "Cabedelo",
+            "camboinha": "Cabedelo",
+            "poco": "Cabedelo",
+            "ponta de mato": "Cabedelo",
+        }
+
+        bairro_norm = norm_txt(dados.get("bairro_extraido", ""))
+        if bairro_norm in bairros_cidade:
+            return bairros_cidade[bairro_norm]
+        if bairro_norm:
+            for chave, cidade in bairros_cidade.items():
+                if _re.search(rf"\b{_re.escape(chave)}\b", bairro_norm):
+                    return cidade
+
+        for padrao in (
+            r"\bcidade\s+de\s+([a-z\s]{3,40})",
+            r"\bmunicipio\s+de\s+([a-z\s]{3,40})",
+            r"\bregiao\s+de\s+([a-z\s]{3,40})",
+            r"\bregião\s+de\s+([a-z\s]{3,40})",
+        ):
+            for m in _re.finditer(padrao, texto_norm):
+                trecho = _re.split(r"\b(?:a|com|medindo|proximo|próximo|e|no|na|em)\b|[,.;\n]", m.group(1), maxsplit=1)[0].strip()
+                trecho = norm_txt(trecho)
+                if trecho in cidades_suportadas:
+                    return cidades_suportadas[trecho]
+                if trecho in cidades_proximas:
+                    return cidades_proximas[trecho]
+
+        for chave, cidade in cidades_proximas.items():
+            if _re.search(rf"\b{_re.escape(chave)}\b", texto_norm):
+                return cidade
+        for chave, cidade in bairros_cidade.items():
+            if _re.search(rf"\b{_re.escape(chave)}\b", texto_norm):
+                return cidade
+        for chave, cidade in cidades_suportadas.items():
+            if _re.search(rf"\b{_re.escape(chave)}\b", texto_norm):
+                return cidade
+        return ""
 
     # Normaliza "0" (ou "0.0", "00" etc.) → "" para campos numéricos.
     # A IA às vezes retorna 0 quando o campo não existe em vez de deixar vazio.
@@ -189,6 +283,13 @@ def _validar_dados(dados: dict) -> dict:
             str(dados.get("descricao_util") or ""),
         ])
     )
+
+    cidade_inferida = cidade_suportada_por_contexto(texto_contexto, dados.get("cidade_extraida", ""))
+    cidade_atual_norm = norm_txt(dados.get("cidade_extraida", ""))
+    if cidade_inferida and cidade_atual_norm != norm_txt(cidade_inferida):
+        if cidade_atual_norm and cidade_atual_norm != norm_txt(cidade_inferida):
+            logger.info(f"Cidade corrigida por contexto: {dados.get('cidade_extraida')} -> {cidade_inferida}")
+        dados["cidade_extraida"] = cidade_inferida
 
     if not str(dados.get("mobiliado") or "").strip():
         if any(p in texto_contexto for p in (
@@ -594,7 +695,15 @@ async def _publicar_com_retry(
             for tentativa in range(1, MAX_TENTATIVAS_MERCADOI + 1):
                 if tentativa > 1:
                     logger.info(f"[{execution_id}] Tentativa {tentativa}/{MAX_TENTATIVAS_MERCADOI}...")
-                resultado = await driver.preencher_e_salvar(dados, tipo_midia, arquivo_midia)
+                try:
+                    resultado = await driver.preencher_e_salvar(dados, tipo_midia, arquivo_midia)
+                except Exception as e:
+                    logger.warning(f"[{execution_id}] Excecao no Playwright Mercadoi: {e}")
+                    resultado = {
+                        "sucesso": False,
+                        "status_erro": "erro_preenchimento",
+                        "mensagem": str(e),
+                    }
                 if resultado["sucesso"]:
                     resultado["_mercadoi_usuario"] = login_mc["usuario"]
                     break
@@ -658,7 +767,15 @@ async def _publicar_com_retry(
             for tentativa in range(1, MAX_TENTATIVAS_MERCADOI + 1):
                 if tentativa > 1:
                     logger.info(f"[{execution_id}] Tentativa {tentativa}/{MAX_TENTATIVAS_MERCADOI}...")
-                resultado = await driver.preencher_e_salvar(dados, tipo_midia, arquivo_midia)
+                try:
+                    resultado = await driver.preencher_e_salvar(dados, tipo_midia, arquivo_midia)
+                except Exception as e:
+                    logger.warning(f"[{execution_id}] Excecao no Playwright Mercadoi: {e}")
+                    resultado = {
+                        "sucesso": False,
+                        "status_erro": "erro_preenchimento",
+                        "mensagem": str(e),
+                    }
                 if resultado["sucesso"]:
                     break
                 if tentativa < MAX_TENTATIVAS_MERCADOI:
@@ -683,6 +800,7 @@ async def processar_link(row: dict, sheet, config: dict):
     _t_etapa = _inicio
     sheet.atualizar_status(row_index, "capturando")
     sheet.atualizar_campo(row_index, "id_execucao", execution_id)
+    logger.info(f"[{execution_id}] Status: capturando dados")
 
     status = StatusWriter(sheet, row_index)
 
@@ -715,6 +833,7 @@ async def processar_link(row: dict, sheet, config: dict):
         else:
             dados, tipo_midia, arquivo_midia, motivo_falha = await _extrair_e_baixar(url, config)
             if dados:
+                dados["_fonte"] = "instagram"
                 cache_dados = dict(dados)
                 cache_dados.pop("_fonte", None)
                 sheet.salvar_cache(url, "Instagram", cache_dados)
@@ -730,6 +849,8 @@ async def processar_link(row: dict, sheet, config: dict):
 
     # Validação e sanitização dos dados
     dados = _validar_dados(dados)
+    dados = enriquecer_detalhes_adicionais(dados)
+    dados = enriquecer_caracteristicas_por_texto(dados)
     dados = aplicar_tipos_imovel(dados)
     motivo_invalido = _dados_invalidos(dados)
     if motivo_invalido:
@@ -746,7 +867,14 @@ async def processar_link(row: dict, sheet, config: dict):
         logger.info(f"[{execution_id}] WhatsApp OLX anexado ao anuncio")
 
     # --- Melhoria: whatsapp_default como fallback de contato ---
-    if not dados.get("whatsapp_url") and config.get("whatsapp_default", "").strip():
+    fonte_atual = str(dados.get("_fonte") or "").strip().lower()
+    url_publicacao_atual = str(dados.get("url_publicacao") or url or "").lower()
+    is_instagram = fonte_atual == "instagram" or "instagram.com" in url_publicacao_atual
+    if (
+        not is_instagram
+        and not dados.get("whatsapp_url")
+        and config.get("whatsapp_default", "").strip()
+    ):
         dados["whatsapp_url"] = config["whatsapp_default"].strip()
         logger.info(f"[{execution_id}] WhatsApp: usando padrão do config")
 
@@ -765,6 +893,7 @@ async def processar_link(row: dict, sheet, config: dict):
 
     _t_etapa = time.time()
     sheet.atualizar_status(row_index, "baixando_midia")
+    logger.info(f"[{execution_id}] Status: baixando midia")
     sheet.atualizar_campo(row_index, "tipo_midia", tipo_midia or "")
     sheet.atualizar_campo(
         row_index, "arquivo_midia",
@@ -785,6 +914,22 @@ async def processar_link(row: dict, sheet, config: dict):
             else:
                 logger.warning(f"[{execution_id}] Preço OCR descartado por validação: {preco_ocr}")
 
+    # --- OCR de localização: usa bairros/cidades escritos na arte da imagem ---
+    # É caro rodar Tesseract em frames de vídeo; só usa quando o bairro não veio no texto.
+    bairro_atual_norm = _norm_txt_simples(dados.get("bairro_extraido", ""))
+    precisa_localizacao_ocr = (
+        not bairro_atual_norm
+        or bairro_atual_norm in {"joao pessoa", "cabedelo", "campina grande"}
+    )
+    if arquivo_midia and precisa_localizacao_ocr:
+        localizacao_ocr = extrair_localizacao_de_imagens(arquivo_midia)
+        if _aplicar_localizacao_ocr(dados, localizacao_ocr):
+            dados = _validar_dados(dados)
+            logger.info(
+                f"[{execution_id}] Localização obtida via OCR: "
+                f"{dados.get('bairro_extraido', '')} / {dados.get('cidade_extraida', '')}"
+            )
+
     midia_seg = int(time.time() - _t_etapa)
     sheet.atualizar_campo(row_index, "midia_seg", str(midia_seg))
 
@@ -801,6 +946,7 @@ async def processar_link(row: dict, sheet, config: dict):
 
     _t_etapa = time.time()
     sheet.atualizar_status(row_index, "enviando_wp")
+    logger.info(f"[{execution_id}] Status: enviando para o Mercadoi")
     logger.info(f"[{execution_id}] Publicando no Mercadoi...")
     resultado = await _publicar_com_retry(dados, tipo_midia, arquivo_midia, config, execution_id)
 
@@ -841,6 +987,8 @@ async def processar_link(row: dict, sheet, config: dict):
                 if media_ids_reuso and _usar_wordpress_xmlrpc(config):
                     dados_extra["_wp_media_ids"] = media_ids_reuso
                 dados_extra = _validar_dados(dados_extra)
+                dados_extra = enriquecer_detalhes_adicionais(dados_extra)
+                dados_extra = enriquecer_caracteristicas_por_texto(dados_extra)
                 dados_extra = aplicar_tipos_imovel(dados_extra)
                 motivo_extra = _dados_invalidos(dados_extra)
                 if motivo_extra:
@@ -1048,8 +1196,11 @@ async def executar_ciclo(config: dict):
         logger.info(f"Processando {len(pendentes)} link(s) sequencialmente")
 
     semaforo = asyncio.Semaphore(max_workers)
+    progresso_lock = asyncio.Lock()
+    concluidos = 0
 
     async def _processar_com_semaforo(row: dict):
+        nonlocal concluidos
         async with semaforo:
             try:
                 await processar_link(row, db, config)
@@ -1060,6 +1211,10 @@ async def executar_ciclo(config: dict):
                     db.atualizar_campo(row["_row_index"], "mensagem_erro", str(e))
                 except Exception:
                     pass
+            finally:
+                async with progresso_lock:
+                    concluidos += 1
+                    logger.info(f"Progresso do ciclo: {concluidos}/{len(pendentes)} processado(s)")
 
     await asyncio.gather(*[_processar_com_semaforo(row) for row in pendentes])
 

@@ -14,6 +14,8 @@ import unicodedata
 from urllib.parse import urlparse
 from modules.logger import Logger
 from modules.property_types import aplicar_tipos_imovel
+from modules.caracteristicas_guard import filtrar_caracteristicas
+from modules.detalhes_adicionais import detalhes_para_meta
 
 logger = Logger("wordpress_xmlrpc_publisher")
 
@@ -129,7 +131,7 @@ class WordPressXmlRpcPublisher:
         if _s("operacao"):         terms_names["property-status"]   = [_s("operacao") or "A Venda"]
         if _s("cidade_extraida"):  terms_names["property-city"]     = [_s("cidade_extraida")]
         if _s("bairro_extraido"):  terms_names["property-area"]     = [_s("bairro_extraido")]
-        caracteristicas = dados.get("caracteristicas") or []
+        caracteristicas = filtrar_caracteristicas(dados.get("caracteristicas") or [])
         if caracteristicas:        terms_names["property-feature"]  = list(caracteristicas)
 
         post_data = {
@@ -481,6 +483,15 @@ def _build_content(dados: dict) -> str:
 def _normalize_url(v: str) -> str:
     if not v:
         return ""
+    v = str(v or "").strip()
+    if v.lower().startswith(("http://", "https://")) and "wa.me" not in v.lower() and "whatsapp.com" not in v.lower():
+        parsed = urlparse(v)
+        return v if parsed.scheme and parsed.netloc else ""
+    digits = re.sub(r"\D", "", str(v or ""))
+    if len(digits) in (10, 11):
+        digits = "55" + digits
+    if digits.startswith("55") and len(digits) in (12, 13):
+        return f"https://wa.me/{digits}"
     if v.startswith(("wa.me/", "instagram.com/")):
         v = "https://" + v
     parsed = urlparse(v)
@@ -544,6 +555,9 @@ def _build_custom_fields(dados: dict, content: str) -> list:
     ])
     if agent_id:
         fields.append({"key": "fave_agents", "value": agent_id})
+    adicionais = detalhes_para_meta(dados.get("detalhes_adicionais") or [])
+    if adicionais:
+        fields.append({"key": "fave_additional_features", "value": adicionais})
 
     return fields
 

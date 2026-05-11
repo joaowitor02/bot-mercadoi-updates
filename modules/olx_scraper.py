@@ -12,6 +12,7 @@ import unicodedata
 import httpx
 from modules.logger import Logger
 from modules.property_types import normalizar_tipo_imovel
+from modules.caracteristicas_guard import adicionar_caracteristica, enriquecer_caracteristicas_por_texto, filtrar_caracteristicas
 
 logger = Logger("olx_scraper")
 
@@ -47,12 +48,13 @@ _TIPO_MAP = {
     "galpão":       "Sala Comercial",
     "flat":         "Apto. Flat",
     "cobertura":    "Apto. Cobertura",
-    "studio":       "Apartamento",
+    "garden":       "Apto. Garden",
+    "studio":       "Apto. Studio",
     "kitnet":       "Apartamento",
     "sitio":        "Sítio",
     "sítio":        "Sítio",
-    "chacara":      "Chácara",
-    "chácara":      "Chácara",
+    "chacara":      "Chácaras",
+    "chácara":      "Chácaras",
     "fazenda":      "Fazenda",
 }
 
@@ -140,8 +142,7 @@ def _extrair_proximidades(texto: str) -> str:
 
 
 def _adicionar_caracteristica(features: list, nome: str):
-    if nome and nome not in features:
-        features.append(nome)
+    adicionar_caracteristica(features, nome)
 
 
 def _enriquecer_por_texto(dados: dict) -> dict:
@@ -251,26 +252,9 @@ def _enriquecer_por_texto(dados: dict) -> dict:
     if not dados.get("proximidades"):
         dados["proximidades"] = _extrair_proximidades(texto)
 
-    for chave, nome in [
-        ("ar condicionado", "Ar Condicionado"),
-        ("varanda gourmet", "Varanda gourmet"),
-        ("varanda", "Varanda"),
-        ("area de servico", "Área de serviço"),
-        ("cozinha americana", "Cozinha americana"),
-        ("cozinha gourmet", "Cozinha Gourmet"),
-        ("moveis planejados", "Projetados"),
-        ("projetados", "Projetados"),
-        ("piscina", "Piscina adulto"),
-        ("churrasqueira", "Churrasqueira"),
-        ("academia", "Academia"),
-        ("salao de festas", "Salão de festas / SUM"),
-        ("playground", "Playground"),
-        ("portaria 24", "Portaria 24h"),
-        ("aceita pet", "Aceita animais"),
-    ]:
-        if chave in n:
-            _adicionar_caracteristica(features, nome)
     dados["caracteristicas"] = features
+    dados = enriquecer_caracteristicas_por_texto(dados)
+    dados["caracteristicas"] = filtrar_caracteristicas(dados.get("caracteristicas") or [])
     return dados
 
 

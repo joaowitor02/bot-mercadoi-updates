@@ -13,6 +13,8 @@ import asyncio
 import httpx
 from modules.logger import Logger
 from modules.property_types import aplicar_tipos_imovel
+from modules.caracteristicas_guard import filtrar_caracteristicas
+from modules.detalhes_adicionais import normalizar_detalhes_adicionais
 
 logger = Logger("wordpress_publisher")
 
@@ -147,7 +149,8 @@ class WordPressPublisher:
             "url_publicacao":  _s("url_publicacao"),
             "whatsapp_url":    _s("whatsapp_url"),
             "instagram_url":   _s("instagram_url"),
-            "caracteristicas": dados.get("caracteristicas") or [],
+            "caracteristicas": filtrar_caracteristicas(dados.get("caracteristicas") or []),
+            "detalhes_adicionais": normalizar_detalhes_adicionais(dados.get("detalhes_adicionais") or []),
             "publicar":        publicar,
             "origem":          dados.get("_fonte", ""),
         }

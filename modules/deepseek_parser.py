@@ -8,6 +8,7 @@ import re
 import unicodedata
 from modules.logger import Logger
 from modules.property_types import aplicar_tipos_imovel
+from modules.caracteristicas_guard import filtrar_caracteristicas
 
 logger = Logger("deepseek_parser")
 
@@ -86,14 +87,14 @@ _FEATURES_KEYWORDS: list[tuple[list[str], str]] = [
     (["quadra poliesportiva", "quadra esportiva"],               "Quadra poliesportiva"),
     (["recepção", "recepcao"],                                   "Recepção"),
     (["salão de festas", "salao de festas", "sum"],              "Salão de festas / SUM"),
-    (["salão de jogos", "salao de jogos", "game room"],          "Salão de jogos"),
+    (["salão de jogos", "salao de jogos", "sala de jogos", "game room"], "Sala de jogos"),
     (["sauna"],                                                  "Sauna"),
     (["segurança 24h", "seguranca 24h", "vigilância 24"],        "Segurança 24h"),
     (["sistema de alarme", "alarme"],                            "Sistema de alarme"),
     (["solarium", "solário", "solario"],                         "Solarium"),
     (["spa"],                                                    "Spa"),
     (["terraço/rooftop", "rooftop", "terraço coletivo"],        "Terraço/Rooftop"),
-    (["vaga coberta", "garagem coberta"],                        "Vaga coberta"),
+    (["vaga coberta", "vagas cobertas", "vaga de garagem coberta", "vagas de garagem cobertas", "garagem coberta"], "Vaga coberta"),
     (["vestiário", "vestiario"],                                 "Vestiário"),
     # Áreas Privativas
     (["aceita animais", "aceita cachorro", "aceita pet"],        "Aceita animais"),
@@ -116,7 +117,7 @@ _FEATURES_KEYWORDS: list[tuple[list[str], str]] = [
     (["energia solar", "painel solar"],                          "Energia solar"),
     (["entrada de serviço", "entrada de servico"],               "Entrada de serviço"),
     (["escritório", "escritorio", "home office"],                "Escritório"),
-    (["espaço gourmet", "espaco gourmet"],                       "Espaço Gourmet"),
+    (["espaço gourmet", "espaco gourmet"],                       "Espaço gourmet"),
     (["freezer"],                                                "Freezer"),
     (["gás central", "gas central"],                             "Gás Central"),
     (["geladeira"],                                              "Geladeira"),
@@ -220,9 +221,10 @@ class DeepSeekParser:
             )
         elif self._texto_tem_academia(titulo + "\n" + descricao_bruta):
             dados["caracteristicas"] = sorted(
-                dict.fromkeys([*(dados.get("caracteristicas") or []), "Academia"]),
+                dict.fromkeys(filtrar_caracteristicas([*(dados.get("caracteristicas") or []), "Academia"])),
                 key=lambda s: self._norm_texto(s),
             )
+        dados["caracteristicas"] = filtrar_caracteristicas(dados.get("caracteristicas") or [])
 
         # Limpar valores inutils
         for k, v in dados.items():
@@ -497,7 +499,7 @@ class DeepSeekParser:
         for keywords, nome in _FEATURES_KEYWORDS:
             if any(kw in texto_lower for kw in keywords):
                 encontradas.append(nome)
-        return sorted(dict.fromkeys(encontradas), key=lambda s: s.lower())
+        return sorted(dict.fromkeys(filtrar_caracteristicas(encontradas)), key=lambda s: s.lower())
 
     def _normalizar_caracteristicas_texto(self, texto: str) -> list[str]:
         """Converte a linha 'Caracteristicas:' do modo browser em lista limpa."""
@@ -518,7 +520,7 @@ class DeepSeekParser:
                 if alvo == chave or alvo in chave or chave in alvo:
                     encontradas.append(oficial)
                     break
-        return sorted(dict.fromkeys(encontradas), key=lambda s: s.lower())
+        return sorted(dict.fromkeys(filtrar_caracteristicas(encontradas)), key=lambda s: s.lower())
 
     def _texto_tem_academia(self, texto: str) -> bool:
         alvo = self._norm_texto(texto)

@@ -108,17 +108,14 @@ _AMENIDADES = [
 # Amenidades que nunca devem aparecer nas características (política do cliente).
 # Deve ser espelho de mercadoi_driver._NUNCA_MARCAR para bloquear na origem.
 _AMENIDADES_EXCLUIR = {
-    "academia", "fitness",
     "banheiro social",
     "biblioteca",
     "circuito de seguranca", "camera de seguranca",
-    "espaco gourmet",
-    "lounge",
     # "piscina adulto" → OK marcar no Orulo: "piscina" sem qualificador = adulto
     "piscina infantil", "piscina kids",
     "piscina privativa",
     "portaria 24h", "portaria 24 horas", "portaria eletronica",
-    "salao de festas", "salao de festas sum", "salao de jogos",
+    "deck", "deck molhado",
     # "solarium" → OK marcar (confirmado nos screenshots do cliente)
     "spa",
     "terraco", "terraco rooftop", "rooftop",
@@ -233,7 +230,11 @@ class OruloScraper:
             if titulo_cache:
                 logger.info(f"Orulo: título do cache → '{titulo_cache}'")
                 dados["titulo"] = titulo_cache
-                _precisa_auth = False
+                # Titulo em cache sozinho nao substitui a pagina autenticada.
+                # Quando a resposta publica e a tela de login, `dados` fica sem
+                # preco/tipologia e o fluxo precisa abrir a Orulo logada.
+                if html and (dados.get("preco") or dados.get("_dados_variacoes")):
+                    _precisa_auth = False
 
         if _precisa_auth and self.email and self.senha:
             logger.info(f"Orulo: titulo genérico/ausente ('{_titulo_atual}') — tentando leitura autenticada")
@@ -246,6 +247,8 @@ class OruloScraper:
             # Cacheia título para evitar Playwright no próximo processamento
             if dados.get("titulo") and dados["titulo"].lower() not in _TITULO_GENERICO:
                 self._set_titulo_cache(url, dados["titulo"])
+        elif _precisa_auth:
+            return {"ok": False, "motivo": "login_necessario"}
 
         if dados.get("titulo") and len(imagens_urls) < _MAX_IMAGENS:
             galeria_urls = self._obter_cache_galeria(url)
@@ -266,7 +269,7 @@ class OruloScraper:
         dados_variacoes = dados.pop("_dados_variacoes", [])
 
         logger.info(
-            f"Orulo: '{dados['titulo'][:70]}' | preco={dados['preco']} | "
+            f"Orulo: '{dados['titulo'][:70]}' | preco={dados.get('preco', '')} | "
             f"{len(imagens_urls)} foto(s) | {len(dados_variacoes) or 1} publicacao(oes)"
         )
         return {

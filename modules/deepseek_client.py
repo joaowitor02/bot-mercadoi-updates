@@ -20,7 +20,7 @@ Descricao:
 Url da publicacao: [url completa]
 Telefone ou WhatsApp: [https://wa.me/+55... se existir; senao vazio]
 Usuario de Instagram da publicacao: [url completa do perfil se existir; senao vazio]
-Tipo de imovel: [Apartamento, Casa, Casa de Condominio, Terreno, Sala Comercial, Apto. Cobertura, Apto. Duplex etc.]
+Tipo de imovel: [Apartamento, Casa, Casa de Condominio, Terreno, Sala Comercial, Apto. Cobertura, Apto. Duplex, Apto. Garden, Apto. Studio, Chacaras etc. Chacara/minichacara deve ser Chacaras, mesmo citando casa sede.]
 Tipo de operacao: [A Venda ou Em Aluguel]
 Preco: [apenas numeros; nunca telefone/CRECI/codigo]
 Caracteristicas: [liste em ordem alfabetica somente itens da lista permitida claramente mencionados]
