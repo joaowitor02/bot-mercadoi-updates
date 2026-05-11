@@ -41,7 +41,8 @@ _BAIRRO_CIDADE_PB: dict[str, str] = {
     "estados": "João Pessoa", "bairro dos estados": "João Pessoa",
     "epitacio pessoa": "João Pessoa", "altiplano": "João Pessoa",
     "roger": "João Pessoa", "jaguaribe": "João Pessoa", "geisel": "João Pessoa",
-    "cristo redentor": "João Pessoa", "castelo branco": "João Pessoa",
+    "cristo redentor": "João Pessoa", "cristo": "João Pessoa",
+    "castelo branco": "João Pessoa",
     "agua fria": "João Pessoa", "cruz das armas": "João Pessoa",
     "funcionarios": "João Pessoa", "expedicionarios": "João Pessoa",
     "tambia": "João Pessoa", "varadouro": "João Pessoa", "trincheiras": "João Pessoa",
@@ -2488,9 +2489,49 @@ class MercadoiDriver:
         "loteamento", "distrito", "zona", "area", "rua", "avenida", "praia",
     }
 
+    # Abreviações comuns → nome completo no formulário do Mercadoi
+    _EXPANDIR_BAIRRO: dict[str, str] = {
+        "cristo":              "Cristo Redentor",
+        "jose americo":        "José Américo",
+        "jose bezerra":        "José Bezerra",
+        "padre ze":            "Padre Zé",
+        "paulo vi":            "Paulo VI",
+        "treze de maio":       "13 de Maio",
+        "bairro dos estados":  "Estados",
+        "cidade universitaria":"Cidade Universitária",
+        "jardim oceania":      "Jardim Oceania",
+        "portal do sol":       "Portal do Sol",
+        "costa e silva":       "Costa e Silva",
+        "san martin":          "San Martin",
+        "alto do ceu":         "Alto do Céu",
+        "agua fria":           "Água Fria",
+        "cruz das armas":      "Cruz das Armas",
+        "pedro gondim":        "Pedro Gondim",
+        "ilha do bispo":       "Ilha do Bispo",
+        "jardim luna":         "Jardim Luna",
+        "jardim sao paulo":    "Jardim São Paulo",
+        "conjunto ceara":      "Conjunto Ceará",
+        "ponta de mato":       "Ponta de Mato",
+        "ponta de campina":    "Ponta de Campina",
+        "ponta campina":       "Ponta de Campina",
+        "nova cabedelo":       "Nova Cabedelo",
+        "bairro do poco":      "Poço",
+        "jose pinheiro":       "José Pinheiro",
+        "sandra cavalcante":   "Sandra Cavalcante",
+        "monte castelo":       "Monte Castelo",
+        "miriam coelho":       "Miriam Coelho",
+    }
+
     async def _selecionar_bairro(self, page, bairro):
         if not bairro:
             return ""
+
+        # Expande abreviações antes de tentar selecionar
+        bairro_norm_key = normalizar(bairro)
+        bairro_expandido = self._EXPANDIR_BAIRRO.get(bairro_norm_key, bairro)
+        if bairro_expandido != bairro:
+            logger.info(f"Bairro expandido: '{bairro}' → '{bairro_expandido}'")
+            bairro = bairro_expandido
 
         # Tenta o nome completo primeiro
         if await self._selecionar_por_texto(page, '#neighborhood', bairro):
