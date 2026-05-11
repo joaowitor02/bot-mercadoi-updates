@@ -239,12 +239,18 @@ class MercadoiDriver:
             return page
 
         if sys.platform != "win32":
-            # Tenta cookies salvos independente de ter credenciais
+            # Tenta cookies salvos do arquivo de sessão do usuário específico
             if await self._carregar_sessao(page):
                 return self._page or page
             page = self._page or page
             # Login automático se credenciais estiverem configuradas
             if self._wp_user and self._wp_pass:
+                # Limpa cookies do perfil Chrome antes de logar — evita que sessão
+                # de outro usuário (ex: rotação) interfira no login do usuário selecionado
+                try:
+                    await self._context.clear_cookies()
+                except Exception:
+                    pass
                 try:
                     await self._fazer_login_httpx(page)
                 except Exception as e:

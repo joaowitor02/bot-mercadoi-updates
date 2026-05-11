@@ -63,15 +63,10 @@ def obter_login_mercadoi(config: dict) -> dict:
         if isinstance(manual, int):
             idx = int(manual) % len(logins)
         else:
-            # Suporta formato "M17" (exibição 1-based no painel) → índice 16
-            m_idx = re.match(r'^[Mm](\d+)$', str(manual).strip())
-            if m_idx:
-                idx = (int(m_idx.group(1)) - 1) % len(logins)
-            else:
-                idx = next((i for i, l in enumerate(logins) if l.get("usuario") == manual), None)
-                if idx is None:
-                    logger.warning(f"Login manual '{manual}' não encontrado — usando rotação do dia")
-                    idx = _hoje_brasilia().toordinal() % len(logins)
+            idx = next((i for i, l in enumerate(logins) if l.get("usuario") == manual), None)
+            if idx is None:
+                logger.warning(f"Login manual '{manual}' nao encontrado na lista — usando rotacao do dia")
+                idx = _hoje_brasilia().toordinal() % len(logins)
     else:
         idx = _hoje_brasilia().toordinal() % len(logins)
     login = logins[idx]
