@@ -2149,23 +2149,30 @@ async def listar_fila():
                     "ORDER BY prioridade DESC, id DESC"
                 ).fetchall()
             ]
-        fila = [
-            {
-                "id":            r["_row_index"],
-                "url":           r.get("url_instagram", ""),
-                "status":        r.get("status", ""),
-                "mensagem_erro": r.get("mensagem_erro", ""),
-                "tentativas":    r.get("tentativas", 0),
-                "criado_em":     r.get("criado_em", ""),
-                "atualizado_em": r.get("atualizado_em", ""),
-                "mercadoi_url":  r.get("mercadoi_url", ""),
-                "origem":        r.get("origem", "") or _fonte(r.get("url_instagram", "")),
-                "prioridade":    int(r.get("prioridade") or 0),
-            }
-            for r in rows
-            if r.get("status", "") in _EM_ANDAMENTO
-            or "erro" in r.get("status", "").lower()
-        ]
+        # Deduplica pendentes por URL (igual ao listar_pendentes do DB),
+        # para que o count da fila bata com o card "NA FILA" do dashboard.
+        _urls_pendentes: set[str] = set()
+        fila = []
+        for r in rows:
+            status = r.get("status", "")
+            url = r.get("url_instagram", "")
+            if status == "pendente":
+                if url in _urls_pendentes:
+                    continue
+                _urls_pendentes.add(url)
+            if status in _EM_ANDAMENTO or "erro" in status.lower():
+                fila.append({
+                    "id":            r["_row_index"],
+                    "url":           url,
+                    "status":        status,
+                    "mensagem_erro": r.get("mensagem_erro", ""),
+                    "tentativas":    r.get("tentativas", 0),
+                    "criado_em":     r.get("criado_em", ""),
+                    "atualizado_em": r.get("atualizado_em", ""),
+                    "mercadoi_url":  r.get("mercadoi_url", ""),
+                    "origem":        r.get("origem", "") or _fonte(url),
+                    "prioridade":    int(r.get("prioridade") or 0),
+                })
         return JSONResponse({"count": len(fila), "items": fila})
     except Exception as e:
         return JSONResponse({"count": 0, "items": [], "error": str(e)})
